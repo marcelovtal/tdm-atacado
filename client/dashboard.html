@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR">
+
+  <head>
+
+    <meta charset="UTF-8" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Dashboard - Geração de Massa QA</title>
+
+    <script src="/auth.js"></script>
+
+    <script>
+
+      if (!window.fdlVtalAuth || !fdlVtalAuth.guardPage({ requireDashboard: true })) { /* redirect */ }
+
+    </script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet" />
+
+    <link rel="stylesheet" href="/styles.css" />
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  </head>
+
+  <body>
+
+    <div id="app">
+
+      <header class="header">
+
+        <div class="header-top">
+
+          <div>
+
+            <h1>Gerenciamento de Dados de Teste - VTAL</h1>
+
+            <p class="subtitle" id="dashboard-subtitle">Carregando métricas…</p>
+
+          </div>
+
+          <nav class="top-menu" aria-label="Navegação principal">
+
+            <span id="nav-user-vt" class="top-menu__vt"></span>
+
+            <a href="/index.html" class="top-menu__link">Massa</a>
+
+            <a href="/dashboard.html" class="top-menu__link top-menu__link--active" aria-current="page">Dashboard</a>
+
+            <a
+
+              href="/admin.html"
+
+              class="top-menu__settings"
+
+              data-require-platform-admin
+
+              hidden
+
+              title="Configurações de acesso"
+
+              aria-label="Configurações de acesso"
+
+            >
+
+              <svg class="top-menu__settings-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+
+                <circle cx="12" cy="12" r="3" />
+
+              </svg>
+
+            </a>
+
+            <button type="button" class="top-menu__link top-menu__link--logout" onclick="fdlVtalLogout()">Sair</button>
+
+          </nav>
+
+        </div>
+
+      </header>
+
+
+
+      <main class="main">
+
+        <p id="dashboard-error" class="message error" hidden></p>
+
+
+
+        <section class="card">
+
+          <h2>Visão geral</h2>
+
+          <p class="card-hint" id="overview-hint">Dados do histórico de execuções (job_executions).</p>
+
+          <div class="dashboard-grid">
+
+            <article class="dashboard-kpi">
+
+              <p class="dashboard-kpi__label">Tempo médio de execução</p>
+
+              <p class="dashboard-kpi__value" id="kpi-avg-duration">—</p>
+
+              <p class="dashboard-kpi__meta" id="kpi-avg-meta">Carregando…</p>
+
+            </article>
+
+            <article class="dashboard-kpi">
+
+              <p class="dashboard-kpi__label">Sessões ativas</p>
+
+              <p class="dashboard-kpi__value" id="kpi-active-sessions">—</p>
+
+              <p class="dashboard-kpi__meta">VTs com atividade nos últimos 30 min (inclui você)</p>
+
+            </article>
+
+            <article class="dashboard-kpi">
+
+              <p class="dashboard-kpi__label">Massas criadas (total)</p>
+
+              <p class="dashboard-kpi__value" id="kpi-total">—</p>
+
+              <p class="dashboard-kpi__meta">Execuções registradas no histórico</p>
+
+            </article>
+
+          </div>
+
+        </section>
+
+
+
+        <section class="card">
+
+          <h2>Gráficos</h2>
+
+          <p class="card-hint">Volume e distribuição das execuções nos últimos 7 dias.</p>
+
+          <div class="dashboard-charts">
+
+            <div class="dashboard-chart-card">
+
+              <h3 class="dashboard-chart-card__title">Massas criadas por dia</h3>
+
+              <div class="dashboard-chart-wrap">
+
+                <canvas id="chart-massas-dia" aria-label="Gráfico de barras de massas por dia"></canvas>
+
+              </div>
+
+            </div>
+
+            <div class="dashboard-chart-card">
+
+              <h3 class="dashboard-chart-card__title">Distribuição por tipo de massa</h3>
+
+              <div class="dashboard-chart-wrap dashboard-chart-wrap--pie">
+
+                <canvas id="chart-tipo-massa" aria-label="Gráfico de pizza por tipo de massa"></canvas>
+
+              </div>
+
+            </div>
+
+          </div>
+
+        </section>
+
+
+
+        <section class="card">
+
+          <h2>Ranking de usuários</h2>
+
+          <p class="card-hint" id="users-section-hint">Usuários que mais executaram criação de massa.</p>
+
+          <div class="dashboard-chart-card">
+
+            <h3 class="dashboard-chart-card__title">Top usuários por execuções</h3>
+
+            <div class="dashboard-chart-wrap dashboard-chart-wrap--users">
+
+              <canvas id="chart-usuarios-top" aria-label="Gráfico de barras com usuários que mais usaram"></canvas>
+
+            </div>
+
+          </div>
+
+        </section>
+
+
+
+        <section class="card">
+
+          <h2>Resultado dos testes</h2>
+
+          <p class="card-hint">Sucesso e falha com base no status gravado ao final de cada job.</p>
+
+          <div class="dashboard-results">
+
+            <div class="dashboard-chart-card">
+
+              <h3 class="dashboard-chart-card__title">Sucesso x Falha</h3>
+
+              <div class="dashboard-chart-wrap dashboard-chart-wrap--result">
+
+                <canvas id="chart-resultado-teste" aria-label="Gráfico de rosca de sucesso e falha"></canvas>
+
+              </div>
+
+            </div>
+
+            <div class="dashboard-result-kpis">
+
+              <article class="dashboard-result-kpi">
+
+                <p class="dashboard-result-kpi__label">Taxa de sucesso</p>
+
+                <p class="dashboard-result-kpi__value" id="kpi-success-rate">—</p>
+
+              </article>
+
+              <article class="dashboard-result-kpi">
+
+                <p class="dashboard-result-kpi__label">Tempo médio do teste</p>
+
+                <p class="dashboard-result-kpi__value" id="kpi-results-avg">—</p>
+
+              </article>
+
+              <article class="dashboard-result-kpi">
+
+                <p class="dashboard-result-kpi__label">Total de testes</p>
+
+                <p class="dashboard-result-kpi__value" id="kpi-results-total">—</p>
+
+              </article>
+
+              <article class="dashboard-result-kpi">
+
+                <p class="dashboard-result-kpi__label">Falhas com erro</p>
+
+                <p class="dashboard-result-kpi__value" id="kpi-critical">—</p>
+
+              </article>
+
+            </div>
+
+          </div>
+
+        </section>
+
+      </main>
+
+    </div>
+
+    <script src="/dashboard.js"></script>
+
+  </body>
+
+</html>
+
+

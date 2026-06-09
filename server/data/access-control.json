@@ -1,0 +1,17 @@
+{
+  "platformAdmins": [],
+  "users": {
+    "VT422293": {
+      "dashboard": false,
+      "cancelJobs": false
+    },
+    "VT422336": {
+      "dashboard": false,
+      "cancelJobs": false
+    },
+    "VT422493": {
+      "dashboard": false,
+      "cancelJobs": false
+    }
+  }
+}

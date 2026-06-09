@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tdm-qa-api
+  namespace: automation-tdm-qa
+  labels:
+    app: tdm-qa
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tdm-qa
+      component: api
+  template:
+    metadata:
+      labels:
+        app: tdm-qa
+        component: api
+    spec:
+      serviceAccountName: automacaoqa
+      containers:
+        - name: api
+          image: REPLACE_IMAGE_REGISTRY/tdm-qa:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3333
+              name: http
+          envFrom:
+            - configMapRef:
+                name: tdm-qa-config
+          env:
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tdm-qa-secrets
+                  key: MYSQL_PASSWORD
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tdm-qa-secrets
+                  key: REDIS_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /api/config
+              port: 3333
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/config
+              port: 3333
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tdm-qa-api
+  namespace: automation-tdm-qa
+  labels:
+    app: tdm-qa
+    component: api
+spec:
+  selector:
+    app: tdm-qa
+    component: api
+  ports:
+    - name: http
+      port: 3333
+      targetPort: 3333

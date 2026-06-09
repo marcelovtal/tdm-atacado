@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login - Geração de Massa QA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f5f5f4;
+        --surface: #ffffff;
+        --text: #1c1917;
+        --muted: #57534e;
+        --border: #d6d3d1;
+        --accent: #ffee00;
+        --danger: #c62828;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        font-family: 'DM Sans', sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(ellipse 800px 320px at 50% -20%, rgba(255, 238, 0, 0.1), transparent 60%),
+          var(--bg);
+      }
+      .login-page {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+      }
+      .login-card {
+        width: min(420px, 100%);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.25rem;
+        box-shadow: 0 8px 22px rgba(28, 25, 23, 0.08);
+      }
+      .login-card h1 { margin: 0 0 0.4rem; font-size: 1.1rem; }
+      .login-card p { margin: 0 0 1rem; color: var(--muted); font-size: 0.92rem; }
+      .field { display: grid; gap: 0.35rem; margin-bottom: 0.75rem; }
+      label { font-size: 0.86rem; font-weight: 600; }
+      input {
+        width: 100%;
+        padding: 0.6rem 0.7rem;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font: inherit;
+      }
+      button {
+        width: 100%;
+        border: none;
+        border-radius: 8px;
+        padding: 0.65rem 0.8rem;
+        font: inherit;
+        font-weight: 700;
+        background: linear-gradient(180deg, var(--accent), #e6d600);
+        color: #1c1917;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.6; cursor: wait; }
+      .error { margin-top: 0.75rem; font-size: 0.84rem; color: var(--danger); min-height: 1.2em; }
+      .hint-local { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; }
+    </style>
+  </head>
+  <body>
+    <main class="login-page">
+      <section class="login-card">
+        <h1>Acesso ao Gerador de Massa</h1>
+        <p id="login-subtitle">Autenticação com login de rede (LDAP).</p>
+
+        <form id="login-form">
+          <div class="field">
+            <label for="username">Usuário (VT)</label>
+            <input id="username" name="username" type="text" autocomplete="username" placeholder="seu VT" required />
+          </div>
+          <div class="field">
+            <label for="password">Senha</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+          </div>
+          <button type="submit" id="btn-login">Entrar</button>
+          <div id="login-error" class="error" aria-live="polite"></div>
+          <p id="login-local-hint" class="hint-local" hidden>Modo local: use admin / admin</p>
+        </form>
+      </section>
+    </main>
+
+    <script src="/auth.js"></script>
+    <script>
+      (function initLogin() {
+        if (window.fdlVtalAuth && fdlVtalAuth.isAuthenticated()) {
+          window.location.replace('/index.html');
+          return;
+        }
+
+        var form = document.getElementById('login-form');
+        var errorEl = document.getElementById('login-error');
+        var btn = document.getElementById('btn-login');
+        var localHint = document.getElementById('login-local-hint');
+
+        fetch('/api/auth/config')
+          .then(function (r) { return r.json(); })
+          .then(function (cfg) {
+            if (cfg.mode === 'local') {
+              document.getElementById('login-subtitle').textContent =
+                'Modo local — sem LDAP (admin/admin).';
+              localHint.hidden = false;
+            }
+          })
+          .catch(function () {});
+
+        form.addEventListener('submit', function (event) {
+          event.preventDefault();
+          errorEl.textContent = '';
+          btn.disabled = true;
+
+          fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              username: document.getElementById('username').value.trim(),
+              password: document.getElementById('password').value,
+            }),
+          })
+            .then(function (res) {
+              return res.json().then(function (data) {
+                if (!res.ok) throw new Error(data.error || 'Falha no login');
+                return data;
+              });
+            })
+            .then(function (data) {
+              fdlVtalAuth.saveSession(data.token, data.user);
+              window.location.replace('/index.html');
+            })
+            .catch(function (err) {
+              errorEl.textContent = err.message || 'Usuário ou senha inválidos.';
+            })
+            .finally(function () {
+              btn.disabled = false;
+            });
+        });
+      })();
+    </script>
+  </body>
+</html>

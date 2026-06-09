@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gerenciamento de Dados de Teste - VTAL - Geração de Massa QA</title>
+    <script src="/auth.js"></script>
+    <script>
+      if (!window.fdlVtalAuth || !fdlVtalAuth.guardPage()) { /* redirect login */ }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="header">
+        <div class="header-top">
+          <div>
+            <h1>Gerenciamento de Dados de Teste - VTAL</h1>
+            <p class="subtitle">Geração de massa de testes</p>
+          </div>
+          <nav class="top-menu" aria-label="Navegação principal">
+            <span id="nav-user-vt" class="top-menu__vt" title="Usuário logado"></span>
+            <a href="/index.html" class="top-menu__link top-menu__link--active" aria-current="page">Massa</a>
+            <a href="/dashboard.html" class="top-menu__link" data-require-perm="dashboard" hidden>Dashboard</a>
+            <a
+              href="/admin.html"
+              class="top-menu__settings"
+              data-require-platform-admin
+              hidden
+              title="Configurações de acesso"
+              aria-label="Configurações de acesso"
+            >
+              <svg class="top-menu__settings-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </a>
+            <button type="button" class="top-menu__link top-menu__link--logout" onclick="fdlVtalLogout()" aria-label="Encerrar sessão">Sair</button>
+          </nav>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="card card-form">
+          <h2>Gerar massa</h2>
+          <form id="form-mass" class="form">
+            <div class="form-layout">
+              <div class="form-layout__choices" tabindex="-1" id="mass-type-scroll-region">
+                <div class="field">
+                  <label class="form-layout__choices-label" for="mass-type-filter">Tipo de massa</label>
+                  <input
+                    type="search"
+                    id="mass-type-filter"
+                    class="mass-type-filter"
+                    placeholder="Filtrar por nome…"
+                    autocomplete="off"
+                    aria-label="Filtrar tipos de massa"
+                  />
+                </div>
+
+              <div class="flow-category" id="massTypeGroup">
+                <h3 class="flow-category__title">IP Connect</h3>
+                <p class="flow-category__hint">
+                  <code>gerar-pedido-ip-connect.js</code> · <code>gerar-pedido-massa-pronta-ip-connect.js</code> ·
+                  <code>gerar-pedido-massa-pronta-ip-connect-config-pega.js</code>
+                </p>
+                <div class="choice-group">
+                  <label class="choice-card choice-card--primary">
+                    <input type="radio" name="massType" value="lead-pedido" checked />
+                    <span class="choice-title">Lead → IP Connect → Pedido</span>
+                    <span class="choice-subtitle">Fluxo completo até criação do pedido (IP Connect)</span>
+                  </label>
+
+                  <label class="choice-card choice-card--massa-pronta">
+                    <input type="radio" name="massType" value="massa-pronta-opp-pedido" />
+                    <span class="choice-title">Ip Connect (massa pronta)</span>
+                    <span class="choice-subtitle">Massa já cadastrada até BRM. Só Opp → Cotação → Pedido</span>
+                  </label>
+
+                  <label class="choice-card choice-card--massa-pronta-pega">
+                    <input type="radio" name="massType" value="massa-pronta-opp-pedido-pega" />
+                    <span class="choice-title">IP (massa pronta + Config PEGA)</span>
+                    <span class="choice-subtitle">Mesmo fluxo + designação/ configuração no (PEGA)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="flow-category">
+                <h3 class="flow-category__title">Link Dedicado</h3>
+                <p class="flow-category__hint">
+                  <code>gerar-pedido-link-dedicado.js</code> · <code>gerar-pedido-massa-pronta-link-dedicado.js</code> ·
+                  <code>gerar-pedido-massa-pronta-link-dedicado-config-pega.js</code>
+                </p>
+                <div class="choice-group">
+                  <label class="choice-card choice-card--link-dedicado">
+                    <input type="radio" name="massType" value="lead-link-dedicado-pedido" />
+                    <span class="choice-title">Lead → Link Dedicado → Pedido</span>
+                    <span class="choice-subtitle">Fluxo completo até criação do pedido (3 pontas: A, B, EVC)</span>
+                  </label>
+
+                  <label class="choice-card choice-card--massa-pronta-link-dedicado">
+                    <input type="radio" name="massType" value="massa-pronta-opp-pedido-link-dedicado" />
+                    <span class="choice-title">Link Dedicado (massa pronta)</span>
+                    <span class="choice-subtitle">Massa já cadastrada até BRM. Só Opp → Cotação → Pedido com produto Link Dedicado</span>
+                  </label>
+
+                  <label class="choice-card choice-card--massa-pronta-link-dedicado-pega">
+                    <input type="radio" name="massType" value="massa-pronta-opp-pedido-link-dedicado-pega" />
+                    <span class="choice-title">Link Dedicado (massa pronta + Config PEGA)</span>
+                    <span class="choice-subtitle">Mesmo fluxo Salesforce + PEGA nas duas pontas (designação Ponta A; agendamento Ponta B)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="flow-category">
+                <h3 class="flow-category__title">VPN</h3>
+                <p class="flow-category__hint">
+                  <code>gerar-pedido-vpn.js</code> · <code>gerar-pedido-massa-pronta-vpn.js</code> ·
+                  <code>gerar-pedido-massa-pronta-vpn-connect-config-pega.js</code>
+                </p>
+                <div class="choice-group">
+                  <label class="choice-card choice-card--vpn">
+                    <input type="radio" name="massType" value="lead-vpn-pedido" />
+                    <span class="choice-title">Lead → VPN → Pedido</span>
+                    <span class="choice-subtitle">Fluxo completo até criação do pedido(VPN)</span>
+                  </label>
+
+                  <label class="choice-card choice-card--massa-pronta-vpn">
+                    <input type="radio" name="massType" value="massa-pronta-opp-pedido-vpn" />
+                    <span class="choice-title">VPN (massa pronta)</span>
+                    <span class="choice-subtitle">Massa já cadastrada até BRM. Só Opp → Cotação → Pedido com produto VPN</span>
+                  </label>
+
+                  <label class="choice-card choice-card--massa-pronta-vpn-pega">
+                    <input type="radio" name="massType" value="massa-pronta-opp-pedido-vpn-pega" />
+                    <span class="choice-title">VPN (massa pronta + Config PEGA)</span>
+                    <span class="choice-subtitle">Mesmo fluxo VPN + Configuração de rede PEGA e etapas até agendamento</span>
+                  </label>
+                </div>
+              </div>
+
+              <div class="flow-category">
+                <h3 class="flow-category__title">Outros (ativação / BRM)</h3>
+                <p class="flow-category__hint">
+                  <code>ativacao-brm.js</code> · <code>ativacao-brm-msa.js</code> · <code>ativacao-brm-massa-pronta.js</code>
+                </p>
+                <div class="choice-group">
+                  <label class="choice-card choice-card--accent">
+                    <input type="radio" name="massType" value="conta-ativacao-brm" />
+                    <span class="choice-title">Conta Até Ativação BRM</span>
+                    <span class="choice-subtitle">Só até conta Billing ativa no BRM</span>
+                  </label>
+
+                  <label class="choice-card choice-card--accent">
+                    <input type="radio" name="massType" value="conta-ativacao-brm-msa" />
+                    <span class="choice-title">Conta Até Ativação BRM (MSA)</span>
+                    <span class="choice-subtitle">Inclui contrato MSA + PDF + BRM</span>
+                  </label>
+
+                  <label class="choice-card choice-card--brm-massa-pronta">
+                    <input type="radio" name="massType" value="conta-ativacao-brm-massa-pronta" />
+                    <span class="choice-title">BRM (massa pronta)</span>
+                    <span class="choice-subtitle">Massa completa já existe — só integra a Billing no BRM (getAccount + poll)</span>
+                  </label>
+                </div>
+              </div>
+              </div>
+
+              <aside class="form-layout__sidebar" aria-label="Parâmetros da geração">
+                <p class="form-layout__sidebar-hint">Ambiente, quantidade e dados extras ficam sempre visíveis ao lado da lista (em telas largas).</p>
+                <div class="field field--sm">
+                  <label for="environment">Ambiente</label>
+                  <select id="environment" name="environment" required>
+                    <option value="ti">TI</option>
+                    <option value="trg">TRG</option>
+                  </select>
+                </div>
+                <div class="field field--sm">
+                  <label for="quantity">Quantidade</label>
+                  <select id="quantity" name="quantity" required>
+                    <option value="1">1</option>
+                    <option value="5">5</option>
+                    <option value="10">10</option>
+                  </select>
+                </div>
+                <div class="field field--sm" id="massa-pronta-fields" hidden>
+                  <label>Dados da conta (massa pronta)</label>
+                  <div class="field-group field-group--sm">
+                    <input
+                      type="text"
+                      id="accountOrganizationId"
+                      name="accountOrganizationId"
+                      placeholder="Organization Id (ex: 001HZ00000iv5PyYAI)"
+                      autocomplete="off"
+                    />
+                    <input
+                      type="text"
+                      id="accountBusinessId"
+                      name="accountBusinessId"
+                      placeholder="Business Id (ex: 001HZ00000iv5PzYAI)"
+                      autocomplete="off"
+                    />
+                    <input
+                      type="text"
+                      id="accountBillingId"
+                      name="accountBillingId"
+                      placeholder="Billing Id (ex: 001HZ00000iv5Q0YAI)"
+                      autocomplete="off"
+                    />
+                  </div>
+                </div>
+                <div class="field field--sm" id="brm-massa-pronta-fields" hidden>
+                  <label for="accountBillingIdBrmOnly">Id da conta Billing</label>
+                  <div class="field-group field-group--sm">
+                    <input
+                      type="text"
+                      id="accountBillingIdBrmOnly"
+                      name="accountBillingIdBrmOnly"
+                      placeholder="001… (único dado necessário — sem MSA nem contato)"
+                      autocomplete="off"
+                    />
+                  </div>
+                </div>
+                <div class="field field-actions">
+                  <button type="submit" id="btn-submit" class="btn btn-primary" aria-busy="false">Gerar Massa</button>
+                </div>
+                <div id="last-run-summary" class="last-run-summary" hidden>
+                  <p id="last-run-queue" class="last-run-summary__line"></p>
+                  <p id="last-run-created" class="last-run-summary__line"></p>
+                </div>
+              </aside>
+            </div>
+          </form>
+          <div id="form-message" class="message" aria-live="off" hidden></div>
+        </section>
+
+        <section class="card card-jobs">
+          <div class="card-header">
+            <h2>Monitoramento de jobs</h2>
+            <div class="card-header-actions">
+              <div class="jobs-refresh-slot">
+                <span id="jobs-refresh-status" class="jobs-refresh-status jobs-refresh-status--empty" aria-live="off"></span>
+              </div>
+              <button type="button" id="btn-refresh" class="btn btn-secondary">Atualizar</button>
+            </div>
+          </div>
+          <p class="card-hint">
+            Jobs <strong>Na fila</strong> ou <strong>Executando</strong> podem ser cancelados se você tiver permissão (perfil admin).
+            Se o script falhar (ex.: BRM no TI), o job aparece como <strong>Falha</strong> — abra para ver o erro e o log completo.
+          </p>
+          <div id="jobs-list" class="jobs-list">
+            <p class="empty">Carregando…</p>
+          </div>
+        </section>
+      </main>
+
+      <div id="modal" class="modal" hidden>
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3 id="modal-title">Detalhe do job</h3>
+            <button type="button" id="modal-close" class="btn-icon" aria-label="Fechar">&times;</button>
+          </div>
+          <div id="modal-body" class="modal-body"></div>
+        </div>
+      </div>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        if (window.fdlVtalAuth) fdlVtalAuth.refreshNavFromServer();
+      });
+    </script>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

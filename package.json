@@ -1,0 +1,35 @@
+{
+  "name": "fdl-vtal",
+  "version": "1.0.0",
+  "description": "Ferramenta interna FDL VTAL - Geração de massa de testes QA",
+  "type": "module",
+  "scripts": {
+    "server": "node server/index.js",
+    "worker": "node server/worker.js",
+    "dev": "concurrently \"npm run server\" \"npm run worker\" \"npm run client:dev\"",
+    "dev:local": "cross-env APP_PROFILE=local USE_MEMORY_QUEUE=1 concurrently \"npm run server\" \"npm run worker\" \"npm run client:dev\"",
+    "dev:qa": "concurrently \"npm run server\" \"npm run worker\" \"npm run client:dev\"",
+    "start:qa": "cross-env APP_PROFILE=qa node server/index.js",
+    "worker:qa": "cross-env APP_PROFILE=qa node server/worker.js",
+    "client:dev": "vite",
+    "client:build": "vite build",
+    "preview": "vite preview",
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "bullmq": "5.34.0",
+    "cors": "2.8.5",
+    "dotenv": "16.4.5",
+    "express": "^4.22.1",
+    "ioredis": "5.4.1",
+    "ldapjs": "^3.0.7",
+    "mysql2": "^3.22.4",
+    "sqlite3": "6.0.1"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "9.0.0",
+    "concurrently": "9.1.0",
+    "cross-env": "7.0.3",
+    "vite": "6.4.1"
+  }
+}

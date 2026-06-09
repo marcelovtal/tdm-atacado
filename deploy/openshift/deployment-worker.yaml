@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tdm-qa-worker
+  namespace: automation-tdm-qa
+  labels:
+    app: tdm-qa
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tdm-qa
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: tdm-qa
+        component: worker
+    spec:
+      serviceAccountName: automacaoqa
+      containers:
+        - name: worker
+          image: REPLACE_IMAGE_REGISTRY/tdm-qa:latest
+          imagePullPolicy: Always
+          command: ["node", "server/worker.js"]
+          envFrom:
+            - configMapRef:
+                name: tdm-qa-config
+          env:
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tdm-qa-secrets
+                  key: MYSQL_PASSWORD
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: tdm-qa-secrets
+                  key: REDIS_PASSWORD
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"

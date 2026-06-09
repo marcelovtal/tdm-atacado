@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tdm-qa-config
+  namespace: automation-tdm-qa
+  labels:
+    app: tdm-qa
+data:
+  APP_PROFILE: "qa"
+  PORT: "3333"
+  USE_MEMORY_QUEUE: "0"
+  DATABASE_DRIVER: "mysql"
+  MYSQL_HOST: "10.101.37.168"
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: "tdm_qa"
+  MYSQL_USER: "automacaoqa"
+  REDIS_MODE: "sentinel"
+  REDIS_SENTINEL_HOST: "10.101.37.169"
+  REDIS_SENTINEL_PORT: "26379"
+  REDIS_MASTER_NAME: "TDMQA"
+  WORKER_CONCURRENCY: "1"
+  JOB_ATTEMPTS: "2"

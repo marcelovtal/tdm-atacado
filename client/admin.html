@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin - Permissões</title>
+    <script src="/auth.js"></script>
+    <script>
+      if (!window.fdlVtalAuth || !fdlVtalAuth.guardPage({ requireManageAccess: true })) {}
+    </script>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="header">
+        <div class="header-top">
+          <div>
+            <h1>Administração de acessos</h1>
+            <p class="subtitle">Somente administradores da plataforma gerenciam permissões dos QAs</p>
+          </div>
+          <nav class="top-menu">
+            <span id="nav-user-vt" class="top-menu__vt"></span>
+            <a href="/index.html" class="top-menu__link">Massa</a>
+            <a href="/dashboard.html" class="top-menu__link" data-require-perm="dashboard" hidden>Dashboard</a>
+            <a
+              href="/admin.html"
+              class="top-menu__settings top-menu__settings--active"
+              data-require-platform-admin
+              hidden
+              title="Configurações de acesso"
+              aria-label="Configurações de acesso"
+              aria-current="page"
+            >
+              <svg class="top-menu__settings-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </a>
+            <button type="button" class="top-menu__link top-menu__link--logout" onclick="fdlVtalLogout()">Sair</button>
+          </nav>
+        </div>
+      </header>
+
+      <main class="main">
+        <section class="card">
+          <h2>Permissões por VT</h2>
+          <p class="card-hint">
+            <strong>Administrador da plataforma:</strong> <span id="platform-admins-list">VT422570</span> (fixo no código).
+            Os demais VTs só veem as próprias execuções; você concede Dashboard e Cancelar jobs abaixo.
+            Ao <strong>adicionar</strong> ou <strong>remover</strong> um VT, a alteração é salva na hora (MySQL em QA).
+            Use <strong>Salvar alterações</strong> depois de marcar ou desmarcar checkboxes.
+          </p>
+          <form id="acl-form">
+            <div class="admin-toolbar">
+              <input type="text" id="new-vt" placeholder="Novo VT (ex.: VT422336)" autocomplete="off" />
+              <button type="button" class="btn btn-secondary" id="btn-add-vt">Adicionar VT</button>
+              <button type="submit" class="btn btn-primary">Salvar alterações</button>
+            </div>
+            <div id="acl-table-wrap" class="admin-table-wrap"></div>
+            <p id="acl-message" class="message" hidden></p>
+          </form>
+        </section>
+      </main>
+    </div>
+    <script src="/admin.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        if (window.fdlVtalAuth) fdlVtalAuth.refreshNavFromServer();
+      });
+    </script>
+  </body>
+</html>
