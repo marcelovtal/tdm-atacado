@@ -33,6 +33,7 @@ const { buildContactPayload } = require('../support/utils/salesforce/contactPayl
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
+const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
 const {
   runPegaLinkDedicadoDuasPontas,
   PEGA_TOTAL_STEPS,
@@ -2573,25 +2574,15 @@ async function main() {
       if (readyQuote) {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
-          console.log('\n*** PEDIDO GERADO ***');
-          console.log('  OrderId:', result.orderId);
-          console.log('  OrderNumber:', result.orderNumber);
-          console.log('  Status:', result.orderStatus);
-          console.log('  Subpedidos prontos (PEGA):', result.subOrderEmImplantacao ? 'sim' : 'não (timeout ou ainda processando)');
-          if (result.subOrderOrderNumberPontaA) {
-            console.log('  Subpedido Ponta A (PEGA):', result.subOrderOrderNumberPontaA);
-          }
-          if (result.subOrderOrderNumberPontaB) {
-            console.log('  Subpedido Ponta B (PEGA):', result.subOrderOrderNumberPontaB);
-          }
-          if (result.subOrderOrderNumberEVC) {
-            console.log('  Subpedido EVC (PEGA):', result.subOrderOrderNumberEVC);
-          }
-          await runPegaLinkDedicadoIfConfigured(
+          const pegaResult = await runPegaLinkDedicadoIfConfigured(
             result.subOrderOrderNumberPontaA,
             result.subOrderOrderNumberPontaB,
             result.subOrderOrderNumberEVC,
           );
+          await finalizePedidoGerado({
+            ...result,
+            pegaCaseId: pegaResult?.pontaA?.caseId ?? pegaResult?.caseId ?? null,
+          });
           process.exit(0);
         }
       }
@@ -2619,25 +2610,15 @@ async function main() {
       }
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        console.log('\n*** PEDIDO GERADO ***');
-        console.log('  OrderId:', result.orderId);
-        console.log('  OrderNumber:', result.orderNumber);
-        console.log('  Status:', result.orderStatus);
-        console.log('  Subpedidos prontos (PEGA):', result.subOrderEmImplantacao ? 'sim' : 'não (timeout ou ainda processando)');
-        if (result.subOrderOrderNumberPontaA) {
-          console.log('  Subpedido Ponta A (PEGA):', result.subOrderOrderNumberPontaA);
-        }
-        if (result.subOrderOrderNumberPontaB) {
-          console.log('  Subpedido Ponta B (PEGA):', result.subOrderOrderNumberPontaB);
-        }
-        if (result.subOrderOrderNumberEVC) {
-          console.log('  Subpedido EVC (PEGA):', result.subOrderOrderNumberEVC);
-        }
-        await runPegaLinkDedicadoIfConfigured(
+        const pegaResult = await runPegaLinkDedicadoIfConfigured(
           result.subOrderOrderNumberPontaA,
           result.subOrderOrderNumberPontaB,
           result.subOrderOrderNumberEVC,
         );
+        await finalizePedidoGerado({
+          ...result,
+          pegaCaseId: pegaResult?.pontaA?.caseId ?? pegaResult?.caseId ?? null,
+        });
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

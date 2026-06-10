@@ -27,6 +27,7 @@ const { buildContactPayload } = require('../support/utils/salesforce/contactPayl
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
+const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
 
 const env = loadEnv();
 const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
@@ -1073,7 +1074,14 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
       if (!subOrderWithStatus) {
         console.log('   (timeout: nenhum subpedido com Status "' + SUB_ORDER_STATUS_TARGETS.join('" ou "') + '" no prazo)');
       }
-      return { quoteId, orderId, orderNumber, orderStatus, subOrderEmImplantacao: !!subOrderWithStatus };
+      return {
+        quoteId,
+        orderId,
+        orderNumber,
+        orderStatus,
+        subOrderEmImplantacao: !!subOrderWithStatus,
+        subOrderOrderNumber: subOrderWithStatus?.OrderNumber ?? null,
+      };
     }
 
     if (isInviableOrderError(lastOrderRes)) {
@@ -1194,7 +1202,14 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
   }
   if (!subOrderWithStatus) console.log('   (timeout ou ainda processando)');
 
-  return { quoteId, orderId, orderNumber, orderStatus, subOrderEmImplantacao: !!subOrderWithStatus };
+  return {
+    quoteId,
+    orderId,
+    orderNumber,
+    orderStatus,
+    subOrderEmImplantacao: !!subOrderWithStatus,
+    subOrderOrderNumber: subOrderWithStatus?.OrderNumber ?? null,
+  };
 }
 
 const FULL_FLOW_MAX_RUNS = 3;
@@ -1222,11 +1237,7 @@ async function main() {
       const accountIds = await runLeadFlow(instanceUrl, accessToken, cookie);
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        console.log('\n*** PEDIDO GERADO ***');
-        console.log('  OrderId:', result.orderId);
-        console.log('  OrderNumber:', result.orderNumber);
-        console.log('  Status:', result.orderStatus);
-        console.log('  Subpedido "Em implantação":', result.subOrderEmImplantacao ? 'sim' : 'não (timeout ou ainda processando)');
+        await finalizePedidoGerado(result);
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

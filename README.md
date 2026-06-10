@@ -87,10 +87,12 @@ Infra QA (referência):
 - **Redis:** `ATDMQX02.local` via **Sentinel** porta `26379`, master `TDMQA`
 - **OpenShift:** cluster ARC-NPRD, namespace `automation-tdm-qa` — manifests em `deploy/openshift/`
 
-4. O projeto deve ter configurados:
+4. Credenciais dos scripts (Salesforce / PEGA):
 
-- `support/environment/env.json` (ambientes ti, trg, etc.)
-- `support/fixtures/user.json` (credenciais Salesforce e PEGA por ambiente)
+- **Desenvolvimento local:** copie `support/fixtures/user.example.json` → `support/fixtures/user.json` e preencha com valores reais (arquivo no `.gitignore`, não versionar).
+- **OpenShift / CI:** configure as variáveis de ambiente listadas na seção [Guia DevOps — OpenShift](#guia-devops--deploy-no-openshift). O arquivo `user.json` **não vai na imagem Docker** — os pods montam as credenciais via Secrets.
+
+Arquivo de ambientes (URLs, sem segredos): `support/environment/env.json` (ti, trg, etc.).
 
 ### PEGA por ambiente
 
@@ -99,7 +101,7 @@ Infra QA (referência):
 | **TI** | `vtal-omvtal-qa.pega.net` | `…/prweb/PRRestService/oauth2/v1/token` |
 | **TRG** | `vtal-omvtal-stg1.pega.net` | `…/prweb/PRRestService/oauth2/v1/token` |
 
-Client ID e Client Secret são os mesmos nos dois ambientes (bloco `pega` em `user.json`). Variáveis de ambiente opcionais sobrescrevem o arquivo: `PEGA_TOKEN_URL`, `PEGA_BASE_URL`, `PEGA_CLIENT_ID`, `PEGA_CLIENT_SECRET`, `PEGA_BEARER_TOKEN`.
+Client ID e Client Secret são os mesmos nos dois ambientes. Em local: bloco `pega` em `user.json`. Em OpenShift: secrets `PEGA_CLIENT_ID`, `PEGA_CLIENT_SECRET` (e opcionalmente `PEGA_TOKEN_URL`, `PEGA_BASE_URL`, `PEGA_BEARER_TOKEN`).
 
 Validar conexão TRG (OAuth + `obterdadosordem`):
 
@@ -170,6 +172,176 @@ Os arquivos estarão em `client/dist`. Sirva essa pasta junto à API ou por um r
 | `JOB_ATTEMPTS` | Retentativas | `2` | `2` |
 
 Detalhes completos em `.env.example`, `.env.local.example` e `.env.qa.example`.
+
+## Guia DevOps — Deploy no OpenShift
+
+Seção para quem vai subir e manter a aplicação no cluster. Manifests em `deploy/openshift/`; passo a passo resumido também em `deploy/openshift/README.md`.
+
+### Visão geral
+
+A aplicação roda como **dois Deployments** com a **mesma imagem Docker**:
+
+| Componente | Deployment | Comando | Função |
+|------------|------------|---------|--------|
+| **API** | `tdm-qa-api` | `node server/index.js` (padrão do Dockerfile) | Interface web, autenticação LDAP, enfileiramento de jobs |
+| **Worker** | `tdm-qa-worker` | `node server/worker.js` | Executa os scripts de geração de massa (Salesforce / PEGA) |
+
+Dependências **fora do cluster** (pods precisam de rede até elas):
+
+| Serviço | Host (referência) | Uso |
+|---------|-------------------|-----|
+| **MySQL** | `ATDMQX01.local` (`10.101.37.168`) | Histórico de jobs, permissões de usuário (`access_control_users`) |
+| **Redis Sentinel** | `ATDMQX02.local` (`10.101.37.169`), porta `26379`, master `TDMQA` | Fila BullMQ — **obrigatório** em QA (`USE_MEMORY_QUEUE=0`) |
+| **LDAP** | `ldap://10.101.0.13:389` | Login dos QAs (VT + senha de rede) |
+| **Salesforce** | URLs em `support/environment/env.json` | Scripts OAuth2 nos ambientes TI / TRG |
+| **PEGA** | `vtal-omvtal-qa.pega.net` (TI) / `vtal-omvtal-stg1.pega.net` (TRG) | Scripts com configuração PEGA |
+
+**Cluster:** ARC-NPRD (`api.ocparc-nprd.vtal.intra:6443`)  
+**Namespace:** `automation-tdm-qa`  
+**ServiceAccount:** `automacaoqa` (ajustar nos YAMLs se o nome no cluster for diferente)
+
+### Checklist antes do deploy
+
+- [ ] Namespace `automation-tdm-qa` criado e com permissão de deploy
+- [ ] ServiceAccount `automacaoqa` existente no namespace
+- [ ] Pods com egress para MySQL, Redis Sentinel, LDAP, Salesforce e PEGA
+- [ ] Imagem publicada no registry interno (substituir `REPLACE_IMAGE_REGISTRY/tdm-qa:latest` nos YAMLs)
+- [ ] Secrets criados (senhas + credenciais Salesforce/PEGA — **não commitar**)
+- [ ] Route criada apontando para o Service `tdm-qa-api:3333`
+
+### 1. Build e push da imagem
+
+Na raiz do repositório:
+
+```bash
+docker build -t <registry-interno>/tdm-qa:<tag> .
+docker push <registry-interno>/tdm-qa:<tag>
+```
+
+A imagem inclui `server/`, `scripts/`, `support/environment/env.json` e o front buildado em `client/dist`. **Não inclui** `support/fixtures/user.json` (está no `.gitignore`).
+
+### 2. Secret `tdm-qa-secrets`
+
+Crie no namespace (valores reais via `oc`, cofre ou pipeline — nunca no Git):
+
+```bash
+oc project automation-tdm-qa
+
+oc create secret generic tdm-qa-secrets \
+  --from-literal=MYSQL_PASSWORD='<senha_mysql>' \
+  --from-literal=REDIS_PASSWORD='<senha_redis>' \
+  --from-literal=SESSION_SECRET='<segredo_forte_aleatorio>' \
+  --from-literal=SF_CONSUMER_KEY='<salesforce_consumer_key>' \
+  --from-literal=SF_CONSUMER_SECRET='<salesforce_consumer_secret>' \
+  --from-literal=PEGA_CLIENT_ID='<pega_client_id>' \
+  --from-literal=PEGA_CLIENT_SECRET='<pega_client_secret>' \
+  -n automation-tdm-qa
+```
+
+| Chave do Secret | Obrigatório | Descrição |
+|-----------------|-------------|-----------|
+| `MYSQL_PASSWORD` | Sim | Senha do usuário `automacaoqa` no banco `tdm_qa` |
+| `REDIS_PASSWORD` | Sim | Senha do Redis (master Sentinel `TDMQA`) |
+| `SESSION_SECRET` | Sim | Segredo de sessão da API (cookies de login) |
+| `SF_CONSUMER_KEY` | Sim* | Consumer Key OAuth2 Salesforce |
+| `SF_CONSUMER_SECRET` | Sim* | Consumer Secret OAuth2 Salesforce |
+| `PEGA_CLIENT_ID` | Sim** | Client ID OAuth2 PEGA (scripts com config PEGA) |
+| `PEGA_CLIENT_SECRET` | Sim** | Client Secret OAuth2 PEGA |
+| `SF_ACCESS_TOKEN` | Alternativa | Se definido, dispensa `SF_CONSUMER_KEY` / `SF_CONSUMER_SECRET` |
+| `SF_USERNAME` / `SF_PASSWORD` | Opcional | Apenas se `SF_GRANT_TYPE=password` |
+| `PEGA_BEARER_TOKEN` | Opcional | Token fixo PEGA (validação manual / bypass OAuth) |
+
+\* Ou `SF_ACCESS_TOKEN` pré-emitido.  
+\** Obrigatório para tipos de massa que executam fluxo PEGA; scripts sem PEGA ignoram.
+
+Os Deployments (`deployment-api.yaml` / `deployment-worker.yaml`) usam `envFrom.secretRef` no `tdm-qa-secrets` — **toda chave** do Secret vira variável de ambiente automaticamente nos pods API e Worker.
+
+### 3. ConfigMap `tdm-qa-config`
+
+Arquivo: `deploy/openshift/configmap.yaml`. Valores principais:
+
+| Variável | Valor QA | Observação |
+|----------|----------|------------|
+| `APP_PROFILE` | `qa` | Ativa MySQL + Redis Sentinel + LDAP |
+| `USE_MEMORY_QUEUE` | `0` | Fila Redis obrigatória |
+| `DATABASE_DRIVER` | `mysql` | |
+| `MYSQL_HOST` | Preferir `ATDMQX01.local` | IP `10.101.37.168` pode dar timeout em algumas redes |
+| `MYSQL_DATABASE` | `tdm_qa` | |
+| `MYSQL_USER` | `automacaoqa` | |
+| `REDIS_MODE` | `sentinel` | Não usar standalone em produção |
+| `REDIS_SENTINEL_HOST` | Preferir `ATDMQX02.local` | Porta `26379`, master `TDMQA` |
+| `WORKER_CONCURRENCY` | `1` | Um job por vez no worker QA |
+| `AUTH_MODE` | `ldap` | Adicionar ao ConfigMap se ainda não estiver |
+| `LDAP_URL` | `ldap://10.101.0.13:389` | |
+| `LDAP_DOMAIN` | `CORPORATIVO` | |
+| `ENVIRONMENT` | `ti` ou `trg` | Ambiente Salesforce/PEGA padrão dos scripts |
+
+```bash
+oc apply -f deploy/openshift/configmap.yaml
+```
+
+### 4. Deployments e Service
+
+Substitua a imagem nos YAMLs e aplique:
+
+```bash
+oc apply -f deploy/openshift/deployment-api.yaml
+oc apply -f deploy/openshift/deployment-worker.yaml
+```
+
+- **API:** readiness/liveness em `GET /api/config:3333`
+- **Worker:** sem HTTP; processa fila Redis — se o worker cair, jobs ficam pendentes
+
+Escale conforme necessidade (QA costuma usar `replicas: 1` em cada).
+
+### 5. Route (acesso web)
+
+Os manifests expõem apenas o `Service` `tdm-qa-api` na porta `3333`. Crie uma **Route** no console (Networking → Routes) ou via manifest, apontando para esse Service. Entregue a URL aos QAs.
+
+### 6. Validação pós-deploy
+
+```bash
+# Pods rodando
+oc get pods -l app=tdm-qa -n automation-tdm-qa
+
+# Logs API (Redis / MySQL / LDAP)
+oc logs -l component=api -n automation-tdm-qa --tail=100
+
+# Logs Worker (execução de scripts)
+oc logs -l component=worker -n automation-tdm-qa --tail=100
+
+# Health da API (dentro do cluster ou via Route)
+curl -s https://<route>/api/config
+```
+
+Testes funcionais (com credenciais já nos Secrets):
+
+1. Login LDAP com um VT de QA
+2. Gerar massa (1 execução) em ambiente TI
+3. Confirmar job `completed` no dashboard e logs sem erro de OAuth
+
+Para validar PEGA isoladamente (no pod worker ou job de debug):
+
+```bash
+ENVIRONMENT=trg node scripts/test-pega-auth.js
+```
+
+### 7. O que não versionar
+
+| Arquivo / dado | Motivo |
+|----------------|--------|
+| `support/fixtures/user.json` | Credenciais Salesforce/PEGA |
+| `server/data/*.sqlite` | Banco local com dados de execução |
+| `.env`, `.env.qa` | Senhas de infra |
+| Secrets OpenShift com valores reais | Usar `oc create secret` ou pipeline |
+
+Template seguro para devs: `support/fixtures/user.example.json`.
+
+### 8. Contato com o time de QA
+
+- **Admin da plataforma (fixo):** VT `VT422570` — vê todos os jobs e tela Admin
+- **Permissões extras** (Dashboard, cancelar jobs): tabela MySQL `access_control_users` ou tela Admin
+- **Tipos de massa disponíveis:** definidos em `server/config.js` (`MASS_TYPES`)
 
 ## Monitoramento Redis e banco
 

@@ -1,4 +1,4 @@
-# Build do front (Vite)
+# Build do front (Vite) + dependências de produção (sqlite3 usa prebuild aqui)
 FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
@@ -6,20 +6,15 @@ WORKDIR /app
 COPY package.json package-lock.json vite.config.js ./
 COPY client ./client
 
-RUN npm ci && npm run client:build
+RUN npm ci && npm run client:build && npm prune --omit=dev
 
-# Runtime: API + dependências nativas (sqlite3)
+# Runtime leve — sem apt-get (cluster corporativo bloqueia deb.debian.org)
 FROM node:22-bookworm-slim
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3 make g++ \
-  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
-
+COPY --from=builder /app/node_modules ./node_modules
 COPY server ./server
 COPY scripts ./scripts
 COPY support ./support

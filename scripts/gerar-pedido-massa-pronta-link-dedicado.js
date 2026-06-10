@@ -30,6 +30,8 @@ const { buildContactPayload } = require('../support/utils/salesforce/contactPayl
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
+const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
+const { extractLinkDedicadoSubpedidos } = require('../support/utils/extractLinkDedicadoSubpedidos.js');
 
 const env = loadEnv();
 const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
@@ -2068,13 +2070,15 @@ try {
       
       let allInTargetStatus = false;
       let pollStartTime = Date.now();
-      
+      let lastSubOrdersForPega = [];
+
       while (!allInTargetStatus && (Date.now() - pollStartTime) < SUB_ORDER_POLL_TIMEOUT_MS) {
         const subOrderQuery = `SELECT Id, OrderNumber, Status, vtal_LXD_Produto_do_pedido__c, Vtal_Seg_PointType__c FROM Order WHERE vlocity_cmt__ParentOrderId__c = '${orderId}'`;
         const qRes = await apiCall('GET', `${QUERY_URL}?q=${encodeURIComponent(subOrderQuery)}`);
         
         if (qRes.status === 200 && qRes.data?.records?.length > 0) {
           const subOrders = qRes.data.records;
+          lastSubOrdersForPega = subOrders;
           
           // Exibir status atual
           console.log('   Status atual dos subpedidos:');
@@ -2109,7 +2113,14 @@ try {
       } else {
         console.log('Todos os subpedidos processados com sucesso!');
       }
-      return { quoteId, orderId, orderNumber, orderStatus, subOrderEmImplantacao: allInTargetStatus };
+      return {
+        quoteId,
+        orderId,
+        orderNumber,
+        orderStatus,
+        subOrderEmImplantacao: allInTargetStatus,
+        ...extractLinkDedicadoSubpedidos(lastSubOrdersForPega),
+      };
     }
 
     if (isInviableOrderError(lastOrderRes)) {
@@ -2207,27 +2218,44 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
   if (!orderNumber) fail('Order sem OrderNumber', orderGet);
   console.log('[E2E] Pedido criado — Número:', orderNumber, '| Id:', orderId, '| Status:', orderStatus);
 
-  const SUB_ORDER_STATUS_TARGETS = ['Em implantação', 'Em implementado', 'In Implementation'];
-  const SUB_ORDER_POLL_TIMEOUT_MS = 60000;
+  const SUB_ORDER_STATUS_TARGETS = ['Em implantação', 'Em implementado', 'In Implementation', 'OS aberta'];
+  const SUB_ORDER_POLL_TIMEOUT_MS = 240000;
   const SUB_ORDER_POLL_INTERVAL_MS = 5000;
-  console.log(`[E2E] 20. Poll subpedidos até Status = "${SUB_ORDER_STATUS_TARGETS.join('" ou "')}"...`);
-  const subOrderQuery = `SELECT Id, OrderNumber, Status, vtal_LXD_Produto_do_pedido__c FROM Order WHERE vlocity_cmt__ParentOrderId__c = '${orderId}'`;
-  const subDeadline = Date.now() + SUB_ORDER_POLL_TIMEOUT_MS;
-  let subOrderWithStatus = null;
-  while (Date.now() < subDeadline) {
+  console.log(`[E2E] 20. Poll subpedidos até TODOS estarem com status = "${SUB_ORDER_STATUS_TARGETS.join('" ou "')}"...`);
+  const subOrderQuery = `SELECT Id, OrderNumber, Status, vtal_LXD_Produto_do_pedido__c, Vtal_Seg_PointType__c FROM Order WHERE vlocity_cmt__ParentOrderId__c = '${orderId}'`;
+  let allInTargetStatus = false;
+  const pollStart = Date.now();
+  let lastSubOrdersForPega = [];
+  while (!allInTargetStatus && Date.now() - pollStart < SUB_ORDER_POLL_TIMEOUT_MS) {
     const qRes = await apiCall('GET', `${QUERY_URL}?q=${encodeURIComponent(subOrderQuery)}`);
     if (qRes.status === 200 && qRes.data?.records?.length > 0) {
-      subOrderWithStatus = qRes.data.records.find((r) => SUB_ORDER_STATUS_TARGETS.includes((r.Status || '').trim()));
-      if (subOrderWithStatus) {
-        console.log('   Subpedido com status "' + subOrderWithStatus.Status + '":', subOrderWithStatus.OrderNumber);
+      const subOrders = qRes.data.records;
+      lastSubOrdersForPega = subOrders;
+      console.log('   Status atual dos subpedidos:');
+      subOrders.forEach((sub) => {
+        console.log(`     - ${sub.OrderNumber} (${sub.Vtal_Seg_PointType__c || 'N/A'}): ${sub.Status || 'Draft'}`);
+      });
+      allInTargetStatus = subOrders.every((sub) => SUB_ORDER_STATUS_TARGETS.includes((sub.Status || '').trim()));
+      if (allInTargetStatus) {
+        console.log('   TODOS os subpedidos estão com status OK!');
         break;
       }
+      console.log(`   Aguardando subpedidos (${subOrders.filter((s) => !SUB_ORDER_STATUS_TARGETS.includes((s.Status || '').trim())).length} pendente(s))...`);
     }
     await delay(SUB_ORDER_POLL_INTERVAL_MS);
   }
-  if (!subOrderWithStatus) console.log('   (timeout ou ainda processando)');
+  if (!allInTargetStatus) {
+    console.log(`   (timeout após ${SUB_ORDER_POLL_TIMEOUT_MS / 1000}s ou ainda processando)`);
+  }
 
-  return { quoteId, orderId, orderNumber, orderStatus, subOrderEmImplantacao: !!subOrderWithStatus };
+  return {
+    quoteId,
+    orderId,
+    orderNumber,
+    orderStatus,
+    subOrderEmImplantacao: allInTargetStatus,
+    ...extractLinkDedicadoSubpedidos(lastSubOrdersForPega),
+  };
 }
 
 const FULL_FLOW_MAX_RUNS = 3;
@@ -2407,10 +2435,7 @@ async function main() {
       if (readyQuote) {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
-          console.log('\n*** PEDIDO GERADO ***');
-          console.log('  OrderId:', result.orderId);
-          console.log('  OrderNumber:', result.orderNumber);
-          console.log('  Status:', result.orderStatus);
+          await finalizePedidoGerado(result);
           process.exit(0);
         }
       }
@@ -2438,11 +2463,7 @@ async function main() {
       }
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        console.log('\n*** PEDIDO GERADO ***');
-        console.log('  OrderId:', result.orderId);
-        console.log('  OrderNumber:', result.orderNumber);
-        console.log('  Status:', result.orderStatus);
-        console.log('  Subpedido "Em implantação":', result.subOrderEmImplantacao ? 'sim' : 'não (timeout ou ainda processando)');
+        await finalizePedidoGerado(result);
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

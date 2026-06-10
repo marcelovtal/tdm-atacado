@@ -27,6 +27,7 @@ export function buildJobReturnPayload(result, dbSave) {
     contactTecnicoId: result.contactTecnicoId,
     pegaCaseId: result.pegaCaseId,
     pegaOrdemServicoOs: result.pegaOrdemServicoOs,
+    subOrderOrderNumber: result.subOrderOrderNumber,
     scriptSuccess: cancelled ? false : !scriptFailed,
     dbSaveError: dbSave.error ?? null,
   });

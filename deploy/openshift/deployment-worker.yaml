@@ -27,17 +27,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: tdm-qa-config
-          env:
-            - name: MYSQL_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: tdm-qa-secrets
-                  key: MYSQL_PASSWORD
-            - name: REDIS_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: tdm-qa-secrets
-                  key: REDIS_PASSWORD
+            - secretRef:
+                name: tdm-qa-secrets
           resources:
             requests:
               memory: "1Gi"

@@ -34,6 +34,8 @@ const { buildLeadPayload } = require('../support/utils/salesforce/leadPayload.js
 const { buildConvertLeadPayload, getFieldValue } = require('../support/utils/salesforce/convertLeadPayload.js');
 const { buildOrganizationPatchPayload, resolveLxdFantasyName } = require('../support/utils/salesforce/organizationPatchPayload.js');
 const { buildBusinessAccountPatchPayload } = require('../support/utils/salesforce/businessAccountPatchPayload.js');
+const { logPedidoGerado } = require('../support/utils/logPedidoGerado.js');
+const { enrichPedidoComPegaOrdem } = require('../support/utils/enrichPedidoComPegaOrdem.js');
 const { buildBillingAccountPatchPayload } = require('../support/utils/salesforce/billingAccountPatchPayload.js');
 const { buildContactPayload } = require('../support/utils/salesforce/contactPayload.js');
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
@@ -985,6 +987,7 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
       const subOrderQuery = `SELECT Id, OrderNumber, Status, vtal_LXD_Produto_do_pedido__c FROM Order WHERE vlocity_cmt__ParentOrderId__c = '${orderId}'`;
       const subDeadline = Date.now() + SUB_ORDER_POLL_TIMEOUT_MS;
       let subOrderWithStatus = null;
+      let subOrderFallback = null;
       let firstPollDone = false;
       while (Date.now() < subDeadline) {
         const qRes = await apiCall('GET', `${QUERY_URL}?q=${encodeURIComponent(subOrderQuery)}`);
@@ -993,7 +996,13 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
             console.log('   Status atual dos subpedidos:', qRes.data.records.map((r) => r.OrderNumber + '=' + (r.Status || '')).join(', '));
             firstPollDone = true;
           }
-          subOrderWithStatus = qRes.data.records.find((r) => SUB_ORDER_STATUS_TARGETS.includes((r.Status || '').trim()));
+          for (const r of qRes.data.records) {
+            if (!subOrderFallback && r.OrderNumber) subOrderFallback = r;
+            if (SUB_ORDER_STATUS_TARGETS.includes((r.Status || '').trim())) {
+              subOrderWithStatus = r;
+              break;
+            }
+          }
           if (subOrderWithStatus) {
             console.log('   Subpedido com status "' + subOrderWithStatus.Status + '":', subOrderWithStatus.OrderNumber, subOrderWithStatus.vtal_LXD_Produto_do_pedido__c || '');
             break;
@@ -1001,10 +1010,29 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
         }
         await delay(SUB_ORDER_POLL_INTERVAL_MS);
       }
-      if (!subOrderWithStatus) {
+      if (!subOrderWithStatus && subOrderFallback) {
+        subOrderWithStatus = subOrderFallback;
+        console.log(
+          '   (subpedido ainda não em implantação; ORDEMSERVICO PEGA:',
+          subOrderFallback.OrderNumber,
+          '| Status:',
+          subOrderFallback.Status || '—',
+          ')',
+        );
+      } else if (!subOrderWithStatus) {
         console.log('   (timeout: nenhum subpedido com Status "' + SUB_ORDER_STATUS_TARGETS.join('" ou "') + '" no prazo)');
       }
-      return { quoteId, orderId, orderNumber, orderStatus, subOrderEmImplantacao: !!subOrderWithStatus };
+      const subOrderReady = subOrderWithStatus
+        ? SUB_ORDER_STATUS_TARGETS.includes((subOrderWithStatus.Status || '').trim())
+        : false;
+      return {
+        quoteId,
+        orderId,
+        orderNumber,
+        orderStatus,
+        subOrderEmImplantacao: subOrderReady,
+        subOrderOrderNumber: subOrderWithStatus?.OrderNumber ?? null,
+      };
     }
 
     if (isInviableOrderError(lastOrderRes)) {
@@ -1102,16 +1130,23 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
   console.log('[E2E] Pedido criado — Número:', orderNumber, '| Id:', orderId, '| Status:', orderStatus);
 
   const SUB_ORDER_STATUS_TARGETS = ['Em implantação', 'Em implementado', 'In Implementation'];
-  const SUB_ORDER_POLL_TIMEOUT_MS = 60000;
+  const SUB_ORDER_POLL_TIMEOUT_MS = 120000;
   const SUB_ORDER_POLL_INTERVAL_MS = 5000;
   console.log(`[E2E] 20. Poll subpedidos até Status = "${SUB_ORDER_STATUS_TARGETS.join('" ou "')}"...`);
   const subOrderQuery = `SELECT Id, OrderNumber, Status, vtal_LXD_Produto_do_pedido__c FROM Order WHERE vlocity_cmt__ParentOrderId__c = '${orderId}'`;
   const subDeadline = Date.now() + SUB_ORDER_POLL_TIMEOUT_MS;
   let subOrderWithStatus = null;
+  let subOrderFallback = null;
   while (Date.now() < subDeadline) {
     const qRes = await apiCall('GET', `${QUERY_URL}?q=${encodeURIComponent(subOrderQuery)}`);
     if (qRes.status === 200 && qRes.data?.records?.length > 0) {
-      subOrderWithStatus = qRes.data.records.find((r) => SUB_ORDER_STATUS_TARGETS.includes((r.Status || '').trim()));
+      for (const r of qRes.data.records) {
+        if (!subOrderFallback && r.OrderNumber) subOrderFallback = r;
+        if (SUB_ORDER_STATUS_TARGETS.includes((r.Status || '').trim())) {
+          subOrderWithStatus = r;
+          break;
+        }
+      }
       if (subOrderWithStatus) {
         console.log('   Subpedido com status "' + subOrderWithStatus.Status + '":', subOrderWithStatus.OrderNumber);
         break;
@@ -1119,9 +1154,30 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
     }
     await delay(SUB_ORDER_POLL_INTERVAL_MS);
   }
-  if (!subOrderWithStatus) console.log('   (timeout ou ainda processando)');
+  if (!subOrderWithStatus && subOrderFallback) {
+    subOrderWithStatus = subOrderFallback;
+    console.log(
+      '   (subpedido ainda não em implantação; ORDEMSERVICO PEGA:',
+      subOrderFallback.OrderNumber,
+      '| Status:',
+      subOrderFallback.Status || '—',
+      ')',
+    );
+  } else if (!subOrderWithStatus) {
+    console.log('   (timeout ou ainda processando)');
+  }
+  const subOrderReady = subOrderWithStatus
+    ? SUB_ORDER_STATUS_TARGETS.includes((subOrderWithStatus.Status || '').trim())
+    : false;
 
-  return { quoteId, orderId, orderNumber, orderStatus, subOrderEmImplantacao: !!subOrderWithStatus };
+  return {
+    quoteId,
+    orderId,
+    orderNumber,
+    orderStatus,
+    subOrderEmImplantacao: subOrderReady,
+    subOrderOrderNumber: subOrderWithStatus?.OrderNumber ?? null,
+  };
 }
 
 const FULL_FLOW_MAX_RUNS = 3;
@@ -1180,21 +1236,14 @@ async function main() {
       if (readyQuote) {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
-          console.log('\n*** PEDIDO GERADO ***');
-          console.log('  OrderId:', result.orderId);
-          console.log('  OrderNumber:', result.orderNumber);
-          console.log('  Status:', result.orderStatus);
+          logPedidoGerado(await enrichPedidoComPegaOrdem(result));
           process.exit(0);
         }
       }
       const accountIds = skipLead || (await runLeadFlow(instanceUrl, accessToken, cookie));
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        console.log('\n*** PEDIDO GERADO ***');
-        console.log('  OrderId:', result.orderId);
-        console.log('  OrderNumber:', result.orderNumber);
-        console.log('  Status:', result.orderStatus);
-        console.log('  Subpedido "Em implantação":', result.subOrderEmImplantacao ? 'sim' : 'não (timeout ou ainda processando)');
+        logPedidoGerado(await enrichPedidoComPegaOrdem(result));
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

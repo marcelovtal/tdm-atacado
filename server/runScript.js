@@ -19,6 +19,7 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
       orderStatus: null,
       pegaCaseId: null,
       pegaOrdemServicoOs: null,
+      subOrderOrderNumber: null,
     });
   }
 
@@ -64,6 +65,7 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
         orderStatus: null,
         pegaCaseId: null,
         pegaOrdemServicoOs: null,
+        subOrderOrderNumber: null,
       });
     });
 
@@ -80,6 +82,7 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
       const accountOrganizationId = parseAccountOrganizationId(stdout);
       const contactTecnicoId = parseContactTecnicoId(stdout);
       const pegaCaseId = parsePegaCaseId(stdout);
+      const subOrderOrderNumber = parseSubpedidoOrderNumber(stdout);
       const pegaOrdemServicoOs = parsePegaOrdemServicoOs(stdout);
 
       resolve({
@@ -103,6 +106,7 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
         contactTecnicoId,
         pegaCaseId,
         pegaOrdemServicoOs,
+        subOrderOrderNumber,
       });
     });
   });
@@ -169,6 +173,15 @@ function parsePegaCaseId(text) {
 }
 
 function parsePegaOrdemServicoOs(text) {
-  const m = text.match(/PEGA OS:\s*(OS-\d+)/);
+  let m = text.match(/PEGA OS:\s*(OS-\d+)/i);
+  if (m) return m[1].trim().toUpperCase();
+  m = text.match(/PegaOrdemServicoOs:\s*(OS-\d+)/i);
+  return m ? m[1].trim().toUpperCase() : null;
+}
+
+function parseSubpedidoOrderNumber(text) {
+  let m = text.match(/SubpedidoOrderNumber:\s*(\S+)/i);
+  if (m) return m[1].trim();
+  m = text.match(/Subpedido OrderNumber \(PEGA ORDEMSERVICO\):\s*(\S+)/i);
   return m ? m[1].trim() : null;
 }

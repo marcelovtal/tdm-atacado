@@ -420,6 +420,7 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
       result.contactTecnicoId = rv.contactTecnicoId;
       result.pegaCaseId = rv.pegaCaseId;
       result.pegaOrdemServicoOs = rv.pegaOrdemServicoOs;
+      result.subOrderOrderNumber = rv.subOrderOrderNumber;
     }
     const rowByJob = await getJobExecutionByJobId(String(job.id));
     if (rowByJob && result.result) {
@@ -475,6 +476,7 @@ function formatJob(job) {
     contactTecnicoId: job.returnvalue?.contactTecnicoId ?? null,
     pegaCaseId: job.returnvalue?.pegaCaseId ?? null,
     pegaOrdemServicoOs: job.returnvalue?.pegaOrdemServicoOs ?? null,
+    subOrderOrderNumber: job.returnvalue?.subOrderOrderNumber ?? null,
     ownerVt: job.data?.createdByVt || null,
   };
 }

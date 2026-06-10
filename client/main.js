@@ -139,15 +139,22 @@ function renderJobCard(j) {
       <span class="job-status ${(j.status || '').toLowerCase()}">${statusLabel(j.status)}</span>
       <span class="job-time">${formatTime(j.timestamp)}</span>
       ${
-        j.orderNumber
-          ? `<span class="job-result">Pedido: ${escapeHtml(j.orderNumber)}</span>`
-          : j.status === 'failed' && j.error
+        (() => {
+          const pegaOs = j.pegaOrdemServicoOs;
+          if (j.orderNumber && pegaOs) {
+            return `<span class="job-result">Pedido: ${escapeHtml(j.orderNumber)} · PEGA: ${escapeHtml(pegaOs)}</span>`;
+          }
+          if (pegaOs) return `<span class="job-result">PEGA: ${escapeHtml(pegaOs)}</span>`;
+          if (j.orderNumber) return `<span class="job-result">Pedido: ${escapeHtml(j.orderNumber)}</span>`;
+          return null;
+        })() ||
+        (j.status === 'failed' && j.error
             ? `<span class="job-result job-result--error">${escapeHtml(j.error.length > 72 ? `${j.error.slice(0, 72)}…` : j.error)}</span>`
             : j.status === 'cancelled'
               ? `<span class="job-result job-result--muted">Cancelado</span>`
               : j.accountBillingId
               ? `<span class="job-result">Conta BRM: ${escapeHtml(j.accountBillingId)}</span>`
-              : ''
+              : '')
       }
       <span class="job-actions">${cancelBtn}</span>
     </article>
@@ -334,15 +341,16 @@ async function openJobDetail(id) {
         </div>
       </div>
           ` : ''
-          : (r.orderId || r.orderNumber || r.pegaCaseId || r.pegaOrdemServicoOs) ? `
+          : (r.orderId || r.orderNumber || r.subOrderOrderNumber || r.pegaCaseId || r.pegaOrdemServicoOs) ? `
       <div class="detail-row">
         <div class="detail-label">Resultado</div>
         <div class="detail-value">
           ${r.orderId ? `OrderId: ${escapeHtml(r.orderId)}<br>` : ''}
-          ${r.orderNumber ? `OrderNumber: ${escapeHtml(r.orderNumber)}<br>` : ''}
+          ${r.orderNumber ? `OrderNumber (pedido): ${escapeHtml(r.orderNumber)}<br>` : ''}
           ${r.orderStatus ? `Status: ${escapeHtml(r.orderStatus)}<br>` : ''}
-          ${r.pegaCaseId ? `PEGA: ${escapeHtml(r.pegaCaseId)}<br>` : ''}
-          ${r.pegaOrdemServicoOs ? `PEGA: ${escapeHtml(r.pegaOrdemServicoOs)}` : ''}
+          ${r.pegaOrdemServicoOs ? `PEGA Ordem (OSS): ${escapeHtml(r.pegaOrdemServicoOs)}<br>` : ''}
+          ${r.pegaCaseId ? `PEGA Caso: ${escapeHtml(r.pegaCaseId)}<br>` : ''}
+          ${r.subOrderOrderNumber && !r.pegaOrdemServicoOs ? `Subpedido (SF): ${escapeHtml(r.subOrderOrderNumber)}` : ''}
         </div>
       </div>
           ` : ''

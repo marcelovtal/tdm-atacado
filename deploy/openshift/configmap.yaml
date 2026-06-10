@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: tdm-qa-config
-  namespace: automation-tdm-qa
+  namespace: qualidade-automation-tdm-qa
   labels:
     app: tdm-qa
 data:
@@ -20,3 +20,7 @@ data:
   REDIS_MASTER_NAME: "TDMQA"
   WORKER_CONCURRENCY: "1"
   JOB_ATTEMPTS: "2"
+  ENVIRONMENT: "ti"
+  AUTH_MODE: "ldap"
+  LDAP_URL: "ldap://10.101.0.13:389"
+  LDAP_DOMAIN: "CORPORATIVO"

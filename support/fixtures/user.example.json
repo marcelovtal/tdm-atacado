@@ -1,0 +1,50 @@
+{
+  "ti": {
+    "salesforce": {
+      "grant_type": "client_credentials",
+      "client_id": "SEU_SALESFORCE_CONSUMER_KEY",
+      "client_secret": "SEU_SALESFORCE_CONSUMER_SECRET",
+      "tokenUrl": "https://sua-instancia.sandbox.my.salesforce.com/services/oauth2/token",
+      "cookie": ""
+    },
+    "pega": {
+      "token_url": "https://sua-instancia.pega.net/prweb/PRRestService/oauth2/v1/token",
+      "base_url": "https://sua-instancia.pega.net",
+      "client_id": "SEU_PEGA_CLIENT_ID",
+      "client_secret": "SEU_PEGA_CLIENT_SECRET",
+      "cookie": ""
+    }
+  },
+  "dev": {
+    "salesforce": {
+      "grant_type": "client_credentials",
+      "client_id": "SEU_SALESFORCE_CONSUMER_KEY",
+      "client_secret": "SEU_SALESFORCE_CONSUMER_SECRET",
+      "tokenUrl": "https://sua-instancia.sandbox.my.salesforce.com/services/oauth2/token",
+      "cookie": ""
+    },
+    "pega": {
+      "token_url": "https://sua-instancia.pega.net/prweb/PRRestService/oauth2/v1/token",
+      "base_url": "https://sua-instancia.pega.net",
+      "client_id": "SEU_PEGA_CLIENT_ID",
+      "client_secret": "SEU_PEGA_CLIENT_SECRET",
+      "cookie": ""
+    }
+  },
+  "trg": {
+    "salesforce": {
+      "grant_type": "client_credentials",
+      "client_id": "SEU_SALESFORCE_CONSUMER_KEY_TRG",
+      "client_secret": "SEU_SALESFORCE_CONSUMER_SECRET_TRG",
+      "tokenUrl": "https://sua-instancia-trg.sandbox.my.salesforce.com/services/oauth2/token",
+      "cookie": ""
+    },
+    "pega": {
+      "token_url": "https://sua-instancia-stg.pega.net/prweb/PRRestService/oauth2/v1/token",
+      "base_url": "https://sua-instancia-stg.pega.net",
+      "client_id": "SEU_PEGA_CLIENT_ID",
+      "client_secret": "SEU_PEGA_CLIENT_SECRET",
+      "cookie": ""
+    }
+  }
+}

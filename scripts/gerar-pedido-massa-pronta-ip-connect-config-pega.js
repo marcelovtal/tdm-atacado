@@ -53,6 +53,7 @@ const { buildBusinessAccountPatchPayload } = require('../support/utils/salesforc
 const { buildBillingAccountPatchPayload } = require('../support/utils/salesforce/billingAccountPatchPayload.js');
 const { buildContactPayload } = require('../support/utils/salesforce/contactPayload.js');
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
+const { logPedidoGerado } = require('../support/utils/logPedidoGerado.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 const {
@@ -1399,15 +1400,12 @@ async function main() {
       if (readyQuote) {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
-          console.log('\n*** PEDIDO GERADO ***');
-          console.log('  OrderId:', result.orderId);
-          console.log('  OrderNumber:', result.orderNumber);
-          console.log('  Status:', result.orderStatus);
-          console.log('  Subpedido "Em implantação":', result.subOrderEmImplantacao ? 'sim' : 'não (timeout ou ainda processando)');
-          if (result.subOrderOrderNumber) {
-            console.log('  Subpedido OrderNumber (PEGA ORDEMSERVICO):', result.subOrderOrderNumber);
-          }
-          await runPegaAfterSuborderIfConfigured(result.subOrderOrderNumber);
+          const pegaResult = await runPegaAfterSuborderIfConfigured(result.subOrderOrderNumber);
+          logPedidoGerado({
+            ...result,
+            pegaCaseId: pegaResult?.caseId,
+            pegaOrdemServicoOs: pegaResult?.pegaOrdemServicoOs,
+          });
           process.exit(0);
         }
       }
@@ -1425,15 +1423,12 @@ async function main() {
       }
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        console.log('\n*** PEDIDO GERADO ***');
-        console.log('  OrderId:', result.orderId);
-        console.log('  OrderNumber:', result.orderNumber);
-        console.log('  Status:', result.orderStatus);
-        console.log('  Subpedido "Em implantação":', result.subOrderEmImplantacao ? 'sim' : 'não (timeout ou ainda processando)');
-        if (result.subOrderOrderNumber) {
-          console.log('  Subpedido OrderNumber (PEGA ORDEMSERVICO):', result.subOrderOrderNumber);
-        }
-        await runPegaAfterSuborderIfConfigured(result.subOrderOrderNumber);
+        const pegaResult = await runPegaAfterSuborderIfConfigured(result.subOrderOrderNumber);
+        logPedidoGerado({
+          ...result,
+          pegaCaseId: pegaResult?.caseId,
+          pegaOrdemServicoOs: pegaResult?.pegaOrdemServicoOs,
+        });
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);
