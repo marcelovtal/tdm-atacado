@@ -271,7 +271,9 @@ As probes usam **TCP na porta 3333** (não HTTP em `/api/config`, que exige logi
 
 ```cmd
 oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
+oc get deployment tdm-qa-api tdm-qa-worker -n qualidade-automation-tdm-qa
 oc get route atacado -n qualidade-automation-tdm-qa
+oc get endpoints tdm-qa-api -n qualidade-automation-tdm-qa
 oc logs deployment/tdm-qa-api -n qualidade-automation-tdm-qa --tail=50
 oc logs deployment/tdm-qa-worker -n qualidade-automation-tdm-qa --tail=50
 oc get resourcequota -n qualidade-automation-tdm-qa
@@ -299,7 +301,80 @@ Login: VT corporativo + senha de rede (LDAP).
 
 ---
 
-## 8. Atualizar código (redeploy)
+## 8. Site fora do ar (`Application is not available`)
+
+A mensagem *"The application is currently not serving requests at this endpoint"* aparece quando a **Route existe**, mas **não há pods saudáveis** atrás do Service. Na maioria dos casos **não é preciso build novo**.
+
+### Passo 1 — Diagnóstico
+
+```cmd
+oc project qualidade-automation-tdm-qa
+
+oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
+oc get deployment tdm-qa-api tdm-qa-worker -n qualidade-automation-tdm-qa
+oc get route atacado -n qualidade-automation-tdm-qa
+oc get endpoints tdm-qa-api -n qualidade-automation-tdm-qa
+```
+
+### Passo 2 — Interpretar o resultado
+
+| O que você vê | Significado |
+|---------------|-------------|
+| `No resources found` nos pods | Deployments com **0 réplicas** — ninguém escalou de volta após build |
+| Deployment `READY 0/0` | Mesmo problema |
+| Endpoints `<none>` | Service sem pod — Route não encaminha tráfego |
+| Pod `CrashLoopBackOff` | Pod sobe e cai — ver logs (MySQL, Redis, ConfigMap) |
+| Pod `1/1 Running` + Endpoints com IP | App no ar — testar URL no browser |
+
+### Passo 3 — Corrigir (causa mais comum: 0 réplicas)
+
+Isso acontece após `oc scale deployment/tdm-qa-worker --replicas=0` para liberar quota no build, ou se os Deployments ficaram em 0 por outro motivo:
+
+```cmd
+oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
+oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
+```
+
+Aguarde `1/1 Running` e abra:
+
+https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.html
+
+> **Login OK, mas Dashboard ou Sair falham** com a mesma página do OpenShift: os pods provavelmente ficaram em `0/0` entre uma navegação e outra. Mesmo `oc scale` — não é path diferente na Route.
+
+### Passo 4 — Se ainda falhar
+
+```cmd
+oc logs deployment/tdm-qa-api -n qualidade-automation-tdm-qa --tail=30
+oc logs deployment/tdm-qa-worker -n qualidade-automation-tdm-qa --tail=30
+```
+
+### Passo 5 — CLI sem conexão
+
+```
+lookup api.ocparc-nprd.vtal.intra: no such host
+```
+
+Conecte **VPN / rede corporativa**, depois:
+
+```cmd
+oc login --token=<SEU_TOKEN> --server=https://api.ocparc-nprd.vtal.intra:6443
+```
+
+Alternativa: console web → **Networking → Routes** → verificar Route `atacado` → **Workloads → Pods**.
+
+### Lembrete após cada build
+
+Sempre que escalar o worker para 0 antes do build, **suba os dois Deployments de novo**:
+
+```cmd
+oc rollout restart deployment/tdm-qa-api -n qualidade-automation-tdm-qa
+oc scale deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
+oc rollout restart deployment/tdm-qa-worker -n qualidade-automation-tdm-qa
+```
+
+---
+
+## 9. Atualizar código (redeploy)
 
 Fluxo completo após alterações no código:
 
@@ -332,7 +407,7 @@ oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker -n qualidade-a
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 ### `InvalidImageName` nos pods
 
@@ -404,17 +479,7 @@ oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker
 
 ### `Application is not available` na Route
 
-**Causa:** nenhum pod `Ready` (CrashLoopBackOff).
-
-**Solução:** `oc get pods` + `oc logs deployment/tdm-qa-api --tail=30` — corrigir MySQL/Redis/ConfigMap.
-
----
-
-### Deployments com `replicas: 0` e sem pods
-
-```cmd
-oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
-```
+Ver seção **[8. Site fora do ar](#8-site-fora-do-ar-application-is-not-available)** — fluxo completo de diagnóstico.
 
 ---
 
@@ -426,7 +491,7 @@ oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidad
 
 ---
 
-## 10. O que não versionar
+## 11. O que não versionar
 
 | Item | Motivo |
 |------|--------|
@@ -437,7 +502,7 @@ oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidad
 
 ---
 
-## 11. Referência rápida de arquivos
+## 12. Referência rápida de arquivos
 
 | Arquivo | Função |
 |---------|--------|

@@ -198,7 +198,10 @@ Dependências **fora do cluster** (pods precisam de rede até elas):
 
 **Cluster:** ARC-NPRD (`api.ocparc-nprd.vtal.intra:6443`)  
 **Namespace:** `qualidade-automation-tdm-qa`  
-**ServiceAccount:** `automacaoqa` (ajustar nos YAMLs se o nome no cluster for diferente)
+**ServiceAccount:** `automacaoqa`  
+**URL (Route `atacado`):** https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.html
+
+> Guia operacional completo (build, secrets, troubleshooting): [`deploy/openshift/README.md`](deploy/openshift/README.md)
 
 ### Checklist antes do deploy
 
@@ -207,7 +210,8 @@ Dependências **fora do cluster** (pods precisam de rede até elas):
 - [ ] Pods com egress para MySQL, Redis Sentinel, LDAP, Salesforce e PEGA
 - [ ] Imagem publicada (`oc start-build tdm-qa` ou push manual para o ImageStream `tdm-qa:latest`)
 - [ ] Secrets criados (senhas + credenciais Salesforce/PEGA — **não commitar**)
-- [ ] Route criada apontando para o Service `tdm-qa-api:3333`
+- [ ] Route `atacado` criada apontando para o Service `tdm-qa-api:3333`
+- [ ] Deployments `tdm-qa-api` e `tdm-qa-worker` com **1 réplica** cada (`READY 1/1`)
 
 ### 1. Build da imagem
 
@@ -220,6 +224,11 @@ oc new-build --name=tdm-qa --binary=true --strategy=docker -n qualidade-automati
 # A cada deploy (na raiz do repo; escale worker para 0 se quota estiver cheia)
 oc scale deployment/tdm-qa-worker --replicas=0 -n qualidade-automation-tdm-qa
 oc start-build tdm-qa --from-dir=. --wait -n qualidade-automation-tdm-qa
+
+# IMPORTANTE: após o build, subir os pods de novo
+oc rollout restart deployment/tdm-qa-api -n qualidade-automation-tdm-qa
+oc scale deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
+oc rollout restart deployment/tdm-qa-worker -n qualidade-automation-tdm-qa
 ```
 
 **Opção B — Docker local + push** (se o build no cluster falhar por rede):
@@ -316,24 +325,98 @@ oc apply -f deploy/openshift/route.yaml
 
 Escale conforme necessidade (QA costuma usar `replicas: 1` em cada).
 
-### 5. Route (acesso web)
+### 5. Route `atacado` (acesso web)
 
-Os manifests expõem apenas o `Service` `tdm-qa-api` na porta `3333`. Crie uma **Route** no console (Networking → Routes) ou via manifest, apontando para esse Service. Entregue a URL aos QAs.
+Arquivo: `deploy/openshift/route.yaml`. A URL pública segue o padrão `{nome-da-route}-{namespace}.apps...`:
+
+```
+https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.html
+```
+
+O Service interno continua `tdm-qa-api` — só o nome da Route define o hostname.
+
+```bash
+oc apply -f deploy/openshift/route.yaml
+oc get route atacado -n qualidade-automation-tdm-qa
+```
+
+Para trocar a URL antiga (`tdm-qa-api-...`):
+
+```bash
+oc delete route tdm-qa-api -n qualidade-automation-tdm-qa
+oc apply -f deploy/openshift/route.yaml
+```
 
 ### 6. Validação pós-deploy
 
 ```bash
-# Pods rodando
 oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
+oc get deployment tdm-qa-api tdm-qa-worker -n qualidade-automation-tdm-qa
+oc get route atacado -n qualidade-automation-tdm-qa
+oc get endpoints tdm-qa-api -n qualidade-automation-tdm-qa
 
-# Logs API (Redis / MySQL / LDAP)
-oc logs -l component=api -n qualidade-automation-tdm-qa --tail=100
+oc logs deployment/tdm-qa-api -n qualidade-automation-tdm-qa --tail=50
+oc logs deployment/tdm-qa-worker -n qualidade-automation-tdm-qa --tail=50
+```
 
-# Logs Worker (execução de scripts)
-oc logs -l component=worker -n qualidade-automation-tdm-qa --tail=100
+**Sucesso esperado:**
 
-# URL da aplicação (login LDAP)
-# https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.html
+| Verificação | Esperado |
+|-------------|----------|
+| Pods | `tdm-qa-api` e `tdm-qa-worker` em `1/1 Running` |
+| Deployments | `READY 1/1`, `AVAILABLE 1` |
+| Endpoints | IP:3333 (não `<none>`) |
+| Logs API | `Perfil: qa`, MySQL e Redis conectados |
+
+### 7. Site fora do ar (`Application is not available`)
+
+Se a URL não abre (nem a antiga nem `atacado-...`), **não precisa de build novo** na maioria dos casos. Diagnóstico:
+
+```bash
+oc project qualidade-automation-tdm-qa
+
+oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
+oc get deployment tdm-qa-api tdm-qa-worker -n qualidade-automation-tdm-qa
+oc get route atacado -n qualidade-automation-tdm-qa
+oc get endpoints tdm-qa-api -n qualidade-automation-tdm-qa
+```
+
+#### Causa mais comum: Deployments com 0 réplicas
+
+Após build (worker escalado para 0 por quota) ou intervenção manual, os Deployments podem ficar em `0/0` — a Route existe, mas **não há pods** atrás do Service.
+
+```
+NAME           READY   UP-TO-DATE   AVAILABLE
+tdm-qa-api     0/0     0            0        ← problema
+tdm-qa-worker  0/0     0            0        ← problema
+```
+
+**Solução (sem rebuild):**
+
+```bash
+oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
+oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
+```
+
+Aguarde `1/1 Running` e teste: https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.html
+
+> **Sintoma:** login ou `index.html` abrem, mas Dashboard / Sair mostram *Application is not available* — em geral os pods caíram **depois** do login (Deployments em `0/0`). Rode o `oc scale` acima; não é URL diferente por página.
+
+#### Outras causas
+
+| Sintoma | O que verificar |
+|---------|-----------------|
+| `No resources found` nos pods | Deployments em 0 — `oc scale ... --replicas=1` |
+| Endpoints `<none>` | Mesmo que acima — sem pod, Route não encaminha tráfego |
+| `CrashLoopBackOff` | `oc logs deployment/tdm-qa-api --tail=30` — MySQL, Redis ou ConfigMap |
+| `oc`: `no such host` | VPN / rede corporativa; depois `oc login` de novo |
+| Route não existe | `oc apply -f deploy/openshift/route.yaml` |
+
+#### Depois de corrigir
+
+```bash
+oc logs deployment/tdm-qa-api -n qualidade-automation-tdm-qa --tail=20
+oc logs deployment/tdm-qa-worker -n qualidade-automation-tdm-qa --tail=20
 ```
 
 Testes funcionais (com credenciais já nos Secrets):
@@ -348,7 +431,7 @@ Para validar PEGA isoladamente (no pod worker ou job de debug):
 ENVIRONMENT=trg node scripts/test-pega-auth.js
 ```
 
-### 7. O que não versionar
+### 8. O que não versionar
 
 | Arquivo / dado | Motivo |
 |----------------|--------|
@@ -359,7 +442,7 @@ ENVIRONMENT=trg node scripts/test-pega-auth.js
 
 Template seguro para devs: `support/fixtures/user.example.json`.
 
-### 8. Contato com o time de QA
+### 9. Contato com o time de QA
 
 - **Admin da plataforma (fixo):** VT `VT422570` — vê todos os jobs e tela Admin
 - **Permissões extras** (Dashboard, cancelar jobs): tabela MySQL `access_control_users` ou tela Admin
