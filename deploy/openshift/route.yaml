@@ -1,0 +1,21 @@
+# Ajuste host conforme DNS interno / Route criada pela infra.
+# Alternativa: criar Route pelo console (Networking → Routes) apontando para Service tdm-qa-api:3333.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: atacado
+  namespace: qualidade-automation-tdm-qa
+  labels:
+    app: tdm-qa
+    component: api
+spec:
+  to:
+    kind: Service
+    name: tdm-qa-api
+    weight: 100
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+  wildcardPolicy: None
+  # host: atacado.apps.ocparc-nprd.vtal.intra  # descomente para URL curta (pode exigir aprovação da infra)

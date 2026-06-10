@@ -1,4 +1,4 @@
-# Build do front (Vite) + dependências de produção (sqlite3 usa prebuild aqui)
+# Build do front (Vite) + dependências de produção (sem sqlite — só local)
 FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app

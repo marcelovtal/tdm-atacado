@@ -1,6 +1,5 @@
 import path from 'path';
 import fs from 'fs';
-import sqlite3 from 'sqlite3';
 import { config } from './config.js';
 import { logDb, logDbSave } from './monitor.js';
 import {
@@ -46,6 +45,15 @@ function get(sql, params = []) {
 }
 
 async function initSqliteDatabase() {
+  let sqlite3;
+  try {
+    ({ default: sqlite3 } = await import('sqlite3'));
+  } catch (err) {
+    throw new Error(
+      'SQLite indisponível neste ambiente (pacote sqlite3 não instalado). Em QA/OpenShift use DATABASE_DRIVER=mysql.',
+      { cause: err }
+    );
+  }
   const DB_PATH = config.database.sqlitePath;
   const DB_DIR = path.dirname(DB_PATH);
   fs.mkdirSync(DB_DIR, { recursive: true });

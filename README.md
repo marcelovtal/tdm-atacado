@@ -85,7 +85,7 @@ Infra QA (referência):
 
 - **MySQL:** `ATDMQX01.local` (banco `tdm_qa`, usuário `automacaoqa`) — use o **hostname**, não só o IP; em muitas redes o IP `10.101.37.168` dá `ETIMEDOUT` enquanto o `.local` funciona (como no teste Python).
 - **Redis:** `ATDMQX02.local` via **Sentinel** porta `26379`, master `TDMQA`
-- **OpenShift:** cluster ARC-NPRD, namespace `automation-tdm-qa` — manifests em `deploy/openshift/`
+- **OpenShift:** cluster ARC-NPRD, namespace `qualidade-automation-tdm-qa` — manifests em `deploy/openshift/`
 
 4. Credenciais dos scripts (Salesforce / PEGA):
 
@@ -197,45 +197,63 @@ Dependências **fora do cluster** (pods precisam de rede até elas):
 | **PEGA** | `vtal-omvtal-qa.pega.net` (TI) / `vtal-omvtal-stg1.pega.net` (TRG) | Scripts com configuração PEGA |
 
 **Cluster:** ARC-NPRD (`api.ocparc-nprd.vtal.intra:6443`)  
-**Namespace:** `automation-tdm-qa`  
+**Namespace:** `qualidade-automation-tdm-qa`  
 **ServiceAccount:** `automacaoqa` (ajustar nos YAMLs se o nome no cluster for diferente)
 
 ### Checklist antes do deploy
 
-- [ ] Namespace `automation-tdm-qa` criado e com permissão de deploy
+- [ ] Namespace `qualidade-automation-tdm-qa` criado e com permissão de deploy
 - [ ] ServiceAccount `automacaoqa` existente no namespace
 - [ ] Pods com egress para MySQL, Redis Sentinel, LDAP, Salesforce e PEGA
-- [ ] Imagem publicada no registry interno (substituir `REPLACE_IMAGE_REGISTRY/tdm-qa:latest` nos YAMLs)
+- [ ] Imagem publicada (`oc start-build tdm-qa` ou push manual para o ImageStream `tdm-qa:latest`)
 - [ ] Secrets criados (senhas + credenciais Salesforce/PEGA — **não commitar**)
 - [ ] Route criada apontando para o Service `tdm-qa-api:3333`
 
-### 1. Build e push da imagem
+### 1. Build da imagem
 
-Na raiz do repositório:
+**Opção A — Build no OpenShift (sem esteira CI/CD, recomendado para testes):**
 
 ```bash
-docker build -t <registry-interno>/tdm-qa:<tag> .
-docker push <registry-interno>/tdm-qa:<tag>
+# Primeira vez
+oc new-build --name=tdm-qa --binary=true --strategy=docker -n qualidade-automation-tdm-qa
+
+# A cada deploy (na raiz do repo; escale worker para 0 se quota estiver cheia)
+oc scale deployment/tdm-qa-worker --replicas=0 -n qualidade-automation-tdm-qa
+oc start-build tdm-qa --from-dir=. --wait -n qualidade-automation-tdm-qa
 ```
 
-A imagem inclui `server/`, `scripts/`, `support/environment/env.json` e o front buildado em `client/dist`. **Não inclui** `support/fixtures/user.json` (está no `.gitignore`).
+**Opção B — Docker local + push** (se o build no cluster falhar por rede):
+
+```bash
+oc registry login
+docker build -t <registry>/qualidade-automation-tdm-qa/tdm-qa:latest .
+docker push <registry>/qualidade-automation-tdm-qa/tdm-qa:latest
+```
+
+A imagem inclui `server/`, `scripts/`, `support/environment/env.json` e o front buildado em `client/dist`. **Não inclui** `support/fixtures/user.json` nem `sqlite3` (só dev local).
+
+**Guia completo com troubleshooting:** [`deploy/openshift/README.md`](deploy/openshift/README.md)
 
 ### 2. Secret `tdm-qa-secrets`
 
 Crie no namespace (valores reais via `oc`, cofre ou pipeline — nunca no Git):
 
 ```bash
-oc project automation-tdm-qa
+oc project qualidade-automation-tdm-qa
 
 oc create secret generic tdm-qa-secrets \
   --from-literal=MYSQL_PASSWORD='<senha_mysql>' \
   --from-literal=REDIS_PASSWORD='<senha_redis>' \
   --from-literal=SESSION_SECRET='<segredo_forte_aleatorio>' \
-  --from-literal=SF_CONSUMER_KEY='<salesforce_consumer_key>' \
-  --from-literal=SF_CONSUMER_SECRET='<salesforce_consumer_secret>' \
-  --from-literal=PEGA_CLIENT_ID='<pega_client_id>' \
-  --from-literal=PEGA_CLIENT_SECRET='<pega_client_secret>' \
-  -n automation-tdm-qa
+  --from-literal=SF_TI_CLIENT_ID='<salesforce_ti_client_id>' \
+  --from-literal=SF_TI_CLIENT_SECRET='<salesforce_ti_client_secret>' \
+  --from-literal=PEGA_TI_CLIENT_ID='<pega_ti_client_id>' \
+  --from-literal=PEGA_TI_CLIENT_SECRET='<pega_ti_client_secret>' \
+  --from-literal=SF_TRG_CLIENT_ID='<salesforce_trg_client_id>' \
+  --from-literal=SF_TRG_CLIENT_SECRET='<salesforce_trg_client_secret>' \
+  --from-literal=PEGA_TRG_CLIENT_ID='<pega_trg_client_id>' \
+  --from-literal=PEGA_TRG_CLIENT_SECRET='<pega_trg_client_secret>' \
+  -n qualidade-automation-tdm-qa
 ```
 
 | Chave do Secret | Obrigatório | Descrição |
@@ -243,10 +261,12 @@ oc create secret generic tdm-qa-secrets \
 | `MYSQL_PASSWORD` | Sim | Senha do usuário `automacaoqa` no banco `tdm_qa` |
 | `REDIS_PASSWORD` | Sim | Senha do Redis (master Sentinel `TDMQA`) |
 | `SESSION_SECRET` | Sim | Segredo de sessão da API (cookies de login) |
-| `SF_CONSUMER_KEY` | Sim* | Consumer Key OAuth2 Salesforce |
-| `SF_CONSUMER_SECRET` | Sim* | Consumer Secret OAuth2 Salesforce |
-| `PEGA_CLIENT_ID` | Sim** | Client ID OAuth2 PEGA (scripts com config PEGA) |
-| `PEGA_CLIENT_SECRET` | Sim** | Client Secret OAuth2 PEGA |
+| `SF_TI_CLIENT_ID` / `SF_TI_CLIENT_SECRET` | Sim* | Salesforce ambiente TI (`ENVIRONMENT=ti`) |
+| `PEGA_TI_CLIENT_ID` / `PEGA_TI_CLIENT_SECRET` | Sim** | PEGA ambiente TI |
+| `SF_TRG_CLIENT_ID` / `SF_TRG_CLIENT_SECRET` | Sim* | Salesforce ambiente TRG (`ENVIRONMENT=trg`) |
+| `PEGA_TRG_CLIENT_ID` / `PEGA_TRG_CLIENT_SECRET` | Sim** | PEGA ambiente TRG |
+| `SF_CONSUMER_KEY` / `SF_CONSUMER_SECRET` | Legado | Override genérico (ambiente ativo) |
+| `PEGA_CLIENT_ID` / `PEGA_CLIENT_SECRET` | Legado | Override genérico PEGA |
 | `SF_ACCESS_TOKEN` | Alternativa | Se definido, dispensa `SF_CONSUMER_KEY` / `SF_CONSUMER_SECRET` |
 | `SF_USERNAME` / `SF_PASSWORD` | Opcional | Apenas se `SF_GRANT_TYPE=password` |
 | `PEGA_BEARER_TOKEN` | Opcional | Token fixo PEGA (validação manual / bypass OAuth) |
@@ -285,11 +305,13 @@ oc apply -f deploy/openshift/configmap.yaml
 Substitua a imagem nos YAMLs e aplique:
 
 ```bash
+oc apply -f deploy/openshift/serviceaccount.yaml
 oc apply -f deploy/openshift/deployment-api.yaml
 oc apply -f deploy/openshift/deployment-worker.yaml
+oc apply -f deploy/openshift/route.yaml
 ```
 
-- **API:** readiness/liveness em `GET /api/config:3333`
+- **API:** readiness/liveness em **TCP :3333** (`/api/config` exige login e retorna 401)
 - **Worker:** sem HTTP; processa fila Redis — se o worker cair, jobs ficam pendentes
 
 Escale conforme necessidade (QA costuma usar `replicas: 1` em cada).
@@ -302,16 +324,16 @@ Os manifests expõem apenas o `Service` `tdm-qa-api` na porta `3333`. Crie uma *
 
 ```bash
 # Pods rodando
-oc get pods -l app=tdm-qa -n automation-tdm-qa
+oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
 
 # Logs API (Redis / MySQL / LDAP)
-oc logs -l component=api -n automation-tdm-qa --tail=100
+oc logs -l component=api -n qualidade-automation-tdm-qa --tail=100
 
 # Logs Worker (execução de scripts)
-oc logs -l component=worker -n automation-tdm-qa --tail=100
+oc logs -l component=worker -n qualidade-automation-tdm-qa --tail=100
 
-# Health da API (dentro do cluster ou via Route)
-curl -s https://<route>/api/config
+# URL da aplicação (login LDAP)
+# https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.html
 ```
 
 Testes funcionais (com credenciais já nos Secrets):

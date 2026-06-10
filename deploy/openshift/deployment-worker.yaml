@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: tdm-qa-worker
-  namespace: automation-tdm-qa
+  namespace: qualidade-automation-tdm-qa
   labels:
     app: tdm-qa
     component: worker
@@ -21,7 +21,7 @@ spec:
       serviceAccountName: automacaoqa
       containers:
         - name: worker
-          image: REPLACE_IMAGE_REGISTRY/tdm-qa:latest
+          image: image-registry.openshift-image-registry.svc:5000/qualidade-automation-tdm-qa/tdm-qa:latest
           imagePullPolicy: Always
           command: ["node", "server/worker.js"]
           envFrom:

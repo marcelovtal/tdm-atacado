@@ -34,37 +34,85 @@ function envTrim(name) {
   return v == null ? '' : String(v).trim();
 }
 
+/** Primeiro valor não vazio: env tem prioridade sobre user.json (OpenShift Secret / .env). */
+function pickFirst(...candidates) {
+  for (const c of candidates) {
+    const s = c == null ? '' : String(c).trim();
+    if (s) return s;
+  }
+  return '';
+}
+
+/** Ex.: envScopedKey('SF', 'ti', 'CLIENT_ID') → SF_TI_CLIENT_ID (Secret OpenShift). */
+function envScopedKey(system, envName, field) {
+  const env = String(envName || 'ti').trim().toUpperCase();
+  return envTrim(`${system}_${env}_${field}`);
+}
+
 function hasSalesforceEnvVars() {
   return Boolean(
     envTrim('SF_CONSUMER_KEY')
     || envTrim('SF_CONSUMER_SECRET')
+    || envTrim('SF_TI_CLIENT_ID')
+    || envTrim('SF_TI_CLIENT_SECRET')
+    || envTrim('SF_TRG_CLIENT_ID')
+    || envTrim('SF_TRG_CLIENT_SECRET')
     || envTrim('SF_USERNAME')
     || envTrim('SF_PASSWORD')
     || envTrim('SF_ACCESS_TOKEN'),
   );
 }
 
-function buildSalesforceFromEnv(envName) {
-  const grantType = envTrim('SF_GRANT_TYPE') || 'client_credentials';
-  const sf = {
-    grant_type: grantType,
-    client_id: envTrim('SF_CONSUMER_KEY'),
-    client_secret: envTrim('SF_CONSUMER_SECRET'),
-    username: envTrim('SF_USERNAME'),
-    password: envTrim('SF_PASSWORD'),
-    access_token: envTrim('SF_ACCESS_TOKEN'),
-    tokenUrl: envTrim('SF_TOKEN_URL') || getTokenUrlForEnv(envName),
-    cookie: envTrim('SF_COOKIE'),
-  };
-  return sf;
+function hasPegaEnvVars(envName) {
+  const name = envName || getEnvName();
+  return Boolean(
+    envTrim('PEGA_CLIENT_ID')
+    || envTrim('PEGA_CLIENT_SECRET')
+    || envTrim('PEGA_BEARER_TOKEN')
+    || envScopedKey('PEGA', name, 'CLIENT_ID')
+    || envScopedKey('PEGA', name, 'CLIENT_SECRET'),
+  );
 }
 
-function buildPegaFromEnv() {
-  const clientId = envTrim('PEGA_CLIENT_ID');
-  const clientSecret = envTrim('PEGA_CLIENT_SECRET');
-  const tokenUrl = envTrim('PEGA_TOKEN_URL');
-  const baseUrl = envTrim('PEGA_BASE_URL');
-  const cookie = envTrim('PEGA_COOKIE');
+function mergeSalesforceCredentials(fileSf, envName) {
+  const name = envName || getEnvName();
+  const file = fileSf && typeof fileSf === 'object' ? fileSf : {};
+  return {
+    grant_type: pickFirst(envTrim('SF_GRANT_TYPE'), file.grant_type) || 'client_credentials',
+    client_id: pickFirst(
+      envScopedKey('SF', name, 'CLIENT_ID'),
+      envTrim('SF_CONSUMER_KEY'),
+      file.client_id,
+    ),
+    client_secret: pickFirst(
+      envScopedKey('SF', name, 'CLIENT_SECRET'),
+      envTrim('SF_CONSUMER_SECRET'),
+      file.client_secret,
+    ),
+    username: pickFirst(envTrim('SF_USERNAME'), file.username),
+    password: pickFirst(envTrim('SF_PASSWORD'), file.password),
+    access_token: pickFirst(envTrim('SF_ACCESS_TOKEN'), file.access_token),
+    tokenUrl: pickFirst(envTrim('SF_TOKEN_URL'), file.tokenUrl, getTokenUrlForEnv(name)),
+    cookie: pickFirst(envTrim('SF_COOKIE'), file.cookie),
+  };
+}
+
+function mergePegaCredentials(filePega, envName) {
+  const name = envName || getEnvName();
+  const file = filePega && typeof filePega === 'object' ? filePega : {};
+  const clientId = pickFirst(
+    envScopedKey('PEGA', name, 'CLIENT_ID'),
+    envTrim('PEGA_CLIENT_ID'),
+    file.client_id,
+  );
+  const clientSecret = pickFirst(
+    envScopedKey('PEGA', name, 'CLIENT_SECRET'),
+    envTrim('PEGA_CLIENT_SECRET'),
+    file.client_secret,
+  );
+  const tokenUrl = pickFirst(envTrim('PEGA_TOKEN_URL'), file.token_url);
+  const baseUrl = pickFirst(envTrim('PEGA_BASE_URL'), file.base_url);
+  const cookie = pickFirst(envTrim('PEGA_COOKIE'), file.cookie);
   const bearer = envTrim('PEGA_BEARER_TOKEN');
 
   if (!clientId && !clientSecret && !tokenUrl && !baseUrl && !bearer) {
@@ -80,24 +128,32 @@ function buildPegaFromEnv() {
   };
 }
 
+function buildSalesforceFromEnv(envName) {
+  return mergeSalesforceCredentials(null, envName);
+}
+
+function buildPegaFromEnv(envName) {
+  return mergePegaCredentials(null, envName);
+}
+
 function missingSalesforceFields(sf) {
   const missing = [];
   const grantType = sf.grant_type || 'client_credentials';
 
-  if (envTrim('SF_ACCESS_TOKEN')) {
+  if (envTrim('SF_ACCESS_TOKEN') || sf.access_token) {
     return missing;
   }
 
   if (grantType === 'password') {
-    if (!sf.client_id) missing.push('SF_CONSUMER_KEY');
-    if (!sf.client_secret) missing.push('SF_CONSUMER_SECRET');
+    if (!sf.client_id) missing.push('SF_CONSUMER_KEY ou SF_<ENV>_CLIENT_ID');
+    if (!sf.client_secret) missing.push('SF_CONSUMER_SECRET ou SF_<ENV>_CLIENT_SECRET');
     if (!sf.username) missing.push('SF_USERNAME');
     if (!sf.password) missing.push('SF_PASSWORD');
     return missing;
   }
 
-  if (!sf.client_id) missing.push('SF_CONSUMER_KEY');
-  if (!sf.client_secret) missing.push('SF_CONSUMER_SECRET');
+  if (!sf.client_id) missing.push('SF_CONSUMER_KEY ou SF_<ENV>_CLIENT_ID');
+  if (!sf.client_secret) missing.push('SF_CONSUMER_SECRET ou SF_<ENV>_CLIENT_SECRET');
   return missing;
 }
 
@@ -107,7 +163,9 @@ function formatCredentialsError(missing, envName) {
     '',
     'Configure uma das opções:',
     '  • Arquivo local: support/fixtures/user.json (copie de support/fixtures/user.example.json)',
-    '  • Variáveis de ambiente (CI/CD):',
+    '  • Variáveis de ambiente (OpenShift Secret tdm-qa-secrets / CI):',
+    `      - SF_${String(envName).toUpperCase()}_CLIENT_ID / SF_${String(envName).toUpperCase()}_CLIENT_SECRET`,
+    '      - ou SF_CONSUMER_KEY / SF_CONSUMER_SECRET',
   ];
   for (const key of missing) {
     lines.push(`      - ${key}`);
@@ -136,7 +194,7 @@ function buildFixtureDocumentFromEnv(envName) {
   validateSalesforceCredentials(salesforce, envName);
 
   const block = { salesforce };
-  const pega = buildPegaFromEnv();
+  const pega = buildPegaFromEnv(envName);
   if (pega) block.pega = pega;
 
   return { [envName]: block };
@@ -163,21 +221,21 @@ function resolveEnvBlock(all, envName) {
   return all[envName] || all.ti || all.dev || all;
 }
 
+/**
+ * Credenciais do ambiente ativo: process.env.* tem prioridade; user.json é fallback.
+ * Compatível com support/fixtures/user.json (ti / dev / trg) e Secret OpenShift tdm-qa-secrets.
+ */
 function getUserFixture(envName) {
   const name = envName || getEnvName();
   ensureUserFixtureFile();
 
   const fromFile = loadUserFixtureFile();
-  if (fromFile) {
-    const block = resolveEnvBlock(fromFile, name);
-    if (block) return block;
-  }
-
-  const salesforce = buildSalesforceFromEnv(name);
+  const fileBlock = fromFile ? resolveEnvBlock(fromFile, name) : null;
+  const salesforce = mergeSalesforceCredentials(fileBlock?.salesforce, name);
   validateSalesforceCredentials(salesforce, name);
 
   const block = { salesforce };
-  const pega = buildPegaFromEnv();
+  const pega = mergePegaCredentials(fileBlock?.pega, name);
   if (pega) block.pega = pega;
   return block;
 }
@@ -187,29 +245,33 @@ function getPegaFixture(envName) {
   ensureUserFixtureFile();
 
   const fromFile = loadUserFixtureFile();
-  if (fromFile) {
-    const block = resolveEnvBlock(fromFile, name);
-    if (block?.pega && typeof block.pega === 'object') return block.pega;
-    if (fromFile.pega && typeof fromFile.pega === 'object') return fromFile.pega;
+  const fileBlock = fromFile ? resolveEnvBlock(fromFile, name) : null;
+  if (fromFile && !fileBlock?.pega && fromFile.pega && typeof fromFile.pega === 'object') {
+    return mergePegaCredentials(fromFile.pega, name);
   }
-
-  return buildPegaFromEnv();
+  return mergePegaCredentials(fileBlock?.pega, name);
 }
 
 function getSalesforceCredentials(envName) {
   const block = getUserFixture(envName);
-  return block.salesforce || block.dev?.salesforce || block.trg?.salesforce || {};
+  return block.salesforce || {};
 }
 
 module.exports = {
   USER_FIXTURE_RELATIVE,
   getUserFixturePath,
   getEnvName,
+  pickFirst,
+  envScopedKey,
   ensureUserFixtureFile,
   getUserFixture,
   getPegaFixture,
   getSalesforceCredentials,
+  mergeSalesforceCredentials,
+  mergePegaCredentials,
   buildSalesforceFromEnv,
+  buildPegaFromEnv,
   validateSalesforceCredentials,
   hasSalesforceEnvVars,
+  hasPegaEnvVars,
 };
