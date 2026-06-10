@@ -345,133 +345,24 @@ oc delete route tdm-qa-api -n qualidade-automation-tdm-qa
 oc apply -f deploy/openshift/route.yaml
 ```
 
-### 6. Validação pós-deploy
+### 6. Validação e site fora do ar
 
 ```bash
 oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
-oc get deployment tdm-qa-api tdm-qa-worker -n qualidade-automation-tdm-qa
-oc get route atacado -n qualidade-automation-tdm-qa
-oc get endpoints tdm-qa-api -n qualidade-automation-tdm-qa
-
 oc logs deployment/tdm-qa-api -n qualidade-automation-tdm-qa --tail=50
-oc logs deployment/tdm-qa-worker -n qualidade-automation-tdm-qa --tail=50
 ```
 
-**Sucesso esperado:**
+Esperado: API e Worker em `1/1 Running`; logs com `Perfil: qa` e Redis/MySQL conectados.
 
-| Verificação | Esperado |
-|-------------|----------|
-| Pods | `tdm-qa-api` e `tdm-qa-worker` em `1/1 Running` |
-| Deployments | `READY 1/1`, `AVAILABLE 1` |
-| Endpoints | IP:3333 (não `<none>`) |
-| Logs API | `Perfil: qa`, MySQL e Redis conectados |
-
-### 7. Site fora do ar (`Application is not available`)
-
-Se a URL não abre (nem a antiga nem `atacado-...`), **não precisa de build novo** na maioria dos casos. Diagnóstico:
-
-```bash
-oc project qualidade-automation-tdm-qa
-
-oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
-oc get deployment tdm-qa-api tdm-qa-worker -n qualidade-automation-tdm-qa
-oc get route atacado -n qualidade-automation-tdm-qa
-oc get endpoints tdm-qa-api -n qualidade-automation-tdm-qa
-```
-
-#### Causa mais comum: Deployments com 0 réplicas
-
-Após build (worker escalado para 0 por quota) ou intervenção manual, os Deployments podem ficar em `0/0` — a Route existe, mas **não há pods** atrás do Service.
-
-```
-NAME           READY   UP-TO-DATE   AVAILABLE
-tdm-qa-api     0/0     0            0        ← problema
-tdm-qa-worker  0/0     0            0        ← problema
-```
-
-**Solução (sem rebuild):**
-
-```bash
-oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
-oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
-```
-
-Aguarde `1/1 Running` e teste: https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.html
-
-> **Sintoma:** login ou `index.html` abrem, mas Dashboard / Sair mostram *Application is not available* — em geral os pods caíram **depois** do login (Deployments em `0/0`). Rode o `oc scale` acima; não é URL diferente por página.
-
-#### Namespace compartilhado com `rede-neutra` (por que só o atacado cai)
-
-No mesmo namespace rodam **duas aplicações**:
-
-| App | Route | API limits | Worker limits | Total limits (aprox.) |
-|-----|-------|------------|---------------|------------------------|
-| **rede-neutra** | `rede-neutra-...` | 500m CPU, 768Mi | 500m CPU, 768Mi | **~1 CPU, ~1,5 Gi** |
-| **atacado (tdm-qa)** | `atacado-...` | 500m CPU, 512Mi | 1000m CPU, 2Gi | **~1,5 CPU, ~2,5 Gi** |
-
-Quota do namespace: **4 CPU / 8 Gi** — as duas apps **cabem juntas** com os limites acima.
-
-**Não há regra de inatividade** (10 min, etc.) no OpenShift deste namespace — verificado: sem HPA/CronJob de idle. A queda é sempre `replicas: 0` por build/quota/manual.
-
-O **rede-neutra não cai** porque o time dele faz deploy completo (build → sobe os pods deles). O **atacado cai** porque:
-
-1. Alguém escala `tdm-qa-api` e `tdm-qa-worker` para **0** (build do atacado, build do rede-neutra, ou liberar quota) e **não sobe de novo**.
-2. O worker antigo ainda tinha **4 Gi** no cluster (YAML já corrigido para 2 Gi — precisa `oc apply`).
-3. Reiniciar **só o worker** deixa a API em `0/0` → site fora do ar.
-
-**Depois de qualquer build** (seu ou do colega), rode sempre:
+Se aparecer *Application is not available*, na maioria dos casos os Deployments ficaram em `0` réplicas (após build). **Não precisa rebuild** — rode:
 
 ```cmd
 deploy\openshift\wake-up.cmd
 ```
 
-Ou manualmente:
+Detalhes de troubleshooting, quota e namespace compartilhado: [`deploy/openshift/README.md`](deploy/openshift/README.md).
 
-```bash
-oc apply -f deploy/openshift/deployment-api.yaml -f deploy/openshift/deployment-worker.yaml
-oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
-oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
-```
-
-#### Causa frequente: quota do namespace (4 CPU / 8 Gi)
-
-O namespace `qualidade-automation-tdm-qa` é **compartilhado** (ex.: `rede-neutra-api`, builds). API + Worker com limites **antigos** (Worker 4 Gi) **não cabem** junto — o pod da **API** deixa de ser criado (`exceeded quota`) e o site cai.
-
-Os manifests usam limites reduzidos (API `512Mi`/`500m`, Worker `2Gi`/`1000m`). Após `git pull`:
-
-```bash
-oc apply -f deploy/openshift/deployment-api.yaml -f deploy/openshift/deployment-worker.yaml
-oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
-```
-
-**Sempre suba os dois** após build ou manutenção — reiniciar só o worker deixa a API em `0/0`:
-
-```bash
-# ERRADO (só worker — site fica fora do ar)
-oc rollout restart deployment/tdm-qa-worker
-
-# CERTO
-oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker -n qualidade-automation-tdm-qa
-# ou, se réplicas zeradas:
-oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
-```
-
-#### Outras causas
-
-| Sintoma | O que verificar |
-|---------|-----------------|
-| `No resources found` nos pods | Deployments em 0 — `oc scale ... --replicas=1` |
-| Endpoints `<none>` | Mesmo que acima — sem pod, Route não encaminha tráfego |
-| `CrashLoopBackOff` | `oc logs deployment/tdm-qa-api --tail=30` — MySQL, Redis ou ConfigMap |
-| `oc`: `no such host` | VPN / rede corporativa; depois `oc login` de novo |
-| Route não existe | `oc apply -f deploy/openshift/route.yaml` |
-
-#### Depois de corrigir
-
-```bash
-oc logs deployment/tdm-qa-api -n qualidade-automation-tdm-qa --tail=20
-oc logs deployment/tdm-qa-worker -n qualidade-automation-tdm-qa --tail=20
-```
+### 7. Testes funcionais
 
 Testes funcionais (com credenciais já nos Secrets):
 
