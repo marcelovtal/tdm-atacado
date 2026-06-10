@@ -44,6 +44,20 @@ ImageStream tdm-qa:latest
 
 ---
 
+## Não existe regra de inatividade (10 min, etc.)
+
+Verificado no namespace: **não há** HPA, CronJob nem política de idle que desliga pods por tempo sem uso.
+
+Quando o atacado cai, os eventos mostram `Scaled down ... to 0` — alguém ou algum fluxo de **build/quota** executou `oc scale ... --replicas=0` (manual, README antigo, ou deploy do `rede-neutra` no mesmo namespace). **Não é timeout automático.**
+
+**Recuperação rápida** (na raiz do repo):
+
+```cmd
+deploy\openshift\wake-up.cmd
+```
+
+---
+
 ## Pré-requisitos
 
 - [ ] `oc` CLI instalado
@@ -88,11 +102,13 @@ Isso cria:
 
 ### 2.2 Disparar build com o código local
 
-**Importante — quota:** o pod de build precisa de ~300m CPU + 600Mi RAM. Se a quota estiver cheia, escale o worker para 0 antes:
+**Importante — quota:** o pod de build precisa de ~300m CPU + 600Mi RAM. Se a quota estiver cheia, escale **só o worker** para 0 antes (a **API pode ficar no ar** — é ela que serve o site):
 
 ```cmd
 oc scale deployment/tdm-qa-worker --replicas=0 -n qualidade-automation-tdm-qa
 ```
+
+> **Nunca** escale a API para 0 a menos que o build falhe por quota mesmo assim. Depois do build, rode `deploy\openshift\wake-up.cmd`.
 
 Build (na raiz do repo):
 
@@ -341,6 +357,57 @@ https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.ht
 
 > **Login OK, mas Dashboard ou Sair falham** com a mesma página do OpenShift: os pods provavelmente ficaram em `0/0` entre uma navegação e outra. Mesmo `oc scale` — não é path diferente na Route.
 
+### Convivência com `rede-neutra` (mesmo namespace)
+
+Duas apps no namespace `qualidade-automation-tdm-qa`:
+
+| | rede-neutra | atacado (tdm-qa) |
+|---|-------------|------------------|
+| URL | `rede-neutra-qualidade-automation-tdm-qa.apps...` | `atacado-qualidade-automation-tdm-qa.apps...` |
+| Limits (API + Worker) | ~1 CPU, ~1,5 Gi | ~1,5 CPU, ~2,5 Gi |
+| Por que não cai? | Deploy do time sobe os pods deles | **Fica em 0 réplicas** se ninguém der `oc scale` depois de build |
+
+**Não é configuração errada da Route** — os Deployments `tdm-qa-*` ficam em `READY 0/0`.
+
+Checklist após **qualquer** atividade no namespace (seu build, build do rede-neutra, manutenção):
+
+```cmd
+oc get deployment tdm-qa-api tdm-qa-worker -n qualidade-automation-tdm-qa
+oc apply -f deploy/openshift/deployment-api.yaml -f deploy/openshift/deployment-worker.yaml
+oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
+oc get pods -l app=tdm-qa
+```
+
+### Quota compartilhada (site cai ao usar / após build)
+
+O namespace tem **4 CPU / 8 Gi** de limits e hospeda **outros apps** (`rede-neutra-api`, builds, etc.). Sintomas:
+
+- `oc get pods -l app=tdm-qa` mostra **só o worker** (API sumiu)
+- `oc get deployment tdm-qa-api` → `READY 0/0`
+- Events: `exceeded quota: resource-quota-large`
+
+**Limites nos YAMLs** (para caber no namespace):
+
+| Pod | CPU limit | Memória limit |
+|-----|-----------|---------------|
+| `tdm-qa-api` | 500m | 512Mi |
+| `tdm-qa-worker` | 1000m | 2Gi |
+
+```cmd
+oc apply -f deploy/openshift/deployment-api.yaml -f deploy/openshift/deployment-worker.yaml
+oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
+```
+
+**Nunca reinicie só o worker** após manutenção — a API fica em 0 e o site cai:
+
+```cmd
+REM ERRADO
+oc rollout restart deployment/tdm-qa-worker
+
+REM CERTO
+oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker -n qualidade-automation-tdm-qa
+```
+
 ### Passo 4 — Se ainda falhar
 
 ```cmd
@@ -387,10 +454,9 @@ oc scale deployment/tdm-qa-worker --replicas=0
 REM 2. Build nova imagem
 oc start-build tdm-qa --from-dir=. --wait
 
-REM 3. Subir pods com imagem nova
-oc rollout restart deployment/tdm-qa-api
-oc scale deployment/tdm-qa-worker --replicas=1
-oc rollout restart deployment/tdm-qa-worker
+REM 3. Subir API e Worker (os dois — senão o site fica fora do ar)
+oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1
+oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker
 
 REM 4. Validar
 oc get pods -l app=tdm-qa

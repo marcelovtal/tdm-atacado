@@ -221,14 +221,12 @@ Dependências **fora do cluster** (pods precisam de rede até elas):
 # Primeira vez
 oc new-build --name=tdm-qa --binary=true --strategy=docker -n qualidade-automation-tdm-qa
 
-# A cada deploy (na raiz do repo; escale worker para 0 se quota estiver cheia)
+# A cada deploy (na raiz do repo; se quota cheia, escale SÓ o worker para 0)
 oc scale deployment/tdm-qa-worker --replicas=0 -n qualidade-automation-tdm-qa
 oc start-build tdm-qa --from-dir=. --wait -n qualidade-automation-tdm-qa
 
-# IMPORTANTE: após o build, subir os pods de novo
-oc rollout restart deployment/tdm-qa-api -n qualidade-automation-tdm-qa
-oc scale deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
-oc rollout restart deployment/tdm-qa-worker -n qualidade-automation-tdm-qa
+# IMPORTANTE: após o build — API + Worker (wake-up.cmd)
+deploy\openshift\wake-up.cmd
 ```
 
 **Opção B — Docker local + push** (se o build no cluster falhar por rede):
@@ -401,6 +399,62 @@ oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
 Aguarde `1/1 Running` e teste: https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.html
 
 > **Sintoma:** login ou `index.html` abrem, mas Dashboard / Sair mostram *Application is not available* — em geral os pods caíram **depois** do login (Deployments em `0/0`). Rode o `oc scale` acima; não é URL diferente por página.
+
+#### Namespace compartilhado com `rede-neutra` (por que só o atacado cai)
+
+No mesmo namespace rodam **duas aplicações**:
+
+| App | Route | API limits | Worker limits | Total limits (aprox.) |
+|-----|-------|------------|---------------|------------------------|
+| **rede-neutra** | `rede-neutra-...` | 500m CPU, 768Mi | 500m CPU, 768Mi | **~1 CPU, ~1,5 Gi** |
+| **atacado (tdm-qa)** | `atacado-...` | 500m CPU, 512Mi | 1000m CPU, 2Gi | **~1,5 CPU, ~2,5 Gi** |
+
+Quota do namespace: **4 CPU / 8 Gi** — as duas apps **cabem juntas** com os limites acima.
+
+**Não há regra de inatividade** (10 min, etc.) no OpenShift deste namespace — verificado: sem HPA/CronJob de idle. A queda é sempre `replicas: 0` por build/quota/manual.
+
+O **rede-neutra não cai** porque o time dele faz deploy completo (build → sobe os pods deles). O **atacado cai** porque:
+
+1. Alguém escala `tdm-qa-api` e `tdm-qa-worker` para **0** (build do atacado, build do rede-neutra, ou liberar quota) e **não sobe de novo**.
+2. O worker antigo ainda tinha **4 Gi** no cluster (YAML já corrigido para 2 Gi — precisa `oc apply`).
+3. Reiniciar **só o worker** deixa a API em `0/0` → site fora do ar.
+
+**Depois de qualquer build** (seu ou do colega), rode sempre:
+
+```cmd
+deploy\openshift\wake-up.cmd
+```
+
+Ou manualmente:
+
+```bash
+oc apply -f deploy/openshift/deployment-api.yaml -f deploy/openshift/deployment-worker.yaml
+oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
+oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
+```
+
+#### Causa frequente: quota do namespace (4 CPU / 8 Gi)
+
+O namespace `qualidade-automation-tdm-qa` é **compartilhado** (ex.: `rede-neutra-api`, builds). API + Worker com limites **antigos** (Worker 4 Gi) **não cabem** junto — o pod da **API** deixa de ser criado (`exceeded quota`) e o site cai.
+
+Os manifests usam limites reduzidos (API `512Mi`/`500m`, Worker `2Gi`/`1000m`). Após `git pull`:
+
+```bash
+oc apply -f deploy/openshift/deployment-api.yaml -f deploy/openshift/deployment-worker.yaml
+oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
+```
+
+**Sempre suba os dois** após build ou manutenção — reiniciar só o worker deixa a API em `0/0`:
+
+```bash
+# ERRADO (só worker — site fica fora do ar)
+oc rollout restart deployment/tdm-qa-worker
+
+# CERTO
+oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker -n qualidade-automation-tdm-qa
+# ou, se réplicas zeradas:
+oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
+```
 
 #### Outras causas
 
