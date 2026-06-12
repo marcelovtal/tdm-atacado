@@ -1,0 +1,76 @@
+# Garante replicas=1 se alguém escalar tdm-qa para 0 (build/quota no namespace compartilhado).
+# O rede-neutra não precisa disso porque o time deles sempre sobe os pods no deploy.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tdm-qa-keepalive
+  namespace: qualidade-automation-tdm-qa
+  labels:
+    app: tdm-qa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tdm-qa-keepalive
+  namespace: qualidade-automation-tdm-qa
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale"]
+    resourceNames: ["tdm-qa-api", "tdm-qa-worker"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tdm-qa-keepalive
+  namespace: qualidade-automation-tdm-qa
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tdm-qa-keepalive
+subjects:
+  - kind: ServiceAccount
+    name: tdm-qa-keepalive
+    namespace: qualidade-automation-tdm-qa
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: tdm-qa-keepalive
+  namespace: qualidade-automation-tdm-qa
+  labels:
+    app: tdm-qa
+spec:
+  schedule: "*/3 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: tdm-qa-keepalive
+          restartPolicy: OnFailure
+          containers:
+            - name: keepalive
+              image: registry.redhat.io/openshift4/ose-cli:latest
+              command:
+                - /bin/bash
+                - -ec
+                - |
+                  NS=qualidade-automation-tdm-qa
+                  for d in tdm-qa-api tdm-qa-worker; do
+                    replicas=$(oc get deployment "$d" -n "$NS" -o jsonpath='{.spec.replicas}')
+                    if [ "$replicas" = "0" ]; then
+                      echo "keepalive: $d estava em 0 — escalando para 1"
+                      oc scale deployment/"$d" --replicas=1 -n "$NS"
+                    fi
+                  done
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 64Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi

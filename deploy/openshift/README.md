@@ -44,6 +44,28 @@ ImageStream tdm-qa:latest
 
 ---
 
+## Deploy completo (modelo rede-neutra)
+
+Na raiz do repo:
+
+```cmd
+deploy\openshift\deploy.cmd
+```
+
+Faz: `oc apply` de todos os manifests → garante `replicas=1` → `oc start-build` → aguarda rollout.
+
+Recursos **idênticos ao rede-neutra** (API e Worker: `500m` CPU, `768Mi` RAM, probes `/api/health`, `RollingUpdate`).
+
+**Keepalive automático** (`keepalive-cronjob.yaml`): a cada 3 min, se `tdm-qa-api` ou `tdm-qa-worker` estiverem em `replicas: 0`, sobe para 1. O rede-neutra não precisa disso porque o time sempre completa o deploy; no namespace compartilhado isso evita o site ficar fora do ar.
+
+```cmd
+oc apply -f deploy/openshift/keepalive-cronjob.yaml
+```
+
+Recuperação manual: `deploy\openshift\wake-up.cmd`
+
+---
+
 ## Não existe regra de inatividade (10 min, etc.)
 
 Verificado no namespace: **não há** HPA, CronJob nem política de idle que desliga pods por tempo sem uso.

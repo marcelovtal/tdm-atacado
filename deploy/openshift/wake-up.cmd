@@ -1,7 +1,8 @@
 @echo off
-REM Sobe API + Worker do atacado (tdm-qa) apos build ou queda por quota.
+REM Recuperacao rapida se o site cair (pods em 0). Deploy completo: deploy.cmd
 REM Uso: deploy\openshift\wake-up.cmd
 
+cd /d %~dp0\..\..
 oc project qualidade-automation-tdm-qa
 if errorlevel 1 exit /b 1
 

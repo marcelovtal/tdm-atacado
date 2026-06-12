@@ -1,0 +1,30 @@
+# BuildConfig binario (igual rede-neutra). Criar uma vez: oc apply -f deploy/openshift/buildconfig.yaml
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: tdm-qa
+  namespace: qualidade-automation-tdm-qa
+  labels:
+    app: tdm-qa
+spec:
+  source:
+    type: Binary
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  output:
+    to:
+      kind: ImageStreamTag
+      name: tdm-qa:latest
+  runPolicy: Serial
+  successfulBuildsHistoryLimit: 5
+  failedBuildsHistoryLimit: 5
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: tdm-qa
+  namespace: qualidade-automation-tdm-qa
+  labels:
+    app: tdm-qa

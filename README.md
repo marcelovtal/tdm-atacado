@@ -221,12 +221,10 @@ Dependências **fora do cluster** (pods precisam de rede até elas):
 # Primeira vez
 oc new-build --name=tdm-qa --binary=true --strategy=docker -n qualidade-automation-tdm-qa
 
-# A cada deploy (na raiz do repo; se quota cheia, escale SÓ o worker para 0)
-oc scale deployment/tdm-qa-worker --replicas=0 -n qualidade-automation-tdm-qa
-oc start-build tdm-qa --from-dir=. --wait -n qualidade-automation-tdm-qa
+# Deploy completo (modelo rede-neutra: apply + build + pods no ar)
+deploy\openshift\deploy.cmd
 
-# IMPORTANTE: após o build — API + Worker (wake-up.cmd)
-deploy\openshift\wake-up.cmd
+# Se o site cair sem build (pods em 0): deploy\openshift\wake-up.cmd
 ```
 
 **Opção B — Docker local + push** (se o build no cluster falhar por rede):

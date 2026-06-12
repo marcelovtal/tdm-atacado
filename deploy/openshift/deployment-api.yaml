@@ -8,10 +8,17 @@ metadata:
     component: api
 spec:
   replicas: 1
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
   selector:
     matchLabels:
       app: tdm-qa
       component: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
   template:
     metadata:
       labels:
@@ -26,28 +33,42 @@ spec:
           ports:
             - containerPort: 3333
               name: http
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: tdm-qa-config
             - secretRef:
                 name: tdm-qa-secrets
           readinessProbe:
-            tcpSocket:
-              port: 3333
-            initialDelaySeconds: 15
+            httpGet:
+              path: /api/health
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 3
           livenessProbe:
-            tcpSocket:
-              port: 3333
+            httpGet:
+              path: /api/health
+              port: http
+              scheme: HTTP
             initialDelaySeconds: 30
-            periodSeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 1
+            failureThreshold: 3
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
+              cpu: 200m
+              memory: 384Mi
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              cpu: 500m
+              memory: 768Mi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
 ---
 apiVersion: v1
 kind: Service
