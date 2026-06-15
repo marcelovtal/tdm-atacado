@@ -1,0 +1,88 @@
+{
+  "types": {
+    "lead-pedido": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "lead-vpn-pedido": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "lead-link-dedicado-pedido": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-ip-connect-cpe": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-pega": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-pega-ofs": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-vpn": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-vpn-pega": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-link-dedicado": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-link-dedicado-pega": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "conta-ativacao-brm": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "conta-ativacao-brm-msa": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    },
+    "conta-ativacao-brm-massa-pronta": {
+      "environments": {
+        "ti": false,
+        "trg": true
+      }
+    }
+  }
+}

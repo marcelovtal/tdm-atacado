@@ -27,6 +27,7 @@ function buildContractMSAPayload(accountOrganizationId, dateStr = todayISO()) {
     checkAnexoCFTTOffice__c: true,
     checkAnexoIPConnect__c: true,
     checkAnexoLinkDedicado__c: true,
+    checkAnexoCPE__c: true,
     checkAnexoVPN__c: true,
     indiceReajusteContratual__c: 'IST',
     tipoContratoMSA__c: 'Exploração Industrial',

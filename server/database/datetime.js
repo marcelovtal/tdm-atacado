@@ -25,3 +25,26 @@ export function toDate(value) {
 export function toMysqlDatetimeParam(value) {
   return toMysqlDatetimeString(value);
 }
+
+/** Valor seguro para bind SQLite (TEXT ISO 8601). Evita gravar Date como epoch ms. */
+export function toSqliteDatetimeParam(value) {
+  return toDate(value).toISOString();
+}
+
+/**
+ * Expressão SQL SQLite: executed_at legado (epoch ms) ou ISO → datetime UTC.
+ * ISO com milissegundos (ex.: 2026-06-13T21:33:27.432Z) NÃO pode cair no branch epoch:
+ * o GLOB '[0-9]*.[0-9]*' matchava o ".432" e gerava datetime ~1970, excluindo tudo do histórico.
+ */
+export const SQLITE_EXECUTED_AT_DT = `
+  CASE
+    WHEN executed_at LIKE '%-%' OR executed_at LIKE '%T%'
+      THEN datetime(replace(substr(replace(executed_at, 'Z', ''), 1, 19), 'T', ' '))
+    WHEN executed_at GLOB '[0-9]*'
+      AND length(executed_at) >= 12
+      AND executed_at NOT LIKE '%-%'
+      AND executed_at NOT LIKE '%T%'
+      THEN datetime(CAST(executed_at AS REAL) / 1000, 'unixepoch')
+    ELSE datetime(executed_at)
+  END
+`;

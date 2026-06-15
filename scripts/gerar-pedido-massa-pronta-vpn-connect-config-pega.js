@@ -58,6 +58,8 @@ const { buildContractMSAPayload, buildContractActivatePayload } = require('../su
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
+const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
+const { mergePegaSingleLegIntoPedido } = require('../support/utils/mergePegaSingleLegIntoPedido.js');
 
 const env = loadEnv();
 const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
@@ -1463,11 +1465,15 @@ async function main() {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
           const pegaResult = await runPegaAfterSuborderIfConfigured(result.subOrderOrderNumber);
-          await finalizePedidoGerado({
-            ...result,
-            pegaCaseId: pegaResult?.caseId,
-            pegaOrdemServicoOs: pegaResult?.pegaOrdemServicoOs,
-          });
+          await finalizePedidoGerado(
+            mergePegaSingleLegIntoPedido(
+              mergeAccountIdsIntoPedidoResult(result, {
+                ...readyQuote,
+                accountBillingId: process.env.ACCOUNT_BILLING_ID?.trim() || readyQuote.accountBillingId,
+              }),
+              pegaResult,
+            ),
+          );
           process.exit(0);
         }
       }
@@ -1486,11 +1492,9 @@ async function main() {
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
         const pegaResult = await runPegaAfterSuborderIfConfigured(result.subOrderOrderNumber);
-        await finalizePedidoGerado({
-          ...result,
-          pegaCaseId: pegaResult?.caseId,
-          pegaOrdemServicoOs: pegaResult?.pegaOrdemServicoOs,
-        });
+        await finalizePedidoGerado(
+          mergePegaSingleLegIntoPedido(mergeAccountIdsIntoPedidoResult(result, accountIds), pegaResult),
+        );
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

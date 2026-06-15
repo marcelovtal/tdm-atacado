@@ -22,9 +22,26 @@ function isLinkDedicadoObterDadosArray(rows) {
 
 function pickLinkDedicadoActivationCase(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return null;
+  const atvs = rows.filter(rowIsAtvCase);
+  const ready = atvs.find((i) => i.pyMemo);
+  if (ready) return ready;
+  if (atvs.length === 1) return atvs[0];
   return (
-    rows.find((i) => i.pzInsKey && String(i.pzInsKey).includes('ATV-')) ||
-    rows.find((i) => i.pyID && String(i.pyID).includes('ATV-')) ||
+    atvs.find((i) => i.pzInsKey && String(i.pzInsKey).includes('ATV-')) ||
+    atvs.find((i) => i.pyID && String(i.pyID).includes('ATV-')) ||
+    null
+  );
+}
+
+function findAtvFromPntCoveredKeys(rows, pntRow) {
+  const keys = pntRow?.pxCoveredInsKeys;
+  if (!Array.isArray(keys) || !keys.length) return null;
+  const atvKey = keys.find((k) => String(k).includes('ATV-'));
+  if (!atvKey) return null;
+  const keyTrim = String(atvKey).trim();
+  return (
+    rows.find((i) => rowIsAtvCase(i) && String(i.pzInsKey ?? '').trim() === keyTrim) ||
+    rows.find((i) => rowIsAtvCase(i) && String(i.pzInsKey ?? '').includes(String(atvKey).match(/ATV-\d+/)?.[0] || '')) ||
     null
   );
 }
@@ -64,13 +81,25 @@ function pickLinkDedicadoItem(rows, matchOrdemServico, leg = '') {
    * AGENDAMENTO_FLOW aparecem no ATV cuja OS / EVC.OrdemPontaB bate com t. Fallback: PNT Ponta B.
    */
   if (t && L === 'pontab') {
-    const atvForOrdB = rows.find(
+    const atvOrdMatch = (i) =>
+      rowIsAtvCase(i) &&
+      (String(i?.EVC?.OrdemPontaB ?? '').trim() === t ||
+        String(i?.OrdemServico?.Ordem?.OrdemServico ?? '').trim() === t);
+    const atvReady = rows.find((i) => atvOrdMatch(i) && i.pyMemo);
+    if (atvReady) return atvReady;
+    const atvPending = rows.find(atvOrdMatch);
+    if (atvPending) return atvPending;
+
+    const pntForB = rows.find(
       (i) =>
-        rowIsAtvCase(i) &&
+        !rowIsAtvCase(i) &&
         (String(i?.EVC?.OrdemPontaB ?? '').trim() === t ||
-          String(i?.OrdemServico?.Ordem?.OrdemServico ?? '').trim() === t),
+          String(i?.PontaView ?? '').trim() === 'Ponta B'),
     );
-    if (atvForOrdB) return atvForOrdB;
+    if (pntForB) {
+      const atvFromCover = findAtvFromPntCoveredKeys(rows, pntForB);
+      if (atvFromCover) return atvFromCover;
+    }
 
     const atvs = rows.filter(rowIsAtvCase);
     if (atvs.length === 1) return atvs[0];
@@ -138,7 +167,7 @@ function pickLinkDedicadoItem(rows, matchOrdemServico, leg = '') {
     if (byEx) return byEx;
   }
 
-  return pickLinkDedicadoActivationCase(rows) || rows[0];
+  return pickLinkDedicadoActivationCase(rows) || rows.find((i) => i.pyMemo) || rows[0];
 }
 
 function extractCaseIdFromChave(chaveCaseOrdem) {
@@ -196,6 +225,28 @@ function extractOrdemServicoOsFromItem(item) {
     const m2 = cov.match(/(OS-\d+)/i);
     if (m2) return m2[1].toUpperCase();
   }
+  const nested = item?.OrdemServico?.Ordem?.OrdemServico;
+  if (nested != null && String(nested).trim()) {
+    const m3 = String(nested).trim().match(/^OS-(\d+)$/i);
+    if (m3) return `OS-${m3[1]}`;
+  }
+  return null;
+}
+
+/** Varre linhas do obterdadosordem LD (prioriza EVC quando indicado). */
+function extractOrdemServicoOsFromLinkDedicadoRows(rows, preferredLeg = 'evc') {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const list =
+    preferredLeg === 'evc'
+      ? [
+          ...rows.filter((r) => String(r?.PontaView || '').trim().toUpperCase() === 'EVC'),
+          ...rows.filter((r) => String(r?.PontaView || '').trim().toUpperCase() !== 'EVC'),
+        ]
+      : rows;
+  for (const row of list) {
+    const os = extractOrdemServicoOsFromItem(row);
+    if (os) return os;
+  }
   return null;
 }
 
@@ -208,4 +259,5 @@ module.exports = {
   extractLdCaseId,
   parseObterDadosOrdemResponse,
   extractOrdemServicoOsFromItem,
+  extractOrdemServicoOsFromLinkDedicadoRows,
 };

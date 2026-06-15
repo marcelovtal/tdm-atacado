@@ -53,7 +53,10 @@ const { buildBusinessAccountPatchPayload } = require('../support/utils/salesforc
 const { buildBillingAccountPatchPayload } = require('../support/utils/salesforce/billingAccountPatchPayload.js');
 const { buildContactPayload } = require('../support/utils/salesforce/contactPayload.js');
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
-const { logPedidoGerado } = require('../support/utils/logPedidoGerado.js');
+const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
+const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
+const { mergePegaSingleLegIntoPedido } = require('../support/utils/mergePegaSingleLegIntoPedido.js');
+const { runOfsAfterPegaIfConfigured, mergeOfsIntoPedido } = require('../support/utils/ofs/runOfsAfterPegaIfConfigured.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 const {
@@ -1262,6 +1265,16 @@ async function runPegaAfterSuborderIfConfigured(subOrderOrderNumber) {
   return pegaResult;
 }
 
+async function finalizePedidoComPegaEOfsOpcional(result, pegaResult) {
+  let merged = mergePegaSingleLegIntoPedido(result, pegaResult);
+  if (process.env.INCLUDE_OFS_INSTALACAO === '1' || process.env.OFS_ENABLE === '1') {
+    const ofsResult = await runOfsAfterPegaIfConfigured(merged);
+    merged = mergeOfsIntoPedido(merged, ofsResult);
+    return finalizePedidoGerado(merged);
+  }
+  return finalizePedidoGerado(merged);
+}
+
 const FULL_FLOW_MAX_RUNS = 3;
 
 /** Se START_FROM_QUOTE=1 e existirem ACCOUNT_ORGANIZATION_ID, ACCOUNT_BUSINESS_ID, ACCOUNT_BILLING_ID: massa já cadastrada (BRM ok). Só Opp → Cotação → Pedido. CONTACT_TECNICO_ID opcional. */
@@ -1401,11 +1414,13 @@ async function main() {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
           const pegaResult = await runPegaAfterSuborderIfConfigured(result.subOrderOrderNumber);
-          logPedidoGerado({
-            ...result,
-            pegaCaseId: pegaResult?.caseId,
-            pegaOrdemServicoOs: pegaResult?.pegaOrdemServicoOs,
-          });
+          await finalizePedidoComPegaEOfsOpcional(
+            mergeAccountIdsIntoPedidoResult(result, {
+              ...readyQuote,
+              accountBillingId: process.env.ACCOUNT_BILLING_ID?.trim() || readyQuote.accountBillingId,
+            }),
+            pegaResult,
+          );
           process.exit(0);
         }
       }
@@ -1424,11 +1439,7 @@ async function main() {
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
         const pegaResult = await runPegaAfterSuborderIfConfigured(result.subOrderOrderNumber);
-        logPedidoGerado({
-          ...result,
-          pegaCaseId: pegaResult?.caseId,
-          pegaOrdemServicoOs: pegaResult?.pegaOrdemServicoOs,
-        });
+        await finalizePedidoComPegaEOfsOpcional(mergeAccountIdsIntoPedidoResult(result, accountIds), pegaResult);
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

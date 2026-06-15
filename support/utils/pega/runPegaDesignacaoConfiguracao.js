@@ -1,4 +1,4 @@
-const { parseObterDadosOrdemResponse, extractOrdemServicoOsFromItem } = require('./obterDadosOrdem.js');
+const { parseObterDadosOrdemResponse, extractOrdemServicoOsFromItem, extractOrdemServicoOsFromLinkDedicadoRows } = require('./obterDadosOrdem.js');
 const { buildDesignarFacilidadeDadosBody } = require('./designarFacilidadeDadosPayload.js');
 const { buildConfigurarDadosBody } = require('./configurarDadosPayload.js');
 const { buildConfiguracaoDeRedeBody } = require('./configuracaoDeRedePayload.js');
@@ -186,6 +186,51 @@ function isPegaConfigRede422SiblingLookupError(status, text) {
     t.includes('D_AtvSavable') ||
     (t.includes('No records were found for the lookup') && /pyID\s*=\s*ATV-/i.test(t))
   );
+}
+
+function ldObterPontaBRetryEnv() {
+  return {
+    maxTries: Math.max(
+      15,
+      parseInt(String(process.env.PEGA_LD_OBTER_PONTA_B_MAX_TRIES || '30').trim(), 10) || 30,
+    ),
+    retryMs: Math.max(
+      2000,
+      parseInt(String(process.env.PEGA_LD_OBTER_PONTA_B_RETRY_MS || '4000').trim(), 10) || 4000,
+    ),
+  };
+}
+
+/** Poll obterdadosordem da Ponta B até o ATV irmão ter pyMemo (race D_AtvSavable no ConfigRede). */
+async function waitForLdPontaBAtvReady(root, headersAuth, fetchImpl, ordemServicoPontaB, logTag) {
+  const os = String(ordemServicoPontaB || '').trim();
+  if (!os) return null;
+  const { maxTries, retryMs } = ldObterPontaBRetryEnv();
+  const parseOpts = { linkDedicado: true, matchOrdemServico: os, ldLeg: 'pontaB' };
+  async function getObter() {
+    const q = `${root}/prweb/api/APIOrdemDeServico/v1/obterdadosordem?ORDEMSERVICO=${encodeURIComponent(os)}`;
+    logPegaCurl('GET', q, headersAuth, null);
+    const res = await fetchImpl(q, { method: 'GET', headers: headersAuth });
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (_) {
+      data = null;
+    }
+    logPegaResponse(`PEGA GET obterdadosordem (${logTag})`, res.status, data, text);
+    return { res, text, data };
+  }
+  console.log(
+    `[PEGA LD] Aguardando ATV Ponta B (ORDEMSERVICO=${os}) com pyMemo — até ${maxTries}× ${retryMs}ms`,
+  );
+  return fetchObterDadosOrdemWithRetry(getObter, parseOpts, {
+    isLinkDedicated: true,
+    logTag,
+    requireFull: true,
+    maxTriesOverride: maxTries,
+    retryMsOverride: retryMs,
+  });
 }
 
 async function patchCaseViewsForChave(root, headersJson, fetchImpl, chaveCaseOrdem, viewName, pyMemo) {
@@ -536,6 +581,25 @@ async function runPegaDesignacaoEConfiguracao(opts) {
     let configRedeStatus = null;
     let configRedeLeg = null;
 
+    if (fallbackOsRaw) {
+      const siblingWait = await waitForLdPontaBAtvReady(
+        root,
+        headersAuth,
+        fetchImpl,
+        fallbackOsRaw,
+        'LD irmão ATV Ponta B pré-ConfigRede',
+      );
+      if (siblingWait?.parsed?.pyMemo) {
+        console.log(
+          `[PEGA LD] ATV Ponta B pronto: ${siblingWait.parsed.caseId || siblingWait.parsed.chaveCaseOrdem}`,
+        );
+      } else {
+        console.log(
+          '[PEGA LD] ATV Ponta B ainda sem pyMemo após espera — seguindo ConfigRede na Ponta A (pode 422 D_AtvSavable)',
+        );
+      }
+    }
+
     const maxSiblingRounds = Math.max(
       1,
       parseInt(String(process.env.PEGA_LD_CONFIG_REDE_SIBLING_MAX_ROUNDS || '5').trim(), 10) || 5,
@@ -601,17 +665,23 @@ async function runPegaDesignacaoEConfiguracao(opts) {
         logPegaResponse(`PEGA GET obterdadosordem (LD ConfigRede fallback Ponta B)`, res.status, data, text);
         return { res, text, data };
       }
+      const { maxTries: fbMaxTries, retryMs: fbRetryMs } = ldObterPontaBRetryEnv();
       const fb = await fetchObterDadosOrdemWithRetry(getObterFallbackB, parseOptsB, {
         isLinkDedicated: true,
         logTag: '(LD ConfigRede fallback Ponta B)',
         requireFull: true,
+        maxTriesOverride: fbMaxTries,
+        retryMsOverride: fbRetryMs,
       });
       if (!fb.res.ok) {
         throw new Error(`PEGA LD ConfigRede fallback: obterdadosordem Ponta B HTTP ${fb.res.status}`);
       }
       const parsedB = fb.parsed;
       if (!parsedB?.chaveCaseOrdem || !parsedB.pyMemo) {
-        throw new Error('PEGA LD ConfigRede fallback: pyMemo/ChaveCaseOrdem ausentes (Ponta B)');
+        throw new Error(
+          `PEGA LD ConfigRede fallback: pyMemo/ChaveCaseOrdem ausentes (Ponta B ORDEMSERVICO=${fallbackOsRaw}) — ` +
+            'ATV da Ponta B ainda propagando no PEGA; aumente PEGA_LD_OBTER_PONTA_B_MAX_TRIES / PEGA_LD_OBTER_PONTA_B_RETRY_MS ou PEGA_LD_CONFIG_REDE_SIBLING_*',
+        );
       }
       let tryB = await patchConfigRedeTwoRoutes(parsedB.chaveCaseOrdem, parsedB.pyMemo, 'LD Ponta B');
       for (
@@ -1234,14 +1304,8 @@ async function runPegaLinkDedicadoPontaDesignarConfigurarOnly(opts) {
     requireFull: true,
     ...(isPontaBDesignar
       ? {
-          maxTriesOverride: Math.max(
-            15,
-            parseInt(String(process.env.PEGA_LD_OBTER_PONTA_B_MAX_TRIES || '30').trim(), 10) || 30,
-          ),
-          retryMsOverride: Math.max(
-            2000,
-            parseInt(String(process.env.PEGA_LD_OBTER_PONTA_B_RETRY_MS || '4000').trim(), 10) || 4000,
-          ),
+          maxTriesOverride: ldObterPontaBRetryEnv().maxTries,
+          retryMsOverride: ldObterPontaBRetryEnv().retryMs,
         }
       : {}),
   });
@@ -1492,10 +1556,20 @@ async function runPegaLinkDedicadoValidacaoFormEViews(opts) {
     caseViewDadosPedidoUrl = r2.url;
   }
 
+  const postViews = await fetchObterDadosOrdemWithRetry(getObter, parseOpts, {
+    isLinkDedicated: true,
+    logTag: `(LD Validação ${ldLegRaw} pós-views)`,
+    expectedChaveCaseOrdem: parsed.chaveCaseOrdem,
+  });
+  const pegaOrdemServicoOs =
+    extractOrdemServicoOsFromItem(postViews.parsed?.item) ||
+    extractOrdemServicoOsFromLinkDedicadoRows(postViews.data, ldLegRaw);
+
   return {
     ldLeg: ldLegRaw,
     chaveCaseOrdem: parsed.chaveCaseOrdem,
-    caseId: parsed.caseId,
+    caseId: postViews.parsed?.caseId || parsed.caseId,
+    pegaOrdemServicoOs,
     validacaoTecnicaFormStatus: resForm.status,
     validarExecucaoFormUrl: urlForm,
     caseViewRefreshSkipped: skipCaseViews,
@@ -1587,10 +1661,20 @@ async function runPegaLinkDedicadoConfigurarEvc(opts) {
     throw new Error(`PEGA LD ConfigurarEvc falhou: HTTP ${lastSt}`);
   }
 
+  const postCfg = await fetchObterDadosOrdemWithRetry(getObter, parseOpts, {
+    isLinkDedicated: true,
+    logTag: '(LD EVC pós-ConfigurarEvc)',
+    expectedChaveCaseOrdem: parsed.chaveCaseOrdem,
+  });
+  const pegaOrdemServicoOs =
+    extractOrdemServicoOsFromItem(postCfg.parsed?.item) ||
+    extractOrdemServicoOsFromLinkDedicadoRows(postCfg.data, 'evc');
+
   return {
     chaveCaseOrdem: parsed.chaveCaseOrdem,
     caseId: parsed.caseId,
     configurarEvcStatus: resEvc.status,
+    pegaOrdemServicoOs,
   };
 }
 
@@ -1897,8 +1981,14 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
     await patchCaseViewsB('DadosPedidoOSTab', pyMemoFinal, chaveCaseOrdem);
   }
 
+  const pegaOrdemServicoOs =
+    extractOrdemServicoOsFromItem(seventh.parsed?.item) ||
+    extractOrdemServicoOsFromLinkDedicadoRows(seventh.data, ldLegRaw);
+
   return {
     chaveCaseOrdem,
+    caseId: seventh.parsed?.caseId || parsed?.caseId || null,
+    pegaOrdemServicoOs,
     agendamentoSelecaoPeriodoStatus: resPer.status,
     agendamentoSelecaoSlotRefreshStatus: resRef.status,
     agendamentoSelecaoSlotFormStatus: resConf.status,

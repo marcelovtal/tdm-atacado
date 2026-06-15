@@ -1,0 +1,1775 @@
+{
+  "info": {
+    "_postman_id": "744f0710-914d-407f-87d0-853e1ffccfaf",
+    "name": "ofsvtal1.test",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "2283557"
+  },
+  "item": [
+    {
+      "name": "Teste",
+      "item": [
+        {
+          "name": "ActivitieS",
+          "item": [
+            {
+              "name": "GetActivity",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities/29945",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities",
+                    "29945"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GetActivity Copy",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"date\": \"2026-05-07\",\r\n  \"startTime\": \"2026-05-07 20:00:00\",\r\n  \"endTime\": \"2026-05-07 23:00:00\",\r\n    \"resourceId\": \"TEC_QA_004\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities/30386",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities",
+                    "30386"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GetActivity Copy 2",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"resourceId\": \"TEC_TESTE_01\",\r\n  \"setDate\": {\r\n    \"date\": \"2026-05-07\"\r\n  },\r\n  \"position\": {\r\n    \"positionInRoute\": 1\r\n  }\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities/30386/custom-actions/move",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities",
+                    "30386",
+                    "custom-actions",
+                    "move"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "CreateActivity",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"customerName\": \"CLIENTE TESTE\",\r\n    \"streetAddress\": \"rUA PELICANO, 800\",\r\n    \"city\": \"ARAUCARIA\",\r\n    \"stateProvince\": \"PR\",\r\n    \"customerCell\": \"4199999999\",\r\n    \"recordType\": \"regular\",\r\n    \"activityType\": \"INS\",\r\n    \"XA_PRODUTO\": \"IP_CONNECT\",\r\n    \"timeSlot\": \"TS_08_12\", \r\n    \"travelTime\": 30,   \r\n    \"date\": \"2026-04-20\",\r\n    \"resourceId\": \"BK_TELEMONT_ESss\",\r\n    \"XA_PONTA\": \"PONTA_A\",\r\n    \"XA_ENDERECO_PONTA_A\": \"Rua Isaias Regis de Miranda, 657\",\r\n    \"XA_EMPRESA_ORIGEM\": \"VTAL\",\r\n    \"XA_ESTACAO\": \"VTA\",\r\n    \"XA_GRA\": \"VTA\",\r\n    \"XA_CIRCUITO_GPON\": \"CTA CTA2555\",\r\n    \"XA_SISTEMA_ORIGEM\": \"OSM\",\r\n    \"XA_REGIAO\": \"R1\",\r\n    \"XA_NUMERO_OS_CRM\": \"OS123456\",\r\n    \"XA_TIPO_CLIENTE\": \"NOVA_OI\",\r\n    \"XA_DOCUMENTO_CLIENTE\": \"41025869311\",\r\n    \"timeDeliveredStart\" :\"2026-04-20 16:30:00\",\r\n    \"timeDeliveredEnd\": \"2026-04-20 17:30:00\"\r\n\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "createActivity-Planta Interna",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"streetAddress\": \"PCA N SRA CANDEIAS,82  CENTRO\",\r\n    \"city\": \"JAPARATINGA\",\r\n    \"stateProvince\": \"AL\",\r\n    \"activityType\": \"MC_PI\",\r\n    \"slaWindowEnd\": \"2024-11-22 09:06:00\",\r\n    \"slaWindowStart\": \"2024-11-21 09:06:00\",\r\n    \"resourceId\": \"TESTE_TI\",\r\n    \"XA_ESTACAO\": \"JPG\",\r\n    \"XA_CIRCUITO_GPON\": \"\",\r\n    \"XA_SISTEMA_ORIGEM\": \"CONTROLE DE EVENTOS\",\r\n    \"XA_NUMERO_OS_CRM\": \"\",\r\n    \"apptNumber\": \"PI-TR-00003\",\r\n    \"XA_ALARME\": \"Alarme\",\r\n    \"XA_AREA\": \"ENIF - ENERGIA INFRACO\",\r\n    \"XA_AREA_TECNICA\": \"EN\",\r\n    \"XA_INFORMANTE_NOME\": \"BAUT - SICAWEB\",\r\n    \"XA_INFORMANTE_CONTATO\": \"Contato\",\r\n    \"XA_INFORMANTE_TEL\": \"8000315858\",\r\n    \"XA_COS_VINCULADO\": \"BAIF1\",\r\n    \"XA_COS_ORIGEM\": \"BAIF1\",\r\n    \"XA_ATIVIDADE_DESCRICAO\": \"GMG Operacao (GMG)\",\r\n    \"XA_EQUIP_FABRICANTE\": \"\",\r\n    \"XA_EQUIP_MODEL\": \"\",\r\n    \"XA_EQUIP_NOME\": \"\",\r\n    \"XA_EQUIP_TIPO\": \"\",\r\n    \"XA_DESC_RECLAMACAO\": \"\",\r\n    \"XA_INICIO_ANORMALIDADE\": \"24/10/2024 08:50\",\r\n    \"XA_FONTE_INFORMANTE\": \"HA1 - SICAW:HAB\",\r\n    \"XA_MNEMONICO\": \"N3B7ZT0RJ/ExtInPt#5\",\r\n    \"XA_NATUREZA_ATIVIDADE\": \"C - CORRETIVA\",\r\n    \"XA_OBSERVACOES_ABERTURA\": \"$$ #EF#@TX@ ALARME DE INFRAESTRUTURA - GMG EM OPERACAO $$ NE:1662_JPG_JPG_002 ## 1662_JPG_JPG_002 N3B7ZT0RJ/ExtInPt#5  HouseKeeping 1 - 1662_JPG_JPG_002.N3B7ZT0RJ/ExtInPt#5 - 1662 -   - ALCATEL_NM6MRJO  ||||  INFORMACOES DE TRATAMENTO :  CN:82 REINCIDENTE 2 VEZES NOS ULTIMOS 30 DIAS Consulte os alarmes correlacionados a este BA: http://10.121.1.209/consulta_ba/ Tempo de parametrizacao: 15 minutos - IdAlarm: 14067 Fabricante ALCATEL\",\r\n    \"XA_OCORRENCIA\": \"DSPM\",\r\n    \"XA_PENDENCIAS\": \"\",\r\n    \"XA_PRIORIDADE\": 90,\r\n    \"XA_PROTOCOLO_ATENDIMENTO\": \"\",\r\n    \"XA_TAREFA\": \"E461CGG - ALM SEMI-URGENTE DE GMG\", \r\n    \"XA_COD_LOCALIDADE\": \"JPG\",\r\n    \"XA_ENDERECO_COMPLEMENTO\": \"\",\r\n    \"XA_BAIRRO\": \"\",\r\n    \"XA_WORKZONE\": \"AL-JPG-JPG\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "{{endpointTest2}}/rest/ofscCore/v1/activities",
+                  "host": [
+                    "{{endpointTest2}}"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "createActivity-Planta Interna Copy",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"streetAddress\": \"Av Marechal Floriano Peixoto, 5500\",\r\n    \"city\": \"CURITIBA\",\r\n    \"stateProvince\": \"PR\",\r\n    \"postalCode\": \"81630050\",\r\n    \"activityType\": \"MC_PI\",\r\n    \"slaWindowEnd\": \"2024-10-23 23:00:00\",\r\n    \"slaWindowStart\": \"2024-10-23 10:00:00\",\r\n    \"resourceId\": \"TR012624\",\r\n    \"XA_ESTACAO\": \"WMTB\",\r\n    \"XA_CIRCUITO_GPON\": \"\",\r\n    \"XA_SISTEMA_ORIGEM\": \"PEGA\",\r\n    \"XA_NUMERO_OS_CRM\": \"PI00006TX\",\r\n    \"apptNumber\": \"PI00006TX\",\r\n    \"XA_ALARME\": \"Alarme\",\r\n    \"XA_AREA\": \"TX\",\r\n    \"XA_AREA_TECNICA\": \"TX\",\r\n    \"XA_INFORMANTE_NOME\": \"George\",\r\n    \"XA_INFORMANTE_CONTATO\": \"Contato\",\r\n    \"XA_INFORMANTE_TEL\": \"419999999\",\r\n    \"XA_COS_VINCULADO\": \"PREFTH\",\r\n    \"XA_COS_ORIGEM\": \"PREFTH\",\r\n    \"XA_ATIVIDADE_DESCRICAO\": \"Descrição da atividade\",\r\n    \"XA_EQUIP_FABRICANTE\": \"Huawei\",\r\n    \"XA_EQUIP_MODEL\": \"M00000001\",\r\n    \"XA_EQUIP_NOME\": \"Roteador\",\r\n    \"XA_EQUIP_TIPO\": \"Tipo\",\r\n    \"XA_DESC_RECLAMACAO\": \"Falha\",\r\n    \"XA_INICIO_ANORMALIDADE\": \"17/10/2024 10:00\",\r\n    \"XA_IDENTIFICACAO\": \"Identificação\",\r\n    \"XA_FONTE_INFORMANTE\": \"Netcool\",\r\n    \"XA_MNEMONICO\": \"mnemonico\",\r\n    \"XA_NATUREZA_ATIVIDADE\": \"Natureza\",\r\n    \"XA_OBSERVACOES_ABERTURA\": \"Observações de Abertura\",\r\n    \"XA_OCORRENCIA\": \"D\",\r\n    \"XA_PENDENCIAS\": \"\",\r\n    \"XA_PRIORIDADE\": 89,\r\n    \"XA_PROTOCOLO_ATENDIMENTO\": \"20241710T1025:55789456\",\r\n    \"XA_TAREFA\": \"MANUTENÇÃO\", \r\n    \"XA_COD_LOCALIDADE\": \"CTA\",\r\n    \"XA_ENDERECO_COMPLEMENTO\": \"\",\r\n    \"XA_BAIRRO\": \"\",\r\n    \"XA_WORKZONE\": \"PR-CTA-WMTB\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "createActivity-INS_IPCONNECT",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n\"XA_TEC_ACESSO_INSTALADO\":\"GPON\",\r\n\"XA_TEC_ACESSO_PROJETO\":\"GPON\",\r\n\"XA_ENDERECAMENTO\":\"IPV4\",\r\n\"XA_CIRCUITO_GPON\":\"CTA CTA00001\",\r\n\"XA_CIRCUITO_COMPARTILHADO\":\"Não\",\r\n\"XA_VELOCIDADE\":\"100MBPS\",\r\n\"XA_VELOCIDADE_DOWNLOAD\":\"100500\",\r\n\"XA_VELOCIDADE_UPLOAD\":\"100500\",\r\n\"XA_TRAFEGO_TIPO\":\"Simétrico\",\r\n\"XA_DATA_PROMESSA\":\"30/06/2024 12:00:00\",\r\n\"XA_DOMINIO\":\"vtal.com\",\r\n\"XA_PONTA\":\"PONTA_A\",\r\n\"XA_GPON_ID\":\"IDGPON000001\",\r\n\"XA_INTERFACE_TIPO\":\"Fast Ethernet\",\r\n\"XA_IP_ADICIONAL\":\"192.168.0.1, 192.168.0.2, 192.168.0.3\",\r\n\"XA_OBSERVACOES_ABERTURA\":\"Observações de abertura\",\r\n\"XA_POSICAO_FISICA\":\"VTA ROS ES VTA 00018,,VTA ROS ES VTA 00018,,FIBO ROSARIOCN:27 / CH:3198-0350 / FR: 0350 A 0399__,> RESPONSAVEL:<,Z57617 ao:<,SINALIZACAO_:_DSS-1_/_ENVIO_:_MCDU_/________________________\",\r\n\"XA_PRIORIDADE_FLAG\":\"SIM\",\r\n\"XA_PRODUTOS_ADICIONAIS\":\"Nome do produto adicional 1: Descrição do produto adicional; Nome do produto adicional 2: Descrição do produto adicional; Nome do produto adicional 3: Descrição do produto adicional;\",\r\n\"XA_PRODUTO\":\"IP_CONNECT\",\r\n\"XA_PROTOCOLO_ATENDIMENTO\":\"202406301505200\",\r\n\"XA_REGISTRO_NUMERO\":\"100001\",\r\n\"XA_ROTEAMENTO\":\"Roteamento\",\r\n\"XA_ROTEAMENTO_PROTOCOLO\":\"Protocolo\",\r\n\"XA_PROJETO_ESPECIAL\":\"Não\",\r\n\"XA_ESTACAO\":\"WMTB\",\r\n\"XA_SUBSCRIBER_ID\":\"SUB00001\",\r\n\"activityType\":\"INS\",\r\n\"city\":\"Curitiba\",\r\n\"XA_ENDERECO_COMPLEMENTO\":\"Loja 2\",\r\n\"XA_BAIRRO\":\"Hauer\",\r\n\"postalCode\":\"81630050\",\r\n\"stateProvince\":\"PR\",\r\n\"streetAddress\":\"Rua Isaias Regis de Miranda, 1200\",\r\n\"XA_LOGRADOURO_CODIGO\":\"25550\",\r\n\"XA_LOGRADOURO_TIPO\":\"RUA\",\r\n\"date\":\"2025-07-16\",\r\n\"apptNumber\":\"OS000001\",\r\n\"resourceId\":\"BK_TESTE_CAPACIDADE\",\r\n\"timeSlot\":\"TS_12_18\",\r\n\"XA_WORKZONE\":\"RS_CSL_CSL_01\",\r\n\"customerCell\":\"41992124596\",\r\n\"customerEmail\":\"cliente.test@vtal.com\",\r\n\"customerName\":\"Cliente Teste\",\r\n\"customerNumber\":\"CONTRACT000001\",\r\n\"XA_CLIENTE_PARCEIRO\":\"VIVO\",\r\n\"XA_CLIENTE_SEGMENTO\":\"Wholesale\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "createActivity-bd",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"stateProvince\": \"PR\",\r\n    \"date\": \"2024-09-12\",\r\n    \"activityType\": \"RP_MS\",\r\n    \"timeSlot\": \"TS_SLA\",\r\n    \"apptNumber\": \"216661534\",\r\n    \"resourceId\": \"BK_SEREDE_PR\",\r\n    \"travelTime\": \"30\",\r\n    \"slaWindowStart\": \"2024-08-28 15: 53: 00\",\r\n    \"slaWindowEnd\": \"2024-09-07 18: 00: 00\",\r\n    \"XA_ESTACAO\": \"PR-PBR-PBR\",\r\n    \"XA_PRIORIDADE\": 10,\r\n    \"XA_AFETACAO\": \"-1\",\r\n    \"XA_OBSERVACAO_ABERTURA\": \"#TR793272,28/08/24,15: 53#= Máscara de abertura BA 10 COS PREFO ##= Técnico solicitante: Antônio Rodrigues Filho tr 577543##= Colaboradores envolvidos na atividade:#Antônio tr577543 #Odinei tr789669#Jose tr789668 ##=Atividade executada:Retirada de postes ##=Material utilizado:##= Tempo gasto:#= Endereço:#= Localidade: Peabiru #= Estação: PBR#= Previsão: 28/08 | 18: 00 h#= GA:Felipe\", \"XA_BD_DESCRICAO\": \" \", \"XA_COS_ATUAL\": \"PREFO\", \"XA_ATIVIDADE_DESCRICAO\": \"\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "CreateActivity-sla",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"customerName\": \"CLIENTE TESTE\",\r\n    \"streetAddress\": \"rUA PELICANO, 800\",\r\n    \"city\": \"ARAUCARIA\",\r\n    \"stateProvince\": \"PR\",\r\n    \"customerCell\": \"4199999999\",\r\n    \"recordType\": \"regular\",\r\n    \"activityType\": \"RP\",\r\n    \"XA_PRODUTO\": \"IP_CONNECT\",\r\n    \"timeSlot\": \"TS_SLA\", \r\n    \"travelTime\": 30,   \r\n    \"resourceId\": \"BK_TELEMONT_ES\",\r\n    \"XA_PONTA\": \"PONTA_A\",\r\n    \"XA_ENDERECO_PONTA_A\": \"Rua Isaias Regis de Miranda, 657\",\r\n    \"XA_EMPRESA_ORIGEM\": \"VTAL\",\r\n    \"XA_ESTACAO\": \"VTA\",\r\n    \"XA_GRA\": \"VTA\",\r\n    \"XA_CIRCUITO_GPON\": \"TDLIVER0001\",\r\n    \"XA_SISTEMA_ORIGEM\": \"OSM\",\r\n    \"XA_REGIAO\": \"R1\",\r\n    \"XA_NUMERO_OS_CRM\": \"OS123456\",\r\n    \"XA_TIPO_CLIENTE\": \"NOVA_OI\",\r\n    \"XA_DOCUMENTO_CLIENTE\": \"41025869311\",\r\n    \"slaWindowStart\": \"2024-05-31 09:30:00\",\r\n    \"slaWindowEnd\": \"2024-05-31 17:00:00\",\r\n    \"timeDeliveredStart\": \"2024-05-31 16:30:00\",\r\n    \"timeDeliveredEnd\": \"2024-05-31 17:30:00\"\r\n\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "updateActivity",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"XA_OBSERVACAO_ABERTURA\": \"<Observacoes><Observacao><Matricula>Netcool</Matricula><Nome>Netcool</Nome><Data>14/02/2025 12:00</Data><Descricao>DESCRICAO:$$ ELEMENTO DCN ISOLADO - NODE DOWN - [UNAVAILABLE BY ICMP] - DCN_R3 $$NE:DCNI-OI-AL-AIR-AIR-SA01 ## - Zabbix trigger:18468 Grupo de Hosts: - DCNI-OI-AL-AIR-AIR-SA01 - - - ZABBIX_DCN |||| INFORMACOES DE TRATAMENTO : CN:82 GRA:ALO Unavailable by ICMP pingConsulte os alarmes correlacionados a este BA: http://10.121.1.209/consulta_ba/Tempo de parametrizacao: 240 minutos - IdAlarm: 767096</Descricao></Observacao><Observacao><Matricula>VT419385</Matricula><Nome>George Amaral</Nome><Data>14/02/2025 13:00</Data><Descricao>Descrição: Teste de Observação</Descricao></Observacao><Observacao><Matricula>BK_SUPERVISOR_TOA</Matricula><Nome>Nome do Supervisor</Nome><Data>14/02/2025 14:00</Data><Descricao>Observação do agendamento no TOA</Descricao></Observacao><Observacao><Matricula>Netcool</Matricula><Nome>Netcool</Nome><Data>14/02/2025 15:00</Data><Descricao>DESCRICAO:$$ ELEMENTO DCN ISOLADO - NODE DOWN - [UNAVAILABLE BY ICMP] - DCN_R3 $$NE:DCNI-OI-AL-AIR-AIR-SA01 ## - Zabbix trigger:18468 Grupo de Hosts: - DCNI-OI-AL-AIR-AIR-SA01 - - - ZABBIX_DCN |||| INFORMACOES DE TRATAMENTO : CN:82 GRA:ALO Unavailable by ICMP pingConsulte os alarmes correlacionados a este BA: http://10.121.1.209/consulta_ba/Tempo de parametrizacao: 240 minutos - IdAlarm: 767096</Descricao></Observacao></Observacoes>\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities/21943",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities",
+                    "21943"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "CancelActivity",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities/6856/custom-actions/cancel",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities",
+                    "6856",
+                    "custom-actions",
+                    "cancel"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "GetActivities",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/activities/?resources=vtal&dateFrom=2024-03-03&dateTo=2024-03-04&q=status=='pending'",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "activities",
+                    ""
+                  ],
+                  "query": [
+                    {
+                      "key": "resources",
+                      "value": "vtal"
+                    },
+                    {
+                      "key": "dateFrom",
+                      "value": "2024-03-03"
+                    },
+                    {
+                      "key": "dateTo",
+                      "value": "2024-03-04"
+                    },
+                    {
+                      "key": "q",
+                      "value": "status=='pending'"
+                    },
+                    {
+                      "key": "fields",
+                      "value": "customerName,streetAddress,city,postalCode,stateProvince,customerNumber,timeZone,timeZoneIANA,customerPhone,customerEmail,customerCell,recordType,activityType,timeSlot,serviceWindowStart,serviceWindowEnd,apptNumber,language,languageISO,duration,startTime,status,activityId,workZone,timeDeliveredStart,timeDeliveredEnd,endTime,longitude,latitude,travelTime,timeOfBooking,travelEstimationMethod,date,resourceId,resourceInternalId,resourceTimeZone",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Inventory",
+          "item": [
+            {
+              "name": "GetResourceInventory",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/T1119/inventories",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "T1119",
+                    "inventories"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "createResourceInventory",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"inventoryType\": \"SAP_SERIALIZADO\",\r\n    \"XI_SAP_MODEL\": \"ONT HUAWEI 2023 PLUS\",\r\n    \"XI_SAP_CODE\" : \"99999922123223\",\r\n    \"serialNumber\": \"SN254685421856\",\r\n    \"XI_MAC_ADDRESS\": \"OC-034-DDFD-33RD-33SS-SA\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/T1119/inventories",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "T1119",
+                    "inventories"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "updateInventory",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"XI_SAP_CODE\" : \"99999922123223\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/inventories/2588464",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "inventories",
+                    "2588464"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "createInventory",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"activityId\": 1231522,\r\n    \"status\" : \"installed\",\r\n    \"inventoryType\": \"INVENTARIO_GPON\",\r\n    \"XI_GPON_INVENTORY\": \"MODEM HUAWEI V6\",\r\n    \"XI_MAC_ADDRESS\": \"OA:12:WW:SF:99:09AX\",\r\n    \"serialNumber\": \"SN123456789\",\r\n    \"quantity\": 1\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/inventories",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "inventories"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "installInventory",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/inventories/2588485/custom-actions/install",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "inventories",
+                    "2588485",
+                    "custom-actions",
+                    "install"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "updateInventory",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/inventories/2588485/custom-actions/install",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "inventories",
+                    "2588485",
+                    "custom-actions",
+                    "install"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "DeleteInventory",
+              "request": {
+                "method": "DELETE",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/inventories/2588417",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "inventories",
+                    "2588417"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "getInventoryById",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/inventories/2588417",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "inventories",
+                    "2588417"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Capacity",
+          "item": [
+            {
+              "name": "GetActivityBookingOptions Copy",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCapacity/v1/activityBookingOptions?determineAreaByWorkZone=true&determineCategory=true&dates=2026-04-15&activityType=RP_PE&XA_WORKZONE=PR-CTA-WMTB&XA_PRODUTO=IP Connect",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCapacity",
+                    "v1",
+                    "activityBookingOptions"
+                  ],
+                  "query": [
+                    {
+                      "key": "determineAreaByWorkZone",
+                      "value": "true"
+                    },
+                    {
+                      "key": "determineCategory",
+                      "value": "true"
+                    },
+                    {
+                      "key": "dates",
+                      "value": "2026-04-15"
+                    },
+                    {
+                      "key": "activityType",
+                      "value": "RP_PE"
+                    },
+                    {
+                      "key": "XA_WORKZONE",
+                      "value": "PR-CTA-WMTB"
+                    },
+                    {
+                      "key": "XA_PRODUTO",
+                      "value": "IP Connect"
+                    },
+                    {
+                      "key": "XA_CLIENTE_SEGMENTO",
+                      "value": "OI",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "GetActivityBookingOptions Copy",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{endpointTest1}}/rest/ofscCapacity/v1/activityBookingOptions?determineAreaByWorkZone=true&determineCategory=true&dates=2024-06-24, 2024-06-25&activityType=INS&XA_WORKZONE=PR-CTA-WMTB&XA_PRODUCT=IP_CONNECT",
+                      "host": [
+                        "{{endpointTest1}}"
+                      ],
+                      "path": [
+                        "rest",
+                        "ofscCapacity",
+                        "v1",
+                        "activityBookingOptions"
+                      ],
+                      "query": [
+                        {
+                          "key": "determineAreaByWorkZone",
+                          "value": "true"
+                        },
+                        {
+                          "key": "determineCategory",
+                          "value": "true"
+                        },
+                        {
+                          "key": "dates",
+                          "value": "2024-06-24, 2024-06-25"
+                        },
+                        {
+                          "key": "activityType",
+                          "value": "INS"
+                        },
+                        {
+                          "key": "XA_WORKZONE",
+                          "value": "PR-CTA-WMTB"
+                        },
+                        {
+                          "key": "XA_PRODUCT",
+                          "value": "IP_CONNECT"
+                        }
+                      ]
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json; charset=utf-8"
+                    },
+                    {
+                      "key": "Strict-Transport-Security",
+                      "value": "max-age=31536000; includeSubDomains;"
+                    },
+                    {
+                      "key": "Content-Security-Policy",
+                      "value": "default-src 'unsafe-inline' 'unsafe-eval' file: data: blob: filesystem: wss: *"
+                    },
+                    {
+                      "key": "X-Content-Type-Options",
+                      "value": "nosniff"
+                    },
+                    {
+                      "key": "X-XSS-Protection",
+                      "value": "1; mode=block;"
+                    },
+                    {
+                      "key": "Content-Length",
+                      "value": "2888"
+                    },
+                    {
+                      "key": "Date",
+                      "value": "Mon, 24 Jun 2024 13:14:15 GMT"
+                    },
+                    {
+                      "key": "Connection",
+                      "value": "keep-alive"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n    \"duration\": 180,\n    \"travelTime\": 30,\n    \"categories\": [\n        \"ATIVACAO_DADOS\"\n    ],\n    \"workZone\": \"CTA\",\n    \"timeSlotsDictionary\": [\n        {\n            \"label\": \"TS_08_12\",\n            \"name\": \"Manhã 08-12H\",\n            \"timeFrom\": \"08:00:00\",\n            \"timeTo\": \"12:00:00\"\n        },\n        {\n            \"label\": \"TS_12_18\",\n            \"name\": \"Tarde 12-18H\",\n            \"timeFrom\": \"12:00:00\",\n            \"timeTo\": \"18:00:00\"\n        },\n        {\n            \"label\": \"HORARIO_COMERCIAL\",\n            \"name\": \"Horário Comercial (08-18H)\",\n            \"timeFrom\": \"08:00:00\",\n            \"timeTo\": \"18:00:00\"\n        }\n    ],\n    \"dates\": [\n        {\n            \"date\": \"2024-06-24\",\n            \"areas\": [\n                {\n                    \"label\": \"BK_SEREDE_PR\",\n                    \"name\": \"SEREDE PR\",\n                    \"duration\": 180,\n                    \"travelTime\": 30,\n                    \"bucket\": \"BK_SEREDE_PR\",\n                    \"timeZone\": \"America/Sao_Paulo\",\n                    \"timeZoneDiff\": -180,\n                    \"timeSlots\": [\n                        {\n                            \"label\": \"HORARIO_COMERCIAL\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_12_18\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_08_12\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        }\n                    ]\n                }\n            ]\n        },\n        {\n            \"date\": \"2024-06-25\",\n            \"areas\": [\n                {\n                    \"label\": \"BK_SEREDE_PR\",\n                    \"name\": \"SEREDE PR\",\n                    \"duration\": 180,\n                    \"travelTime\": 30,\n                    \"bucket\": \"BK_SEREDE_PR\",\n                    \"timeZone\": \"America/Sao_Paulo\",\n                    \"timeZoneDiff\": -180,\n                    \"timeSlots\": [\n                        {\n                            \"label\": \"HORARIO_COMERCIAL\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_12_18\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_08_12\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        }\n                    ]\n                }\n            ]\n        }\n    ]\n}"
+                }
+              ]
+            },
+            {
+              "name": "GetActivityBookingOptions Copy 2",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/TEC_TESTE_01/workZones",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "TEC_TESTE_01",
+                    "workZones"
+                  ],
+                  "query": [
+                    {
+                      "key": "XA_CLIENTE_SEGMENTO",
+                      "value": "OI",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "GetActivityBookingOptions Copy",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{endpointTest1}}/rest/ofscCapacity/v1/activityBookingOptions?determineAreaByWorkZone=true&determineCategory=true&dates=2024-06-24, 2024-06-25&activityType=INS&XA_WORKZONE=PR-CTA-WMTB&XA_PRODUCT=IP_CONNECT",
+                      "host": [
+                        "{{endpointTest1}}"
+                      ],
+                      "path": [
+                        "rest",
+                        "ofscCapacity",
+                        "v1",
+                        "activityBookingOptions"
+                      ],
+                      "query": [
+                        {
+                          "key": "determineAreaByWorkZone",
+                          "value": "true"
+                        },
+                        {
+                          "key": "determineCategory",
+                          "value": "true"
+                        },
+                        {
+                          "key": "dates",
+                          "value": "2024-06-24, 2024-06-25"
+                        },
+                        {
+                          "key": "activityType",
+                          "value": "INS"
+                        },
+                        {
+                          "key": "XA_WORKZONE",
+                          "value": "PR-CTA-WMTB"
+                        },
+                        {
+                          "key": "XA_PRODUCT",
+                          "value": "IP_CONNECT"
+                        }
+                      ]
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json; charset=utf-8"
+                    },
+                    {
+                      "key": "Strict-Transport-Security",
+                      "value": "max-age=31536000; includeSubDomains;"
+                    },
+                    {
+                      "key": "Content-Security-Policy",
+                      "value": "default-src 'unsafe-inline' 'unsafe-eval' file: data: blob: filesystem: wss: *"
+                    },
+                    {
+                      "key": "X-Content-Type-Options",
+                      "value": "nosniff"
+                    },
+                    {
+                      "key": "X-XSS-Protection",
+                      "value": "1; mode=block;"
+                    },
+                    {
+                      "key": "Content-Length",
+                      "value": "2888"
+                    },
+                    {
+                      "key": "Date",
+                      "value": "Mon, 24 Jun 2024 13:14:15 GMT"
+                    },
+                    {
+                      "key": "Connection",
+                      "value": "keep-alive"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n    \"duration\": 180,\n    \"travelTime\": 30,\n    \"categories\": [\n        \"ATIVACAO_DADOS\"\n    ],\n    \"workZone\": \"CTA\",\n    \"timeSlotsDictionary\": [\n        {\n            \"label\": \"TS_08_12\",\n            \"name\": \"Manhã 08-12H\",\n            \"timeFrom\": \"08:00:00\",\n            \"timeTo\": \"12:00:00\"\n        },\n        {\n            \"label\": \"TS_12_18\",\n            \"name\": \"Tarde 12-18H\",\n            \"timeFrom\": \"12:00:00\",\n            \"timeTo\": \"18:00:00\"\n        },\n        {\n            \"label\": \"HORARIO_COMERCIAL\",\n            \"name\": \"Horário Comercial (08-18H)\",\n            \"timeFrom\": \"08:00:00\",\n            \"timeTo\": \"18:00:00\"\n        }\n    ],\n    \"dates\": [\n        {\n            \"date\": \"2024-06-24\",\n            \"areas\": [\n                {\n                    \"label\": \"BK_SEREDE_PR\",\n                    \"name\": \"SEREDE PR\",\n                    \"duration\": 180,\n                    \"travelTime\": 30,\n                    \"bucket\": \"BK_SEREDE_PR\",\n                    \"timeZone\": \"America/Sao_Paulo\",\n                    \"timeZoneDiff\": -180,\n                    \"timeSlots\": [\n                        {\n                            \"label\": \"HORARIO_COMERCIAL\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_12_18\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_08_12\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        }\n                    ]\n                }\n            ]\n        },\n        {\n            \"date\": \"2024-06-25\",\n            \"areas\": [\n                {\n                    \"label\": \"BK_SEREDE_PR\",\n                    \"name\": \"SEREDE PR\",\n                    \"duration\": 180,\n                    \"travelTime\": 30,\n                    \"bucket\": \"BK_SEREDE_PR\",\n                    \"timeZone\": \"America/Sao_Paulo\",\n                    \"timeZoneDiff\": -180,\n                    \"timeSlots\": [\n                        {\n                            \"label\": \"HORARIO_COMERCIAL\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_12_18\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_08_12\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        }\n                    ]\n                }\n            ]\n        }\n    ]\n}"
+                }
+              ]
+            },
+            {
+              "name": "GetActivityBookingOptions Copy 3",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/TEC_TESTE_01/workZones",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "TEC_TESTE_01",
+                    "workZones"
+                  ],
+                  "query": [
+                    {
+                      "key": "XA_CLIENTE_SEGMENTO",
+                      "value": "OI",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "GetActivityBookingOptions Copy",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{endpointTest1}}/rest/ofscCapacity/v1/activityBookingOptions?determineAreaByWorkZone=true&determineCategory=true&dates=2024-06-24, 2024-06-25&activityType=INS&XA_WORKZONE=PR-CTA-WMTB&XA_PRODUCT=IP_CONNECT",
+                      "host": [
+                        "{{endpointTest1}}"
+                      ],
+                      "path": [
+                        "rest",
+                        "ofscCapacity",
+                        "v1",
+                        "activityBookingOptions"
+                      ],
+                      "query": [
+                        {
+                          "key": "determineAreaByWorkZone",
+                          "value": "true"
+                        },
+                        {
+                          "key": "determineCategory",
+                          "value": "true"
+                        },
+                        {
+                          "key": "dates",
+                          "value": "2024-06-24, 2024-06-25"
+                        },
+                        {
+                          "key": "activityType",
+                          "value": "INS"
+                        },
+                        {
+                          "key": "XA_WORKZONE",
+                          "value": "PR-CTA-WMTB"
+                        },
+                        {
+                          "key": "XA_PRODUCT",
+                          "value": "IP_CONNECT"
+                        }
+                      ]
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json; charset=utf-8"
+                    },
+                    {
+                      "key": "Strict-Transport-Security",
+                      "value": "max-age=31536000; includeSubDomains;"
+                    },
+                    {
+                      "key": "Content-Security-Policy",
+                      "value": "default-src 'unsafe-inline' 'unsafe-eval' file: data: blob: filesystem: wss: *"
+                    },
+                    {
+                      "key": "X-Content-Type-Options",
+                      "value": "nosniff"
+                    },
+                    {
+                      "key": "X-XSS-Protection",
+                      "value": "1; mode=block;"
+                    },
+                    {
+                      "key": "Content-Length",
+                      "value": "2888"
+                    },
+                    {
+                      "key": "Date",
+                      "value": "Mon, 24 Jun 2024 13:14:15 GMT"
+                    },
+                    {
+                      "key": "Connection",
+                      "value": "keep-alive"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n    \"duration\": 180,\n    \"travelTime\": 30,\n    \"categories\": [\n        \"ATIVACAO_DADOS\"\n    ],\n    \"workZone\": \"CTA\",\n    \"timeSlotsDictionary\": [\n        {\n            \"label\": \"TS_08_12\",\n            \"name\": \"Manhã 08-12H\",\n            \"timeFrom\": \"08:00:00\",\n            \"timeTo\": \"12:00:00\"\n        },\n        {\n            \"label\": \"TS_12_18\",\n            \"name\": \"Tarde 12-18H\",\n            \"timeFrom\": \"12:00:00\",\n            \"timeTo\": \"18:00:00\"\n        },\n        {\n            \"label\": \"HORARIO_COMERCIAL\",\n            \"name\": \"Horário Comercial (08-18H)\",\n            \"timeFrom\": \"08:00:00\",\n            \"timeTo\": \"18:00:00\"\n        }\n    ],\n    \"dates\": [\n        {\n            \"date\": \"2024-06-24\",\n            \"areas\": [\n                {\n                    \"label\": \"BK_SEREDE_PR\",\n                    \"name\": \"SEREDE PR\",\n                    \"duration\": 180,\n                    \"travelTime\": 30,\n                    \"bucket\": \"BK_SEREDE_PR\",\n                    \"timeZone\": \"America/Sao_Paulo\",\n                    \"timeZoneDiff\": -180,\n                    \"timeSlots\": [\n                        {\n                            \"label\": \"HORARIO_COMERCIAL\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_12_18\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_08_12\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        }\n                    ]\n                }\n            ]\n        },\n        {\n            \"date\": \"2024-06-25\",\n            \"areas\": [\n                {\n                    \"label\": \"BK_SEREDE_PR\",\n                    \"name\": \"SEREDE PR\",\n                    \"duration\": 180,\n                    \"travelTime\": 30,\n                    \"bucket\": \"BK_SEREDE_PR\",\n                    \"timeZone\": \"America/Sao_Paulo\",\n                    \"timeZoneDiff\": -180,\n                    \"timeSlots\": [\n                        {\n                            \"label\": \"HORARIO_COMERCIAL\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_12_18\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_08_12\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        }\n                    ]\n                }\n            ]\n        }\n    ]\n}"
+                }
+              ]
+            },
+            {
+              "name": "GetActivityBookingOptions Copy 3",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"workZone\": \"PR-CTA\",\r\n  \"startDate\": \"2026-01-01\",\r\n  \"endDate\": \"2030-12-31\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/TEC_TESTE_01/workZones",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "TEC_TESTE_01",
+                    "workZones"
+                  ],
+                  "query": [
+                    {
+                      "key": "XA_CLIENTE_SEGMENTO",
+                      "value": "OI",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "GetActivityBookingOptions Copy",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{endpointTest1}}/rest/ofscCapacity/v1/activityBookingOptions?determineAreaByWorkZone=true&determineCategory=true&dates=2024-06-24, 2024-06-25&activityType=INS&XA_WORKZONE=PR-CTA-WMTB&XA_PRODUCT=IP_CONNECT",
+                      "host": [
+                        "{{endpointTest1}}"
+                      ],
+                      "path": [
+                        "rest",
+                        "ofscCapacity",
+                        "v1",
+                        "activityBookingOptions"
+                      ],
+                      "query": [
+                        {
+                          "key": "determineAreaByWorkZone",
+                          "value": "true"
+                        },
+                        {
+                          "key": "determineCategory",
+                          "value": "true"
+                        },
+                        {
+                          "key": "dates",
+                          "value": "2024-06-24, 2024-06-25"
+                        },
+                        {
+                          "key": "activityType",
+                          "value": "INS"
+                        },
+                        {
+                          "key": "XA_WORKZONE",
+                          "value": "PR-CTA-WMTB"
+                        },
+                        {
+                          "key": "XA_PRODUCT",
+                          "value": "IP_CONNECT"
+                        }
+                      ]
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json; charset=utf-8"
+                    },
+                    {
+                      "key": "Strict-Transport-Security",
+                      "value": "max-age=31536000; includeSubDomains;"
+                    },
+                    {
+                      "key": "Content-Security-Policy",
+                      "value": "default-src 'unsafe-inline' 'unsafe-eval' file: data: blob: filesystem: wss: *"
+                    },
+                    {
+                      "key": "X-Content-Type-Options",
+                      "value": "nosniff"
+                    },
+                    {
+                      "key": "X-XSS-Protection",
+                      "value": "1; mode=block;"
+                    },
+                    {
+                      "key": "Content-Length",
+                      "value": "2888"
+                    },
+                    {
+                      "key": "Date",
+                      "value": "Mon, 24 Jun 2024 13:14:15 GMT"
+                    },
+                    {
+                      "key": "Connection",
+                      "value": "keep-alive"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n    \"duration\": 180,\n    \"travelTime\": 30,\n    \"categories\": [\n        \"ATIVACAO_DADOS\"\n    ],\n    \"workZone\": \"CTA\",\n    \"timeSlotsDictionary\": [\n        {\n            \"label\": \"TS_08_12\",\n            \"name\": \"Manhã 08-12H\",\n            \"timeFrom\": \"08:00:00\",\n            \"timeTo\": \"12:00:00\"\n        },\n        {\n            \"label\": \"TS_12_18\",\n            \"name\": \"Tarde 12-18H\",\n            \"timeFrom\": \"12:00:00\",\n            \"timeTo\": \"18:00:00\"\n        },\n        {\n            \"label\": \"HORARIO_COMERCIAL\",\n            \"name\": \"Horário Comercial (08-18H)\",\n            \"timeFrom\": \"08:00:00\",\n            \"timeTo\": \"18:00:00\"\n        }\n    ],\n    \"dates\": [\n        {\n            \"date\": \"2024-06-24\",\n            \"areas\": [\n                {\n                    \"label\": \"BK_SEREDE_PR\",\n                    \"name\": \"SEREDE PR\",\n                    \"duration\": 180,\n                    \"travelTime\": 30,\n                    \"bucket\": \"BK_SEREDE_PR\",\n                    \"timeZone\": \"America/Sao_Paulo\",\n                    \"timeZoneDiff\": -180,\n                    \"timeSlots\": [\n                        {\n                            \"label\": \"HORARIO_COMERCIAL\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_12_18\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_08_12\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        }\n                    ]\n                }\n            ]\n        },\n        {\n            \"date\": \"2024-06-25\",\n            \"areas\": [\n                {\n                    \"label\": \"BK_SEREDE_PR\",\n                    \"name\": \"SEREDE PR\",\n                    \"duration\": 180,\n                    \"travelTime\": 30,\n                    \"bucket\": \"BK_SEREDE_PR\",\n                    \"timeZone\": \"America/Sao_Paulo\",\n                    \"timeZoneDiff\": -180,\n                    \"timeSlots\": [\n                        {\n                            \"label\": \"HORARIO_COMERCIAL\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_12_18\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_08_12\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        }\n                    ]\n                }\n            ]\n        }\n    ]\n}"
+                }
+              ]
+            },
+            {
+              "name": "GetActivityBookingOptions Copy 4",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"workSkill\": \"WMTB\",\r\n  \"startDate\": \"2026-01-01\",\r\n  \"endDate\": \"2030-12-31\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/TEC_TESTE_01/workSkills",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "TEC_TESTE_01",
+                    "workSkills"
+                  ],
+                  "query": [
+                    {
+                      "key": "XA_CLIENTE_SEGMENTO",
+                      "value": "OI",
+                      "disabled": true
+                    }
+                  ]
+                }
+              },
+              "response": [
+                {
+                  "name": "GetActivityBookingOptions Copy",
+                  "originalRequest": {
+                    "method": "GET",
+                    "header": [],
+                    "url": {
+                      "raw": "{{endpointTest1}}/rest/ofscCapacity/v1/activityBookingOptions?determineAreaByWorkZone=true&determineCategory=true&dates=2024-06-24, 2024-06-25&activityType=INS&XA_WORKZONE=PR-CTA-WMTB&XA_PRODUCT=IP_CONNECT",
+                      "host": [
+                        "{{endpointTest1}}"
+                      ],
+                      "path": [
+                        "rest",
+                        "ofscCapacity",
+                        "v1",
+                        "activityBookingOptions"
+                      ],
+                      "query": [
+                        {
+                          "key": "determineAreaByWorkZone",
+                          "value": "true"
+                        },
+                        {
+                          "key": "determineCategory",
+                          "value": "true"
+                        },
+                        {
+                          "key": "dates",
+                          "value": "2024-06-24, 2024-06-25"
+                        },
+                        {
+                          "key": "activityType",
+                          "value": "INS"
+                        },
+                        {
+                          "key": "XA_WORKZONE",
+                          "value": "PR-CTA-WMTB"
+                        },
+                        {
+                          "key": "XA_PRODUCT",
+                          "value": "IP_CONNECT"
+                        }
+                      ]
+                    }
+                  },
+                  "status": "OK",
+                  "code": 200,
+                  "_postman_previewlanguage": "json",
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/json; charset=utf-8"
+                    },
+                    {
+                      "key": "Strict-Transport-Security",
+                      "value": "max-age=31536000; includeSubDomains;"
+                    },
+                    {
+                      "key": "Content-Security-Policy",
+                      "value": "default-src 'unsafe-inline' 'unsafe-eval' file: data: blob: filesystem: wss: *"
+                    },
+                    {
+                      "key": "X-Content-Type-Options",
+                      "value": "nosniff"
+                    },
+                    {
+                      "key": "X-XSS-Protection",
+                      "value": "1; mode=block;"
+                    },
+                    {
+                      "key": "Content-Length",
+                      "value": "2888"
+                    },
+                    {
+                      "key": "Date",
+                      "value": "Mon, 24 Jun 2024 13:14:15 GMT"
+                    },
+                    {
+                      "key": "Connection",
+                      "value": "keep-alive"
+                    }
+                  ],
+                  "cookie": [],
+                  "body": "{\n    \"duration\": 180,\n    \"travelTime\": 30,\n    \"categories\": [\n        \"ATIVACAO_DADOS\"\n    ],\n    \"workZone\": \"CTA\",\n    \"timeSlotsDictionary\": [\n        {\n            \"label\": \"TS_08_12\",\n            \"name\": \"Manhã 08-12H\",\n            \"timeFrom\": \"08:00:00\",\n            \"timeTo\": \"12:00:00\"\n        },\n        {\n            \"label\": \"TS_12_18\",\n            \"name\": \"Tarde 12-18H\",\n            \"timeFrom\": \"12:00:00\",\n            \"timeTo\": \"18:00:00\"\n        },\n        {\n            \"label\": \"HORARIO_COMERCIAL\",\n            \"name\": \"Horário Comercial (08-18H)\",\n            \"timeFrom\": \"08:00:00\",\n            \"timeTo\": \"18:00:00\"\n        }\n    ],\n    \"dates\": [\n        {\n            \"date\": \"2024-06-24\",\n            \"areas\": [\n                {\n                    \"label\": \"BK_SEREDE_PR\",\n                    \"name\": \"SEREDE PR\",\n                    \"duration\": 180,\n                    \"travelTime\": 30,\n                    \"bucket\": \"BK_SEREDE_PR\",\n                    \"timeZone\": \"America/Sao_Paulo\",\n                    \"timeZoneDiff\": -180,\n                    \"timeSlots\": [\n                        {\n                            \"label\": \"HORARIO_COMERCIAL\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_12_18\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_08_12\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        }\n                    ]\n                }\n            ]\n        },\n        {\n            \"date\": \"2024-06-25\",\n            \"areas\": [\n                {\n                    \"label\": \"BK_SEREDE_PR\",\n                    \"name\": \"SEREDE PR\",\n                    \"duration\": 180,\n                    \"travelTime\": 30,\n                    \"bucket\": \"BK_SEREDE_PR\",\n                    \"timeZone\": \"America/Sao_Paulo\",\n                    \"timeZoneDiff\": -180,\n                    \"timeSlots\": [\n                        {\n                            \"label\": \"HORARIO_COMERCIAL\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_12_18\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        },\n                        {\n                            \"label\": \"TS_08_12\",\n                            \"remainingQuota\": 290,\n                            \"originalQuota\": 500\n                        }\n                    ]\n                }\n            ]\n        }\n    ]\n}"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Resources",
+          "item": [
+            {
+              "name": "GetResources",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    ""
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "resourceRoute",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/TEC_TESTE_01/routes/2025-03-31",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "TEC_TESTE_01",
+                    "routes",
+                    "2025-03-31"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "createResource",
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"parentResourceId\": \"BK_EXCECAO\",\r\n    \"name\": \"Bucket Exceção - Padrão\",\r\n    \"resourceType\": \"bucket\",\r\n    \"language\": \"pt-BR\",\r\n    \"timeZone\": \"America/Sao_Paulo\",\r\n    \"status\": \"active\",\r\n    \"dateFormat\": \"dd/mm/yy\"\r\n    }",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/BK_EXCECAO_DEFAULT",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "BK_EXCECAO_DEFAULT"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "createResource Copy",
+              "request": {
+                "method": "PATCH",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"status\": \"active\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/TEC_TESTE_01",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "TEC_TESTE_01"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "resourceWorkRoute",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/TEC_TESTE_01/workSchedules/calendarView?dateFrom=2025-04-20&dateTo=2025-04-20",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "TEC_TESTE_01",
+                    "workSchedules",
+                    "calendarView"
+                  ],
+                  "query": [
+                    {
+                      "key": "dateFrom",
+                      "value": "2025-04-20"
+                    },
+                    {
+                      "key": "dateTo",
+                      "value": "2025-04-20"
+                    }
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "resourceWorkRoute Copy",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "[\r\n  {\r\n    \"resourceId\": \"TECQA004\",\r\n    \r\n    \"workSchedules\": [\r\n      {\r\n        \"startDate\": \"2026-04-20\",\r\n        \"endDate\": \"2026-04-20\",\r\n        \"recordType\": \"working\",\r\n        \"shiftType\": \"regular\",\r\n        \"workTimeStart\": \"08:00:00\",\r\n        \"workTimeEnd\": \"20:00:00\",\r\n        \"recurrence\": {\r\n          \"dayFrom\": \"2026-04-20\",\r\n          \"dayTo\": \"2026-04-20\",\r\n          \"recurEvery\": 1,\r\n          \"recurrenceType\": \"daily\"\r\n        }\r\n      }\r\n    ]\r\n  }\r\n]",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/custom-actions/bulkUpdateWorkSchedules",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "custom-actions",
+                    "bulkUpdateWorkSchedules"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "resourceWorkRoute Copy 2",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "[\r\n    {\r\n        \"resourceId\": \"TEC_TESTE_01\",\r\n        \"workSchedules\": [\r\n            {\r\n                \"startDate\": \"2025-04-04\",\r\n                \"endDate\": \"2025-04-04\",\r\n                \"recordType\": \"non-working\",\r\n                \"scheduleLabel\": \"FERIAS\",\r\n                \"shiftType\": \"regular\",\r\n                \"nonWorkingReason\": \"FERIAS\",\r\n                \"recurrence\": {\r\n                    \"dayFrom\": \"2025-04-04\",\r\n                    \"dayTo\": \"2025-04-04\",\r\n                    \"recurEvery\": 1,\r\n                    \"recurrenceType\": \"daily\"\r\n                }\r\n            }\r\n        ]\r\n    }\r\n]",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/resources/custom-actions/bulkUpdateWorkSchedules",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "resources",
+                    "custom-actions",
+                    "bulkUpdateWorkSchedules"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        },
+        {
+          "name": "Users",
+          "item": [
+            {
+              "name": "GetUsers",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/users",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "users"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "createUserTech",
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n  \"name\": \"Tecnico Teste API2\",\r\n  \"mainResourceId\": \"TC002\",\r\n  \"userType\": \"TECNICO_PSR\",\r\n  \"password\": \"Vtal@2024\",\r\n  \"resources\": [\"TC002\"],\r\n  \"language\": \"pt-BR\",\r\n  \"timeZone\": \"America/Sao_Paulo\",\r\n  \"dateFormat\": \"dd/mm/yy\",\r\n  \"timeFormat\": \"24-hour\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/users/TC002",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "users",
+                    "TC002"
+                  ]
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "createUserBackoffice",
+              "request": {
+                "method": "PUT",
+                "header": [],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\r\n    \"name\": \"Usuário Backoffice 001\",\r\n    \"userType\": \"CONSULTA\",\r\n    \"password\": \"Vtal@2024\",\r\n    \"resources\": [\r\n        \"vtal\"\r\n    ],\r\n    \"language\": \"pt-BR\",\r\n    \"timeZone\": \"America/Sao_Paulo\",\r\n    \"dateFormat\": \"dd/mm/yy\",\r\n    \"timeFormat\": \"24-hour\"\r\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "url": {
+                  "raw": "https://ofsvtal1.test.fs.ocs.oraclecloud.com/rest/ofscCore/v1/users/BK004",
+                  "protocol": "https",
+                  "host": [
+                    "ofsvtal1",
+                    "test",
+                    "fs",
+                    "ocs",
+                    "oraclecloud",
+                    "com"
+                  ],
+                  "path": [
+                    "rest",
+                    "ofscCore",
+                    "v1",
+                    "users",
+                    "BK004"
+                  ]
+                }
+              },
+              "response": []
+            }
+          ]
+        }
+      ],
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "requests": {},
+            "exec": [
+              ""
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "requests": {},
+            "exec": [
+              ""
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "basic",
+    "basic": [
+      {
+        "key": "password",
+        "value": "26b9b936600d8f7eaf4548915539afa20a8133c605cd7c1b742cbed9e460",
+        "type": "string"
+      },
+      {
+        "key": "username",
+        "value": "qa@ofsvtal1.test",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    }
+  ]
+}

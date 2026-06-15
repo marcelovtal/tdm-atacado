@@ -44,7 +44,7 @@ ImageStream tdm-qa:latest
 
 ---
 
-## Deploy completo (modelo rede-neutra)
+## Deploy completo
 
 Na raiz do repo:
 
@@ -52,17 +52,11 @@ Na raiz do repo:
 deploy\openshift\deploy.cmd
 ```
 
-Faz: `oc apply` de todos os manifests → garante `replicas=1` → `oc start-build` → aguarda rollout.
+Faz: `oc apply` de todos os manifests (inclui keepalive) → garante `replicas=1` → `oc start-build` → aguarda rollout.
 
-Recursos **idênticos ao rede-neutra** (API e Worker: `500m` CPU, `768Mi` RAM, probes `/api/health`, `RollingUpdate`).
+Recursos por pod (API e Worker): `500m` CPU, `768Mi` RAM, probes HTTP em `/api/health`, `RollingUpdate`.
 
-**Keepalive automático** (`keepalive-cronjob.yaml`): a cada 3 min, se `tdm-qa-api` ou `tdm-qa-worker` estiverem em `replicas: 0`, sobe para 1. O rede-neutra não precisa disso porque o time sempre completa o deploy; no namespace compartilhado isso evita o site ficar fora do ar.
-
-```cmd
-oc apply -f deploy/openshift/keepalive-cronjob.yaml
-```
-
-Recuperação manual: `deploy\openshift\wake-up.cmd`
+**Keepalive** (`keepalive-cronjob.yaml`): a cada 3 min, se API ou Worker estiverem em `0` réplicas, sobe para 1. Recuperação imediata: `deploy\openshift\wake-up.cmd`
 
 ---
 
@@ -70,13 +64,7 @@ Recuperação manual: `deploy\openshift\wake-up.cmd`
 
 Verificado no namespace: **não há** HPA, CronJob nem política de idle que desliga pods por tempo sem uso.
 
-Quando o atacado cai, os eventos mostram `Scaled down ... to 0` — alguém ou algum fluxo de **build/quota** executou `oc scale ... --replicas=0` (manual, README antigo, ou deploy do `rede-neutra` no mesmo namespace). **Não é timeout automático.**
-
-**Recuperação rápida** (na raiz do repo):
-
-```cmd
-deploy\openshift\wake-up.cmd
-```
+Se os pods ficarem em `0` réplicas (build, quota ou scale manual), o **keepalive** repõe em até 3 min. Para subir na hora: `deploy\openshift\wake-up.cmd`
 
 ---
 
@@ -301,7 +289,7 @@ image-registry.openshift-image-registry.svc:5000/qualidade-automation-tdm-qa/tdm
 
 ### Health checks (API)
 
-As probes usam **TCP na porta 3333** (não HTTP em `/api/config`, que exige login e retorna 401).
+Probes HTTP em `/api/health` (porta 3333). Não usar `/api/config` — exige login e retorna 401.
 
 ---
 
@@ -378,57 +366,6 @@ Aguarde `1/1 Running` e abra:
 https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.html
 
 > **Login OK, mas Dashboard ou Sair falham** com a mesma página do OpenShift: os pods provavelmente ficaram em `0/0` entre uma navegação e outra. Mesmo `oc scale` — não é path diferente na Route.
-
-### Convivência com `rede-neutra` (mesmo namespace)
-
-Duas apps no namespace `qualidade-automation-tdm-qa`:
-
-| | rede-neutra | atacado (tdm-qa) |
-|---|-------------|------------------|
-| URL | `rede-neutra-qualidade-automation-tdm-qa.apps...` | `atacado-qualidade-automation-tdm-qa.apps...` |
-| Limits (API + Worker) | ~1 CPU, ~1,5 Gi | ~1,5 CPU, ~2,5 Gi |
-| Por que não cai? | Deploy do time sobe os pods deles | **Fica em 0 réplicas** se ninguém der `oc scale` depois de build |
-
-**Não é configuração errada da Route** — os Deployments `tdm-qa-*` ficam em `READY 0/0`.
-
-Checklist após **qualquer** atividade no namespace (seu build, build do rede-neutra, manutenção):
-
-```cmd
-oc get deployment tdm-qa-api tdm-qa-worker -n qualidade-automation-tdm-qa
-oc apply -f deploy/openshift/deployment-api.yaml -f deploy/openshift/deployment-worker.yaml
-oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
-oc get pods -l app=tdm-qa
-```
-
-### Quota compartilhada (site cai ao usar / após build)
-
-O namespace tem **4 CPU / 8 Gi** de limits e hospeda **outros apps** (`rede-neutra-api`, builds, etc.). Sintomas:
-
-- `oc get pods -l app=tdm-qa` mostra **só o worker** (API sumiu)
-- `oc get deployment tdm-qa-api` → `READY 0/0`
-- Events: `exceeded quota: resource-quota-large`
-
-**Limites nos YAMLs** (para caber no namespace):
-
-| Pod | CPU limit | Memória limit |
-|-----|-----------|---------------|
-| `tdm-qa-api` | 500m | 512Mi |
-| `tdm-qa-worker` | 1000m | 2Gi |
-
-```cmd
-oc apply -f deploy/openshift/deployment-api.yaml -f deploy/openshift/deployment-worker.yaml
-oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1 -n qualidade-automation-tdm-qa
-```
-
-**Nunca reinicie só o worker** após manutenção — a API fica em 0 e o site cai:
-
-```cmd
-REM ERRADO
-oc rollout restart deployment/tdm-qa-worker
-
-REM CERTO
-oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker -n qualidade-automation-tdm-qa
-```
 
 ### Passo 4 — Se ainda falhar
 
@@ -557,11 +494,11 @@ oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker
 
 ---
 
-### Pod `Running` mas `0/1 Ready` — probe 401
+### Pod `Running` mas `0/1 Ready` — probe falhando
 
-**Causa:** liveness/readiness em `/api/config` (rota autenticada).
+**Causa:** liveness/readiness em rota autenticada (ex.: `/api/config`).
 
-**Solução:** probes TCP na porta 3333 (já configurado em `deployment-api.yaml`).
+**Solução:** probes HTTP em `/api/health` (já configurado em `deployment-api.yaml`).
 
 ---
 
@@ -600,6 +537,9 @@ Ver seção **[8. Site fora do ar](#8-site-fora-do-ar-application-is-not-availab
 | `deploy/openshift/deployment-api.yaml` | API + Service |
 | `deploy/openshift/deployment-worker.yaml` | Worker BullMQ |
 | `deploy/openshift/route.yaml` | URL HTTPS |
+| `deploy/openshift/keepalive-cronjob.yaml` | Repõe réplicas se ficarem em 0 |
+| `deploy/openshift/deploy.cmd` | Deploy completo (apply + build) |
+| `deploy/openshift/wake-up.cmd` | Sobe pods imediatamente |
 | `Dockerfile` | Imagem de produção |
 | `.env.qa.example` | Referência de variáveis para QA |
 

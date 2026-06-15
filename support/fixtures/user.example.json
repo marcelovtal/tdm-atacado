@@ -13,6 +13,12 @@
       "client_id": "SEU_PEGA_CLIENT_ID",
       "client_secret": "SEU_PEGA_CLIENT_SECRET",
       "cookie": ""
+    },
+    "ofs": {
+      "base_url": "https://ofsvtal1.test.fs.ocs.oraclecloud.com",
+      "username": "qa@ofsvtal1.test",
+      "password": "26b9b936600d8f7eaf4548915539afa20a8133c605cd7c1b742cbed9e460",
+      "resource_id": "TEC_TESTE_01"
     }
   },
   "dev": {
@@ -45,6 +51,12 @@
       "client_id": "SEU_PEGA_CLIENT_ID",
       "client_secret": "SEU_PEGA_CLIENT_SECRET",
       "cookie": ""
+    },
+    "ofs": {
+      "base_url": "https://ofsvtal3.test.fs.ocs.oraclecloud.com",
+      "username": "qa@ofsvtal1.test",
+      "password": "26b9b936600d8f7eaf4548915539afa20a8133c605cd7c1b742cbed9e460",
+      "resource_id": "TEC_TESTE_01"
     }
   }
 }

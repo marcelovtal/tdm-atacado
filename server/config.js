@@ -95,6 +95,12 @@ export const config = {
     sessionTtlMs: envInt('SESSION_TTL_MS', 12 * 60 * 60 * 1000),
     platformAdmins: [PLATFORM_ADMIN_VT],
   },
+  /** Retenção exibida na tela Jobs (não afeta dashboard/agregados). */
+  jobsHistory: {
+    daysUser: envInt('JOBS_HISTORY_DAYS_USER', 7),
+    daysAdmin: envInt('JOBS_HISTORY_DAYS_ADMIN', 30),
+    listLimit: envInt('JOBS_HISTORY_LIST_LIMIT', 500),
+  },
 };
 
 export const ENVIRONMENTS = ['ti', 'trg'];
@@ -104,10 +110,25 @@ export const MASS_TYPES = [
   { id: 'lead-link-dedicado-pedido', label: 'Lead → Link Dedicado → Pedido', script: 'gerar-pedido-link-dedicado.js', envVars: {} },
   { id: 'massa-pronta-opp-pedido', label: 'IP Connect (massa pronta)', script: 'gerar-pedido-massa-pronta-ip-connect.js', envVars: {} },
   {
+    id: 'massa-pronta-opp-pedido-ip-connect-cpe',
+    label: 'IP Connect Massa Pronta CPE',
+    script: 'gerar-pedido-massa-pronta-ip-connect-cpe.js',
+    envVars: { INCLUDE_IP_CONNECT_CPE: '1', CPE_PRODUCT2_ID: '01tHa000009yFwfIAE' },
+  },
+  {
     id: 'massa-pronta-opp-pedido-pega',
     label: 'IP (massa pronta + Config PEGA)',
     script: 'gerar-pedido-massa-pronta-ip-connect-config-pega.js',
     envVars: {},
+  },
+  {
+    id: 'massa-pronta-opp-pedido-pega-ofs',
+    label: 'IP Massa Completa até Ativação',
+    script: 'gerar-pedido-massa-pronta-ip-connect-config-pega-ofs.js',
+    envVars: {
+      INCLUDE_OFS_INSTALACAO: '1',
+      OFS_RESOURCE_ID: 'TEC_TESTE_01',
+    },
   },
   { id: 'massa-pronta-opp-pedido-vpn', label: 'VPN (massa pronta)', script: 'gerar-pedido-massa-pronta-vpn.js', envVars: {} },
   {

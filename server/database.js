@@ -7,10 +7,19 @@ import {
   saveJobExecutionMysql,
   listRecentJobExecutionsMysql,
   listRecentJobExecutionsSummaryMysql,
+  listJobExecutionsForJobsPanelMysql,
+  listJobExecutionOwnersForPanelMysql,
   getJobExecutionByJobIdMysql,
   getJobExecutionByIdMysql,
   getDashboardAggregatesMysql,
+  getUserExecutionSeqForExecutionMysql,
 } from './database/mysqlStore.js';
+import { SQLITE_EXECUTED_AT_DT, toSqliteDatetimeParam } from './database/datetime.js';
+import {
+  JOBS_PANEL_HISTORY_COLUMNS,
+  normalizeJobsPanelHistoryOptions,
+  buildUserExecutionSeqSelectSqlite,
+} from './database/jobsPanelHistory.js';
 
 const useMysql = config.database.driver === 'mysql';
 
@@ -76,7 +85,7 @@ async function initSqliteDatabase() {
     )
   `);
 
-  for (const col of ['mass_type_label', 'error_message', 'stdout', 'stderr']) {
+  for (const col of ['mass_type_label', 'error_message', 'stdout', 'stderr', 'result_json']) {
     try {
       await run(`ALTER TABLE job_executions ADD COLUMN ${col} TEXT`);
     } catch (err) {
@@ -130,6 +139,7 @@ export async function saveJobExecution(row) {
     errorMessage: row.errorMessage ?? null,
     stdout: row.stdout ?? null,
     stderr: row.stderr ?? null,
+    resultJson: row.resultJson ?? null,
   };
 
   if (useMysql) {
@@ -142,21 +152,22 @@ export async function saveJobExecution(row) {
     `
       INSERT INTO job_executions (
         job_id, mass_type_label, order_number, environment, executed_at,
-        user_code, status, duration_ms, error_message, stdout, stderr
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        user_code, status, duration_ms, error_message, stdout, stderr, result_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       payload.jobId,
       payload.massTypeLabel,
       payload.orderNumber,
       payload.environment,
-      payload.executedAt,
+      toSqliteDatetimeParam(payload.executedAt),
       payload.userCode,
       payload.status,
       payload.durationMs,
       payload.errorMessage,
       payload.stdout,
       payload.stderr,
+      payload.resultJson,
     ]
   );
   logDbSave(payload, { lastID: result?.lastID, driver: 'sqlite' });
@@ -171,7 +182,7 @@ export async function listRecentJobExecutions(limit = 100) {
       SELECT id, job_id, mass_type_label, order_number, environment, executed_at,
              user_code, status, duration_ms, error_message, stdout, stderr
       FROM job_executions
-      ORDER BY datetime(executed_at) DESC
+      ORDER BY ${SQLITE_EXECUTED_AT_DT} DESC
       LIMIT ?
     `,
     [safeLimit]
@@ -187,11 +198,86 @@ export async function listRecentJobExecutionsSummary(limit = 100) {
       SELECT id, job_id, mass_type_label, order_number, environment, executed_at,
              user_code, status, duration_ms, error_message
       FROM job_executions
-      ORDER BY datetime(executed_at) DESC
+      ORDER BY ${SQLITE_EXECUTED_AT_DT} DESC
       LIMIT ?
     `,
     [safeLimit]
   );
+}
+
+/** Histórico para a tela Jobs — SQLite (local). Filtro 7d/30d + VT; dashboard inalterado. */
+export async function listJobExecutionsForJobsPanel(options = {}) {
+  if (!initialized) await initDatabase();
+  if (useMysql) {
+    return listJobExecutionsForJobsPanelMysql(options);
+  }
+
+  const { userCode, days, limit } = normalizeJobsPanelHistoryOptions(options);
+  const params = [];
+  let userClause = '';
+  if (userCode) {
+    userClause = 'AND UPPER(user_code) = UPPER(?)';
+    params.push(userCode);
+  }
+  params.push(limit);
+
+  return all(
+    `
+      SELECT * FROM (
+        SELECT ${JOBS_PANEL_HISTORY_COLUMNS},
+          ${buildUserExecutionSeqSelectSqlite(SQLITE_EXECUTED_AT_DT)}
+        FROM job_executions
+        WHERE ${SQLITE_EXECUTED_AT_DT} >= datetime('now', '-${days} days')
+        ${userClause}
+      ) ranked
+      ORDER BY ${SQLITE_EXECUTED_AT_DT} DESC
+      LIMIT ?
+    `,
+    params
+  );
+}
+
+/** Número da execução do usuário (1ª, 2ª, …) dentro da janela de dias. */
+export async function getUserExecutionSeqForExecution(row, days = 7) {
+  if (!initialized) await initDatabase();
+  if (!row?.id) return null;
+  const safeDays = days === 30 ? 30 : 7;
+  if (useMysql) {
+    return getUserExecutionSeqForExecutionMysql(row, safeDays);
+  }
+  const ranked = await get(
+    `
+      SELECT user_execution_seq FROM (
+        SELECT id,
+          ${buildUserExecutionSeqSelectSqlite(SQLITE_EXECUTED_AT_DT)}
+        FROM job_executions
+        WHERE ${SQLITE_EXECUTED_AT_DT} >= datetime('now', '-${safeDays} days')
+      ) ranked
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [row.id]
+  );
+  const n = ranked?.user_execution_seq;
+  return n != null ? Number(n) : null;
+}
+
+/** VTs distintos no histórico (filtro admin na tela Jobs). SQLite / MySQL. */
+export async function listJobExecutionOwnersForPanel(options = {}) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return listJobExecutionOwnersForPanelMysql(options);
+
+  const { days } = normalizeJobsPanelHistoryOptions(options);
+  const rows = await all(
+    `
+      SELECT DISTINCT user_code
+      FROM job_executions
+      WHERE user_code IS NOT NULL AND TRIM(user_code) <> ''
+        AND ${SQLITE_EXECUTED_AT_DT} >= datetime('now', '-${days} days')
+      ORDER BY user_code ASC
+    `
+  );
+  return rows.map((r) => r.user_code).filter(Boolean);
 }
 
 export async function getJobExecutionByJobId(jobId) {
@@ -201,7 +287,7 @@ export async function getJobExecutionByJobId(jobId) {
   return get(
     `
       SELECT id, job_id, mass_type_label, order_number, environment, executed_at,
-             user_code, status, duration_ms, error_message, stdout, stderr
+             user_code, status, duration_ms, error_message, stdout, stderr, result_json
       FROM job_executions
       WHERE job_id = ?
       ORDER BY id DESC
@@ -217,7 +303,7 @@ export async function getJobExecutionById(id) {
   return get(
     `
       SELECT id, job_id, mass_type_label, order_number, environment, executed_at,
-             user_code, status, duration_ms, error_message, stdout, stderr
+             user_code, status, duration_ms, error_message, stdout, stderr, result_json
       FROM job_executions
       WHERE id = ?
       LIMIT 1
@@ -242,7 +328,7 @@ async function getDashboardAggregatesSqlite(userCode = null) {
       FROM (
         SELECT duration_ms FROM job_executions
         WHERE duration_ms IS NOT NULL ${clause}
-        ORDER BY datetime(executed_at) DESC
+        ORDER BY ${SQLITE_EXECUTED_AT_DT} DESC
         LIMIT 100
       )
     `,
@@ -251,10 +337,10 @@ async function getDashboardAggregatesSqlite(userCode = null) {
 
   const byDay = await all(
     `
-      SELECT date(executed_at) AS day, COUNT(*) AS count
+      SELECT date(${SQLITE_EXECUTED_AT_DT}) AS day, COUNT(*) AS count
       FROM job_executions
-      WHERE datetime(executed_at) >= datetime('now', '-6 days') ${clause}
-      GROUP BY date(executed_at)
+      WHERE ${SQLITE_EXECUTED_AT_DT} >= datetime('now', '-6 days') ${clause}
+      GROUP BY date(${SQLITE_EXECUTED_AT_DT})
       ORDER BY day ASC
     `,
     params

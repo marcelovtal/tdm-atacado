@@ -6,6 +6,7 @@ import { runVtalScript } from './runScript.js';
 import { initDatabase } from './database.js';
 import { persistJobExecution } from './jobPersistence.js';
 import { buildJobReturnPayload, jobStatusFromResult } from './jobOutcome.js';
+import { serializeJobResultSnapshot } from './jobResultSnapshot.js';
 
 import { config } from './config.js';
 import { logRedis, logRedisJob, getRedisConnectionSummary } from './monitor.js';
@@ -55,6 +56,7 @@ const worker = new Worker(
       errorMessage: result.cancelled ? null : result.error ?? null,
       stdout: result.stdout ?? null,
       stderr: result.stderr ?? null,
+      resultJson: serializeJobResultSnapshot(result),
     });
     return buildJobReturnPayload(result, dbSave);
   },

@@ -1,6 +1,11 @@
 import mysql from 'mysql2/promise';
 import { config } from '../config.js';
 import { toMysqlDatetimeParam } from './datetime.js';
+import {
+  JOBS_PANEL_HISTORY_COLUMNS,
+  normalizeJobsPanelHistoryOptions,
+  buildUserExecutionSeqSelectMysql,
+} from './jobsPanelHistory.js';
 
 let pool = null;
 
@@ -67,9 +72,43 @@ const CREATE_ACL_TABLE = `
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 `;
 
+const CREATE_MASS_TYPE_SETTINGS_TABLE = `
+  CREATE TABLE IF NOT EXISTS mass_type_settings (
+    mass_type_id VARCHAR(64) NOT NULL PRIMARY KEY,
+    active TINYINT(1) NOT NULL DEFAULT 1,
+    active_ti TINYINT(1) NOT NULL DEFAULT 1,
+    active_trg TINYINT(1) NOT NULL DEFAULT 1,
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+`;
+
 export async function initMysqlDatabase() {
   await run(CREATE_TABLE);
   await run(CREATE_ACL_TABLE);
+  await run(CREATE_MASS_TYPE_SETTINGS_TABLE);
+  try {
+    await run('ALTER TABLE job_executions ADD COLUMN result_json LONGTEXT NULL');
+  } catch (err) {
+    if (!String(err?.message || '').includes('Duplicate column')) {
+      throw err;
+    }
+  }
+  for (const col of ['active_ti', 'active_trg']) {
+    try {
+      await run(`ALTER TABLE mass_type_settings ADD COLUMN ${col} TINYINT(1) NOT NULL DEFAULT 1`);
+    } catch (err) {
+      if (!String(err?.message || '').includes('Duplicate column')) {
+        throw err;
+      }
+    }
+  }
+  try {
+    await run(
+      'UPDATE mass_type_settings SET active_ti = active, active_trg = active WHERE active_ti IS NOT NULL',
+    );
+  } catch (_) {
+    /* tabela nova ou colunas recém-criadas */
+  }
 }
 
 export async function saveJobExecutionMysql(row) {
@@ -79,8 +118,8 @@ export async function saveJobExecutionMysql(row) {
     `
       INSERT INTO job_executions (
         job_id, mass_type_label, order_number, environment, executed_at,
-        user_code, status, duration_ms, error_message, stdout, stderr
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        user_code, status, duration_ms, error_message, stdout, stderr, result_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     [
       row.jobId,
@@ -94,6 +133,7 @@ export async function saveJobExecutionMysql(row) {
       row.errorMessage,
       row.stdout,
       row.stderr,
+      row.resultJson ?? null,
     ]
   );
   return { insertId: result?.insertId ?? null, executedAt };
@@ -125,12 +165,75 @@ export async function listRecentJobExecutionsSummaryMysql(limit) {
   );
 }
 
+/** Histórico para a tela Jobs — MySQL (QA/produção). Filtro 7d/30d + VT; dashboard inalterado. */
+export async function listJobExecutionsForJobsPanelMysql(options = {}) {
+  const { userCode, days, limit } = normalizeJobsPanelHistoryOptions(options);
+  const params = [days];
+  let userClause = '';
+  if (userCode) {
+    userClause = 'AND UPPER(user_code) = UPPER(?)';
+    params.push(userCode);
+  }
+  params.push(limit);
+
+  return all(
+    `
+      SELECT * FROM (
+        SELECT ${JOBS_PANEL_HISTORY_COLUMNS},
+          ${buildUserExecutionSeqSelectMysql()}
+        FROM job_executions
+        WHERE executed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+        ${userClause}
+      ) ranked
+      ORDER BY executed_at DESC
+      LIMIT ?
+    `,
+    params
+  );
+}
+
+export async function getUserExecutionSeqForExecutionMysql(row, days = 7) {
+  if (row?.id == null) return null;
+  const safeDays = days === 30 ? 30 : 7;
+  const ranked = await getRow(
+    `
+      SELECT user_execution_seq FROM (
+        SELECT id,
+          ${buildUserExecutionSeqSelectMysql()}
+        FROM job_executions
+        WHERE executed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+      ) ranked
+      WHERE id = ?
+      LIMIT 1
+    `,
+    [safeDays, row.id]
+  );
+  const n = ranked?.user_execution_seq;
+  return n != null ? Number(n) : null;
+}
+
+/** VTs distintos no histórico (filtro admin). */
+export async function listJobExecutionOwnersForPanelMysql(options = {}) {
+  const { days } = normalizeJobsPanelHistoryOptions(options);
+  const rows = await all(
+    `
+      SELECT DISTINCT user_code
+      FROM job_executions
+      WHERE user_code IS NOT NULL AND TRIM(user_code) <> ''
+        AND executed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+      ORDER BY user_code ASC
+    `,
+    [days]
+  );
+  return rows.map((r) => r.user_code).filter(Boolean);
+}
+
 export async function getJobExecutionByJobIdMysql(jobId) {
   if (jobId == null || String(jobId).trim() === '') return null;
   return getRow(
     `
       SELECT id, job_id, mass_type_label, order_number, environment, executed_at,
-             user_code, status, duration_ms, error_message, stdout, stderr
+             user_code, status, duration_ms, error_message, stdout, stderr, result_json
       FROM job_executions
       WHERE job_id = ?
       ORDER BY id DESC
@@ -144,7 +247,7 @@ export async function getJobExecutionByIdMysql(id) {
   return getRow(
     `
       SELECT id, job_id, mass_type_label, order_number, environment, executed_at,
-             user_code, status, duration_ms, error_message, stdout, stderr
+             user_code, status, duration_ms, error_message, stdout, stderr, result_json
       FROM job_executions
       WHERE id = ?
       LIMIT 1
@@ -178,6 +281,46 @@ export async function replaceAccessControlUsersMysql(users) {
       await conn.execute(
         'INSERT INTO access_control_users (vt, dashboard, cancel_jobs) VALUES (?, ?, ?)',
         [row.vt, row.dashboard ? 1 : 0, row.cancelJobs ? 1 : 0]
+      );
+    }
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
+export async function listMassTypeSettingsMysql() {
+  const rows = await all(
+    `
+      SELECT mass_type_id AS id, active, active_ti AS activeTi, active_trg AS activeTrg
+      FROM mass_type_settings
+      ORDER BY mass_type_id ASC
+    `
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    active: !!row.active,
+    activeTi: row.activeTi != null ? !!row.activeTi : !!row.active,
+    activeTrg: row.activeTrg != null ? !!row.activeTrg : !!row.active,
+  }));
+}
+
+export async function replaceMassTypeSettingsMysql(types) {
+  const pool = getPool();
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    await conn.execute('DELETE FROM mass_type_settings');
+    for (const row of types) {
+      const activeTi = row.activeTi != null ? (row.activeTi ? 1 : 0) : row.active ? 1 : 0;
+      const activeTrg = row.activeTrg != null ? (row.activeTrg ? 1 : 0) : row.active ? 1 : 0;
+      const activeAny = activeTi || activeTrg ? 1 : 0;
+      await conn.execute(
+        'INSERT INTO mass_type_settings (mass_type_id, active, active_ti, active_trg) VALUES (?, ?, ?, ?)',
+        [row.id, activeAny, activeTi, activeTrg],
       );
     }
     await conn.commit();

@@ -23,7 +23,7 @@
  * fallback de ConfigRede na outra perna, ordem ligeiramente diferente no bloco de agendamento (views vs GET), e payloads com
  * valores vindos de env/timestamp. Ver bloco “Doc vs código” em `runPegaDesignacaoConfiguracao.js` junto a `runPegaLinkDedicadoDuasPontas`.
  */
-const { loadEnv, getTokenUrl, getUserFixture, getPegaFixture, getPegaDefaults } = require('../config/env.js');
+const { loadEnv, getTokenUrl, getUserFixture } = require('../config/env.js');
 const { buildLeadPayload } = require('../support/utils/salesforce/leadPayload.js');
 const { buildConvertLeadPayload, getFieldValue } = require('../support/utils/salesforce/convertLeadPayload.js');
 const { buildOrganizationPatchPayload, resolveLxdFantasyName } = require('../support/utils/salesforce/organizationPatchPayload.js');
@@ -34,20 +34,9 @@ const { buildContractMSAPayload, buildContractActivatePayload } = require('../su
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
-const {
-  runPegaLinkDedicadoDuasPontas,
-  PEGA_TOTAL_STEPS,
-} = require('../support/utils/pega/runPegaDesignacaoConfiguracao.js');
-const { getPegaAccessToken } = require('../support/utils/pega/getPegaAccessToken.js');
-
-const PEGA_ENV_DEFAULTS = getPegaDefaults();
-
-/** Mesmo `fetch` das chamadas Salesforce (IP Connect), evitando depender de global.fetch diferente no runner. */
-function getNodeFetch() {
-  if (typeof fetch === 'function') return fetch;
-  if (typeof globalThis !== 'undefined' && typeof globalThis.fetch === 'function') return globalThis.fetch;
-  throw new Error('fetch não disponível — use Node 18+');
-}
+const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
+const { mergePegaLinkDedicadoIntoPedido } = require('../support/utils/mergePegaLinkDedicadoIntoPedido.js');
+const { runPegaLinkDedicadoIfConfigured } = require('../support/utils/pega/runPegaLinkDedicadoIfConfigured.js');
 
 const env = loadEnv();
 const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
@@ -2283,120 +2272,6 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
   };
 }
 
-/** Token: PEGA_BEARER_TOKEN, ou OAuth2 (env sobrescreve user.json). Paridade com IP Connect: `fetchImpl` explícito. */
-async function resolvePegaBearerToken() {
-  const filePega = getPegaFixture();
-  const direct = (process.env.PEGA_BEARER_TOKEN || '').trim();
-  if (direct) {
-    console.log(
-      `[PEGA] Passo 1/${PEGA_TOTAL_STEPS} — Bearer já definido (PEGA_BEARER_TOKEN). OAuth2 não será chamado.`,
-    );
-    return direct;
-  }
-  const clientId = (process.env.PEGA_CLIENT_ID || filePega?.client_id || '').trim();
-  const clientSecret = (process.env.PEGA_CLIENT_SECRET || filePega?.client_secret || '').trim();
-  const tokenUrl = (process.env.PEGA_TOKEN_URL || filePega?.token_url || PEGA_ENV_DEFAULTS.token_url).trim();
-  const srcId =
-    (process.env.PEGA_CLIENT_ID && 'PEGA_CLIENT_ID') ||
-    (filePega?.client_id && 'user.json → pega.client_id') ||
-    '—';
-  if (!clientId || !clientSecret) return null;
-  console.log(
-    `[PEGA] Passo 1/${PEGA_TOTAL_STEPS} — OAuth2 client_credentials (Basic Auth) →`,
-    tokenUrl,
-    '| client_id:',
-    srcId,
-  );
-  return getPegaAccessToken({
-    tokenUrl,
-    clientId,
-    clientSecret,
-    fetchImpl: getNodeFetch(),
-  });
-}
-
-/**
- * PEGA Link Dedicado: ORDEMSERVICO = OrderNumber CRM dos subpedidos Ponta A, Ponta B e (opcional) EVC — não usar pedido pai.
- */
-async function runPegaLinkDedicadoIfConfigured(
-  subOrderOrderNumberPontaA,
-  subOrderOrderNumberPontaB,
-  subOrderOrderNumberEVC,
-) {
-  if (process.env.SKIP_PEGA === '1') {
-    console.log('[PEGA] SKIP_PEGA=1 — etapa PEGA omitida.');
-    return null;
-  }
-  const overrideA = (process.env.PEGA_ORDEM_SERVICO_PONTA_A || '').trim();
-  const overrideB = (process.env.PEGA_ORDEM_SERVICO_PONTA_B || '').trim();
-  const overrideEvc = (process.env.PEGA_ORDEM_SERVICO_EVC || '').trim();
-  const ordemA = overrideA || subOrderOrderNumberPontaA;
-  const ordemB = overrideB || subOrderOrderNumberPontaB;
-  const ordemEvc = overrideEvc || subOrderOrderNumberEVC || '';
-  if (!ordemA || !ordemB) {
-    console.log(
-      '[PEGA] Sem ORDEMSERVICO para Ponta A e Ponta B (subpedidos sem OrderNumber / tipo Ponta). Defina PEGA_ORDEM_SERVICO_PONTA_A e PEGA_ORDEM_SERVICO_PONTA_B se necessário.',
-    );
-    return null;
-  }
-  const filePega = getPegaFixture();
-  const hasPegaCred =
-    String(process.env.PEGA_BEARER_TOKEN || '').trim() ||
-    (String(process.env.PEGA_CLIENT_ID || filePega?.client_id || '').trim() &&
-      String(process.env.PEGA_CLIENT_SECRET || filePega?.client_secret || '').trim());
-  if (!hasPegaCred) {
-    console.log(
-      '[PEGA] Sem credenciais PEGA: user.json → pega (client_id + client_secret) ou PEGA_BEARER_TOKEN / PEGA_CLIENT_ID+SECRET. Ou SKIP_PEGA=1.',
-    );
-    return null;
-  }
-  const base = (process.env.PEGA_BASE_URL || filePega?.base_url || PEGA_ENV_DEFAULTS.base_url).replace(
-    /\/$/,
-    '',
-  );
-  const cookie = (process.env.PEGA_COOKIE || filePega?.cookie || '').trim();
-  const evcPart = ordemEvc
-    ? ` + EVC (${ordemEvc}${overrideEvc ? ' override' : ''})`
-    : ' (EVC omitido — sem subpedido / PEGA_ORDEM_SERVICO_EVC)';
-  console.log(
-    `[E2E] 21. PEGA Link Dedicado — Ponta A (${ordemA}${overrideA ? ' override' : ''}) + Ponta B (${ordemB}${overrideB ? ' override' : ''})${evcPart} | base:`,
-    base,
-  );
-  let pegaResult;
-  try {
-    pegaResult = await runPegaLinkDedicadoDuasPontas({
-      ordemServicoPontaA: ordemA,
-      ordemServicoPontaB: ordemB,
-      ordemServicoEVC: ordemEvc || undefined,
-      baseUrl: base,
-      cookie,
-      fetchImpl: getNodeFetch(),
-      getPegaBearerToken: resolvePegaBearerToken,
-    });
-  } catch (err) {
-    console.error('[PEGA] Falha no fluxo PEGA (token ou API):', err.message);
-    throw err;
-  }
-  console.log(
-    '\n*** PEGA Link Dedicado (doc: A+ConfigRede → B Designar/Config → Validação A/B → EVC ConfigurarEvc → Agend. A → Agend. B) ***',
-  );
-  if (pegaResult.pontaA?.caseId) console.log('  Ponta A caseId:', pegaResult.pontaA.caseId);
-  if (pegaResult.pontaA?.chaveCaseOrdem) console.log('  Ponta A chaveCaseOrdem:', pegaResult.pontaA.chaveCaseOrdem);
-  if (pegaResult.pontaA?.configuracaoDeRedeStatus != null) {
-    console.log('  ConfiguracaoDeRede HTTP:', pegaResult.pontaA.configuracaoDeRedeStatus);
-    if (pegaResult.pontaA?.configRedeLeg) {
-      console.log('  ConfiguracaoDeRede realizada na perna:', pegaResult.pontaA.configRedeLeg);
-    }
-  }
-  if (pegaResult.pontaB?.chaveCaseOrdem) console.log('  Ponta B chaveCaseOrdem:', pegaResult.pontaB.chaveCaseOrdem);
-  if (pegaResult.evc?.chaveCaseOrdem) console.log('  EVC chaveCaseOrdem:', pegaResult.evc.chaveCaseOrdem);
-  if (pegaResult.evc?.caseId) console.log('  EVC caseId:', pegaResult.evc.caseId);
-  if (pegaResult.evc?.configurarEvcStatus != null) {
-    console.log('  EVC ConfigurarEvc HTTP:', pegaResult.evc.configurarEvcStatus);
-  }
-  return pegaResult;
-}
-
 const FULL_FLOW_MAX_RUNS = 3;
 
 /** Se START_FROM_QUOTE=1 e existirem ACCOUNT_ORGANIZATION_ID, ACCOUNT_BUSINESS_ID, ACCOUNT_BILLING_ID: massa já cadastrada até ativação BRM (contato técnico e primário já existem). Só executa Oportunidade → Cotação → Pedido. CONTACT_TECNICO_ID opcional; se ausente, busca um contato da conta Business. */
@@ -2579,10 +2454,15 @@ async function main() {
             result.subOrderOrderNumberPontaB,
             result.subOrderOrderNumberEVC,
           );
-          await finalizePedidoGerado({
-            ...result,
-            pegaCaseId: pegaResult?.pontaA?.caseId ?? pegaResult?.caseId ?? null,
-          });
+          await finalizePedidoGerado(
+            mergePegaLinkDedicadoIntoPedido(
+              mergeAccountIdsIntoPedidoResult(result, {
+                ...readyQuote,
+                accountBillingId: process.env.ACCOUNT_BILLING_ID?.trim() || readyQuote.accountBillingId,
+              }),
+              pegaResult,
+            ),
+          );
           process.exit(0);
         }
       }
@@ -2615,10 +2495,9 @@ async function main() {
           result.subOrderOrderNumberPontaB,
           result.subOrderOrderNumberEVC,
         );
-        await finalizePedidoGerado({
-          ...result,
-          pegaCaseId: pegaResult?.pontaA?.caseId ?? pegaResult?.caseId ?? null,
-        });
+        await finalizePedidoGerado(
+          mergePegaLinkDedicadoIntoPedido(mergeAccountIdsIntoPedidoResult(result, accountIds), pegaResult),
+        );
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

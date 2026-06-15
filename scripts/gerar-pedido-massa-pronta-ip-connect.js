@@ -43,7 +43,18 @@ const { buildContactPayload } = require('../support/utils/salesforce/contactPayl
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
-const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
+const { finalizePedidoWithOptionalPega } = require('../support/utils/finalizePedidoWithOptionalPega.js');
+const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
+const {
+  isIpConnectCpeEnabled,
+  resolveCpeOptionsFromEnv,
+  resolveCpeProduct2Id,
+  attachCpeToFcIpConnectChild,
+  buildProductsValidationCpeAdvanceBody,
+  buildProductsValidationViabilityAdvanceBody,
+  fetchQuoteLineItemViabilityFields,
+  fetchCpePriceFromIp,
+} = require('../support/utils/salesforce/ipConnectCpePayload.js');
 
 const env = loadEnv();
 const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
@@ -310,12 +321,79 @@ function asNumeroString(val, defaultVal) {
   return s;
 }
 
+async function fetchOrderInstallFeeValues(apiCall, quoteId) {
+  let orderValorMensal = VALOR_MENSAL_IP_CONNECT;
+  let orderValorInstalacao = VALOR_INSTALACAO_IP_CONNECT;
+  const installFeeRes = await apiCall(
+    'POST',
+    IP_IP_CONNECT_QUOTE_INSTALLATION_FEE,
+    buildIpConnectQuoteInstallationFeeBody(quoteId),
+  );
+  if (installFeeRes.status === 200 || installFeeRes.status === 201) {
+    const raw = installFeeRes.data?.result ?? installFeeRes.data;
+    const fee = Array.isArray(raw) ? raw[0] : raw;
+    if (fee && typeof fee === 'object') {
+      const rawM = fee.Mensalidade ?? fee.RecurringCharge ?? fee.ValorMensal ?? fee.valorMensal;
+      const rawT =
+        fee.TaxaInstalacao ?? fee.OneTimeCharge ?? fee.ValorInstalacao ?? fee.ValorInstalacaoLPU ?? fee.valorInstalacao;
+      orderValorMensal = asNumeroString(rawM, VALOR_MENSAL_IP_CONNECT);
+      orderValorInstalacao = asNumeroString(rawT, VALOR_INSTALACAO_IP_CONNECT);
+    }
+  }
+  return {
+    mensal: asNumeroString(orderValorMensal, VALOR_MENSAL_IP_CONNECT),
+    instalacao: asNumeroString(orderValorInstalacao, VALOR_INSTALACAO_IP_CONNECT),
+    installFeeRes,
+  };
+}
+
 /** Monta FCIPConnectChild para save: Mensalidade e TaxaInstalacao sempre string numérica (nunca "null") para o IP persistir no QuoteLineItem. */
-function buildProductsValidationBody(quoteId, quoteLineItemId, fn = 'advance', valorMensal = VALOR_MENSAL_IP_CONNECT, valorInstalacao = VALOR_INSTALACAO_IP_CONNECT) {
+function buildProductsValidationBody(
+  quoteId,
+  quoteLineItemId,
+  fn = 'advance',
+  valorMensal = VALOR_MENSAL_IP_CONNECT,
+  valorInstalacao = VALOR_INSTALACAO_IP_CONNECT,
+  cpeOptions = null
+) {
   const mensal = asNumeroString(valorMensal, VALOR_MENSAL_IP_CONNECT);
   const instalacao = asNumeroString(valorInstalacao, VALOR_INSTALACAO_IP_CONNECT);
   if (mensal === '' || instalacao === '') {
     throw new Error('buildProductsValidationBody: Mensalidade e TaxaInstalacao não podem ser vazios (RecurringCharge/OneTimeCharge ficariam null)');
+  }
+  const FCIPConnectChild = {
+    [quoteLineItemId]: {
+      Id: quoteLineItemId,
+      productCode: 'CONNECTIVITY_IP_CONNECT',
+      TipoAcesso: 'Ponto a ponto',
+      TipoEnderecamento: 'IPV4',
+      TipoInterface: '1G BASE-T',
+      ModalidadeTaxa: 'CobrancaTotal',
+      tempoReparo: '6',
+      Distancia: '2',
+      Linha: 'AMARELA',
+      Mensalidade: mensal,
+      MensalidadeLPU: mensal,
+      TaxaInstalacao: instalacao,
+      TaxaInstalacaoLPU: instalacao,
+      PrazoInstalacao: 'Até 10 dias',
+      Roteador: 'Não se Aplica',
+      tipoProtecao: '1+0',
+      ATT_BGP: 'false',
+      Attributes: {
+        ATT_ACESSO: { code: 'ATT_ACESSO', value: 'Ponto a ponto' },
+        ATT_ENDERECAMENTO: { code: 'ATT_ENDERECAMENTO', value: 'f277a3f2-ce0a-fdf6-925b-5dae5f311c88' },
+        ATT_TIPOINTERFACE: { code: 'ATT_TIPOINTERFACE', value: '1G BASE-T' },
+        ATT_IPs_Quantity: { code: 'ATT_IPs_Quantity', value: '/29 - 8 IPS' },
+        ATT_PROTECAO: { code: 'ATT_PROTECAO', value: '1+0' },
+        ATT_Tipo_Velocidade: { code: 'ATT_Tipo_Velocidade', value: 'Simétrica' },
+        ATT_Approach: { code: 'ATT_Approach', value: 'Simples' },
+        ATT_Speed_Corporate: { code: 'ATT_Speed_Corporate', value: '1400' },
+      },
+    },
+  };
+  if (isIpConnectCpeEnabled()) {
+    attachCpeToFcIpConnectChild(FCIPConnectChild, quoteLineItemId, cpeOptions || resolveCpeOptionsFromEnv());
   }
   return {
     quoteId,
@@ -323,37 +401,7 @@ function buildProductsValidationBody(quoteId, quoteLineItemId, fn = 'advance', v
     IncludeAntiDDOSAndIpAdcional: '',
     FC_LDQuoteInstallationAddress: '',
     FCVpnMplsChild: '',
-    FCIPConnectChild: {
-      [quoteLineItemId]: {
-        Id: quoteLineItemId,
-        productCode: 'CONNECTIVITY_IP_CONNECT',
-        TipoAcesso: 'Ponto a ponto',
-        TipoEnderecamento: 'IPV4',
-        TipoInterface: '1G BASE-T',
-        ModalidadeTaxa: 'CobrancaTotal',
-        tempoReparo: '6',
-        Distancia: '2',
-        Linha: 'AMARELA',
-        Mensalidade: mensal,
-        MensalidadeLPU: mensal,
-        TaxaInstalacao: instalacao,
-        TaxaInstalacaoLPU: instalacao,
-        PrazoInstalacao: 'Até 10 dias',
-        Roteador: 'Não se Aplica',
-        tipoProtecao: '1+0',
-        ATT_BGP: 'false',
-        Attributes: {
-          ATT_ACESSO: { code: 'ATT_ACESSO', value: 'Ponto a ponto' },
-          ATT_ENDERECAMENTO: { code: 'ATT_ENDERECAMENTO', value: 'f277a3f2-ce0a-fdf6-925b-5dae5f311c88' },
-          ATT_TIPOINTERFACE: { code: 'ATT_TIPOINTERFACE', value: '1G BASE-T' },
-          ATT_IPs_Quantity: { code: 'ATT_IPs_Quantity', value: '/29 - 8 IPS' },
-          ATT_PROTECAO: { code: 'ATT_PROTECAO', value: '1+0' },
-          ATT_Tipo_Velocidade: { code: 'ATT_Tipo_Velocidade', value: 'Simétrica' },
-          ATT_Approach: { code: 'ATT_Approach', value: 'Simples' },
-          ATT_Speed_Corporate: { code: 'ATT_Speed_Corporate', value: '1400' },
-        },
-      },
-    },
+    FCIPConnectChild,
   };
 }
 
@@ -363,7 +411,13 @@ function buildProductsValidationBody(quoteId, quoteLineItemId, fn = 'advance', v
  * para consolidar Mensalidade/TaxaInstalacao na cotação; sem isso a cotação fica com valor errado e o subpedido também.
  * Mensalidade/TaxaInstalacao: sempre string numérica (nunca "null") para persistir no QuoteLineItem.
  */
-function buildProductsValidationAdvanceBody(quoteId, quoteLineItemId, valorMensal = VALOR_MENSAL_IP_CONNECT, valorInstalacao = VALOR_INSTALACAO_IP_CONNECT) {
+function buildProductsValidationAdvanceBody(
+  quoteId,
+  quoteLineItemId,
+  valorMensal = VALOR_MENSAL_IP_CONNECT,
+  valorInstalacao = VALOR_INSTALACAO_IP_CONNECT,
+  cpeOptions = null
+) {
   const mensal = asNumeroString(valorMensal, VALOR_MENSAL_IP_CONNECT);
   const instalacao = asNumeroString(valorInstalacao, VALOR_INSTALACAO_IP_CONNECT);
   const FCIPConnectChild =
@@ -393,6 +447,9 @@ function buildProductsValidationAdvanceBody(quoteId, quoteLineItemId, valorMensa
           },
         }
       : '';
+  if (FCIPConnectChild && isIpConnectCpeEnabled()) {
+    attachCpeToFcIpConnectChild(FCIPConnectChild, quoteLineItemId, cpeOptions || resolveCpeOptionsFromEnv());
+  }
   return {
     quoteId,
     function: 'advance',
@@ -725,6 +782,46 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
       }
     }
 
+    let cpeOptions = null;
+    let orderValorMensal = VALOR_MENSAL_IP_CONNECT;
+    let orderValorInstalacao = VALOR_INSTALACAO_IP_CONNECT;
+
+    if (isIpConnectCpeEnabled()) {
+      console.log('[E2E] 16a. VtalCap_IPIpConnectQuoteInstallationFee (valores antes do CPE)...');
+      const feeBeforeCpe = await fetchOrderInstallFeeValues(apiCall, quoteId);
+      orderValorMensal = feeBeforeCpe.mensal;
+      orderValorInstalacao = feeBeforeCpe.instalacao;
+      console.log('   Valores (velocidade): Mensal', orderValorMensal, '| Instalação', orderValorInstalacao);
+
+      const cpeProduct2Id = resolveCpeProduct2Id();
+      cpeOptions = resolveCpeOptionsFromEnv({ product2Id: cpeProduct2Id });
+      console.log(
+        '[E2E] 16b. CPE porte',
+        cpeOptions.porte,
+        '— Product2:',
+        cpeProduct2Id || '(não definido)',
+        '| Vtal_Seg_GetPriceCPE (opcional)...',
+      );
+      const cpePrice = await fetchCpePriceFromIp(apiCall, cpeOptions.porte, cpeProduct2Id);
+      if (cpePrice) {
+        cpeOptions = { ...cpeOptions, ...cpePrice };
+        console.log('   CPE preços:', cpePrice);
+      } else {
+        console.log('   CPE preços: defaults (trace cpe.har)');
+      }
+
+      console.log('[E2E] 16c. Vtal_Seg_ProductsValidation (advance + CPE) — ANTES da viabilidade (trace cpe.har)...');
+      const cpeAdvanceRes = await apiCall(
+        'POST',
+        IP_PRODUCTS_VALIDATION,
+        buildProductsValidationCpeAdvanceBody(quoteId, quoteLineItemId, orderValorMensal, orderValorInstalacao, cpeOptions),
+      );
+      if (cpeAdvanceRes.status !== 200 && cpeAdvanceRes.status !== 201) {
+        fail('ProductsValidation(advance + CPE) — child CPE não persistido', cpeAdvanceRes);
+      }
+      console.log('   CPE child Porte', cpeOptions.porte, 'registrado na cotação');
+    }
+
     console.log('[E2E] 17. Vtal_ViabilityDetailsForQuote (viabilidade async)...');
     const viabilityRes = await apiCall('POST', IP_VIABILITY, { UserId: userId, QuoteId: quoteId, Debug: true });
     if (viabilityRes.status !== 200 && viabilityRes.status !== 201) fail('ViabilityDetailsForQuote', viabilityRes);
@@ -732,28 +829,50 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
     console.log('[E2E] Aguardando', VIABILITY_WAIT_MS / 1000, 's para viabilidade async concluir...');
     await delay(VIABILITY_WAIT_MS);
 
+    if (isIpConnectCpeEnabled()) {
+      console.log('[E2E] 17a-viab. Vtal_Seg_ProductsValidation (advance pós-viabilidade, sem CPE no payload)...');
+      const qliViabFields = await fetchQuoteLineItemViabilityFields(apiCall, quoteLineItemId, QUERY_URL);
+      console.log('   Viabilidade QLI:', JSON.stringify(qliViabFields));
+      const viabAdvanceRes = await apiCall(
+        'POST',
+        IP_PRODUCTS_VALIDATION,
+        buildProductsValidationViabilityAdvanceBody(
+          quoteId,
+          quoteLineItemId,
+          qliViabFields,
+          orderValorMensal,
+          orderValorInstalacao,
+        ),
+      );
+      if (viabAdvanceRes.status !== 200 && viabAdvanceRes.status !== 201) {
+        fail('ProductsValidation(advance pós-viabilidade)', viabAdvanceRes);
+      }
+    }
+
     const todayStr = new Date().toISOString().slice(0, 10);
-    console.log('[E2E] 17a. VtalCap_IPIpConnectQuoteInstallationFee (calcular taxa instalação / valores por velocidade)...');
-    const installFeeRes = await apiCall('POST', IP_IP_CONNECT_QUOTE_INSTALLATION_FEE, buildIpConnectQuoteInstallationFeeBody(quoteId));
-    let orderValorMensal = VALOR_MENSAL_IP_CONNECT;
-    let orderValorInstalacao = VALOR_INSTALACAO_IP_CONNECT;
-    if (installFeeRes.status === 200 || installFeeRes.status === 201) {
-      const raw = installFeeRes.data?.result ?? installFeeRes.data;
-      const fee = Array.isArray(raw) ? raw[0] : raw;
-      if (fee && typeof fee === 'object') {
-        const rawM = fee.Mensalidade ?? fee.RecurringCharge ?? fee.ValorMensal ?? fee.valorMensal;
-        const rawT = fee.TaxaInstalacao ?? fee.OneTimeCharge ?? fee.ValorInstalacao ?? fee.ValorInstalacaoLPU ?? fee.valorInstalacao;
-        orderValorMensal = asNumeroString(rawM, VALOR_MENSAL_IP_CONNECT);
-        orderValorInstalacao = asNumeroString(rawT, VALOR_INSTALACAO_IP_CONNECT);
+    if (!isIpConnectCpeEnabled()) {
+      console.log('[E2E] 17a. VtalCap_IPIpConnectQuoteInstallationFee (calcular taxa instalação / valores por velocidade)...');
+      const feeAfterViab = await fetchOrderInstallFeeValues(apiCall, quoteId);
+      orderValorMensal = feeAfterViab.mensal;
+      orderValorInstalacao = feeAfterViab.instalacao;
+      if (feeAfterViab.installFeeRes.status !== 200 && feeAfterViab.installFeeRes.status !== 201) {
+        console.log(
+          '   IpConnectQuoteInstallationFee (não crítico):',
+          feeAfterViab.installFeeRes.status,
+          feeAfterViab.installFeeRes.data?.error || feeAfterViab.installFeeRes.text?.slice(0, 150),
+        );
+      } else {
         console.log('   Valores (velocidade): Mensal', orderValorMensal, '| Instalação', orderValorInstalacao);
       }
     } else {
-      console.log('   IpConnectQuoteInstallationFee (não crítico):', installFeeRes.status, installFeeRes.data?.error || installFeeRes.text?.slice(0, 150));
+      console.log('[E2E] 17a. IpConnectQuoteInstallationFee (pós-viabilidade, refresh valores)...');
+      const feeAfterViab = await fetchOrderInstallFeeValues(apiCall, quoteId);
+      orderValorMensal = feeAfterViab.mensal;
+      orderValorInstalacao = feeAfterViab.instalacao;
+      console.log('   Valores atualizados: Mensal', orderValorMensal, '| Instalação', orderValorInstalacao);
     }
-    orderValorMensal = asNumeroString(orderValorMensal, VALOR_MENSAL_IP_CONNECT);
-    orderValorInstalacao = asNumeroString(orderValorInstalacao, VALOR_INSTALACAO_IP_CONNECT);
     if (process.env.STRICT_QUOTE_VALUES === '1' && (orderValorMensal === '' || orderValorInstalacao === '')) {
-      fail('IpConnectQuoteInstallationFee não retornou valores válidos (Mensalidade/TaxaInstalacao). Abortando.', { status: 0, data: installFeeRes?.data });
+      fail('IpConnectQuoteInstallationFee não retornou valores válidos (Mensalidade/TaxaInstalacao). Abortando.', { status: 0 });
     }
 
     if (process.env.USE_CART_REPRICE !== '0') {
@@ -763,8 +882,11 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
 
     // save + advance com FCIPConnectChild (Mensalidade/TaxaInstalacao) para cotação e subpedido com valor correto (trace Salvar e Avançar).
     console.log('[E2E] 17b0. Vtal_Seg_ProductsValidation (function: save — FCIPConnectChild com Mensalidade e TaxaInstalacao)...');
+    if (isIpConnectCpeEnabled()) {
+      console.log('   + CPE child (Porte', cpeOptions.porte + ')');
+    }
     console.log('   Payload save: Mensalidade="' + orderValorMensal + '", TaxaInstalacao="' + orderValorInstalacao + '" (nunca "null")');
-    const saveValidationRes = await apiCall('POST', IP_PRODUCTS_VALIDATION, buildProductsValidationBody(quoteId, quoteLineItemId, 'save', orderValorMensal, orderValorInstalacao));
+    const saveValidationRes = await apiCall('POST', IP_PRODUCTS_VALIDATION, buildProductsValidationBody(quoteId, quoteLineItemId, 'save', orderValorMensal, orderValorInstalacao, cpeOptions));
     if (saveValidationRes.status !== 200 && saveValidationRes.status !== 201) {
       fail('ProductsValidation(save) — cotação não consolidada; Valor Mensal/Instalação ficarão vazios no subpedido', saveValidationRes);
     }
@@ -782,7 +904,7 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
     }
 
     console.log('[E2E] 17c. Vtal_Seg_ProductsValidation (function: advance — FCIPConnectChild com Mensalidade/TaxaInstalacao para cotação e subpedido corretos)...');
-    const validationRes = await apiCall('POST', IP_PRODUCTS_VALIDATION, buildProductsValidationAdvanceBody(quoteId, quoteLineItemId, orderValorMensal, orderValorInstalacao));
+    const validationRes = await apiCall('POST', IP_PRODUCTS_VALIDATION, buildProductsValidationAdvanceBody(quoteId, quoteLineItemId, orderValorMensal, orderValorInstalacao, cpeOptions));
     if (validationRes.status !== 200 && validationRes.status !== 201) fail('ProductsValidation(advance)', validationRes);
 
     // NÃO fazer PATCH em QuoteLineItem: o fluxo correto (com taxa de instalação) deixa o produto principal
@@ -1277,7 +1399,12 @@ async function main() {
       if (readyQuote) {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
-          await finalizePedidoGerado(result);
+          await finalizePedidoWithOptionalPega(
+            mergeAccountIdsIntoPedidoResult(result, {
+              ...readyQuote,
+              accountBillingId: process.env.ACCOUNT_BILLING_ID?.trim() || readyQuote.accountBillingId,
+            }),
+          );
           process.exit(0);
         }
       }
@@ -1295,7 +1422,7 @@ async function main() {
       }
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        await finalizePedidoGerado(result);
+        await finalizePedidoWithOptionalPega(mergeAccountIdsIntoPedidoResult(result, accountIds));
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

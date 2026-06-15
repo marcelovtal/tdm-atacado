@@ -60,6 +60,21 @@
             <p id="acl-message" class="message" hidden></p>
           </form>
         </section>
+
+        <section class="card">
+          <h2>Tipos de massa (ativar / desativar)</h2>
+          <p class="card-hint">
+            Desative fluxos por ambiente quando TI ou TRG estiver instável — usuários só veem cards ativos no ambiente selecionado.
+            Alterações são salvas no banco (MySQL em QA) ou em <code>mass-type-settings.json</code> localmente.
+          </p>
+          <form id="mass-types-form">
+            <div class="admin-toolbar">
+              <button type="submit" class="btn btn-primary">Salvar tipos de massa</button>
+            </div>
+            <div id="mass-types-table-wrap" class="admin-table-wrap"></div>
+            <p id="mass-types-message" class="message" hidden></p>
+          </form>
+        </section>
       </main>
     </div>
     <script src="/admin.js"></script>

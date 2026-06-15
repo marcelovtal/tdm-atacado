@@ -61,111 +61,8 @@
                   />
                 </div>
 
-              <div class="flow-category" id="massTypeGroup">
-                <h3 class="flow-category__title">IP Connect</h3>
-                <p class="flow-category__hint">
-                  <code>gerar-pedido-ip-connect.js</code> · <code>gerar-pedido-massa-pronta-ip-connect.js</code> ·
-                  <code>gerar-pedido-massa-pronta-ip-connect-config-pega.js</code>
-                </p>
-                <div class="choice-group">
-                  <label class="choice-card choice-card--primary">
-                    <input type="radio" name="massType" value="lead-pedido" checked />
-                    <span class="choice-title">Lead → IP Connect → Pedido</span>
-                    <span class="choice-subtitle">Fluxo completo até criação do pedido (IP Connect)</span>
-                  </label>
-
-                  <label class="choice-card choice-card--massa-pronta">
-                    <input type="radio" name="massType" value="massa-pronta-opp-pedido" />
-                    <span class="choice-title">Ip Connect (massa pronta)</span>
-                    <span class="choice-subtitle">Massa já cadastrada até BRM. Só Opp → Cotação → Pedido</span>
-                  </label>
-
-                  <label class="choice-card choice-card--massa-pronta-pega">
-                    <input type="radio" name="massType" value="massa-pronta-opp-pedido-pega" />
-                    <span class="choice-title">IP (massa pronta + Config PEGA)</span>
-                    <span class="choice-subtitle">Mesmo fluxo + designação/ configuração no (PEGA)</span>
-                  </label>
-                </div>
-              </div>
-
-              <div class="flow-category">
-                <h3 class="flow-category__title">Link Dedicado</h3>
-                <p class="flow-category__hint">
-                  <code>gerar-pedido-link-dedicado.js</code> · <code>gerar-pedido-massa-pronta-link-dedicado.js</code> ·
-                  <code>gerar-pedido-massa-pronta-link-dedicado-config-pega.js</code>
-                </p>
-                <div class="choice-group">
-                  <label class="choice-card choice-card--link-dedicado">
-                    <input type="radio" name="massType" value="lead-link-dedicado-pedido" />
-                    <span class="choice-title">Lead → Link Dedicado → Pedido</span>
-                    <span class="choice-subtitle">Fluxo completo até criação do pedido (3 pontas: A, B, EVC)</span>
-                  </label>
-
-                  <label class="choice-card choice-card--massa-pronta-link-dedicado">
-                    <input type="radio" name="massType" value="massa-pronta-opp-pedido-link-dedicado" />
-                    <span class="choice-title">Link Dedicado (massa pronta)</span>
-                    <span class="choice-subtitle">Massa já cadastrada até BRM. Só Opp → Cotação → Pedido com produto Link Dedicado</span>
-                  </label>
-
-                  <label class="choice-card choice-card--massa-pronta-link-dedicado-pega">
-                    <input type="radio" name="massType" value="massa-pronta-opp-pedido-link-dedicado-pega" />
-                    <span class="choice-title">Link Dedicado (massa pronta + Config PEGA)</span>
-                    <span class="choice-subtitle">Mesmo fluxo Salesforce + PEGA nas duas pontas (designação Ponta A; agendamento Ponta B)</span>
-                  </label>
-                </div>
-              </div>
-
-              <div class="flow-category">
-                <h3 class="flow-category__title">VPN</h3>
-                <p class="flow-category__hint">
-                  <code>gerar-pedido-vpn.js</code> · <code>gerar-pedido-massa-pronta-vpn.js</code> ·
-                  <code>gerar-pedido-massa-pronta-vpn-connect-config-pega.js</code>
-                </p>
-                <div class="choice-group">
-                  <label class="choice-card choice-card--vpn">
-                    <input type="radio" name="massType" value="lead-vpn-pedido" />
-                    <span class="choice-title">Lead → VPN → Pedido</span>
-                    <span class="choice-subtitle">Fluxo completo até criação do pedido(VPN)</span>
-                  </label>
-
-                  <label class="choice-card choice-card--massa-pronta-vpn">
-                    <input type="radio" name="massType" value="massa-pronta-opp-pedido-vpn" />
-                    <span class="choice-title">VPN (massa pronta)</span>
-                    <span class="choice-subtitle">Massa já cadastrada até BRM. Só Opp → Cotação → Pedido com produto VPN</span>
-                  </label>
-
-                  <label class="choice-card choice-card--massa-pronta-vpn-pega">
-                    <input type="radio" name="massType" value="massa-pronta-opp-pedido-vpn-pega" />
-                    <span class="choice-title">VPN (massa pronta + Config PEGA)</span>
-                    <span class="choice-subtitle">Mesmo fluxo VPN + Configuração de rede PEGA e etapas até agendamento</span>
-                  </label>
-                </div>
-              </div>
-
-              <div class="flow-category">
-                <h3 class="flow-category__title">Outros (ativação / BRM)</h3>
-                <p class="flow-category__hint">
-                  <code>ativacao-brm.js</code> · <code>ativacao-brm-msa.js</code> · <code>ativacao-brm-massa-pronta.js</code>
-                </p>
-                <div class="choice-group">
-                  <label class="choice-card choice-card--accent">
-                    <input type="radio" name="massType" value="conta-ativacao-brm" />
-                    <span class="choice-title">Conta Até Ativação BRM</span>
-                    <span class="choice-subtitle">Só até conta Billing ativa no BRM</span>
-                  </label>
-
-                  <label class="choice-card choice-card--accent">
-                    <input type="radio" name="massType" value="conta-ativacao-brm-msa" />
-                    <span class="choice-title">Conta Até Ativação BRM (MSA)</span>
-                    <span class="choice-subtitle">Inclui contrato MSA + PDF + BRM</span>
-                  </label>
-
-                  <label class="choice-card choice-card--brm-massa-pronta">
-                    <input type="radio" name="massType" value="conta-ativacao-brm-massa-pronta" />
-                    <span class="choice-title">BRM (massa pronta)</span>
-                    <span class="choice-subtitle">Massa completa já existe — só integra a Billing no BRM (getAccount + poll)</span>
-                  </label>
-                </div>
+              <div id="mass-types-root" class="mass-types-root">
+                <p class="empty" id="mass-types-loading">Carregando tipos de massa…</p>
               </div>
               </div>
 
@@ -182,8 +79,8 @@
                   <label for="quantity">Quantidade</label>
                   <select id="quantity" name="quantity" required>
                     <option value="1">1</option>
+                    <option value="3">3</option>
                     <option value="5">5</option>
-                    <option value="10">10</option>
                   </select>
                 </div>
                 <div class="field field--sm" id="massa-pronta-fields" hidden>
@@ -248,9 +145,15 @@
             </div>
           </div>
           <p class="card-hint">
-            Jobs <strong>Na fila</strong> ou <strong>Executando</strong> podem ser cancelados se você tiver permissão (perfil admin).
-            Se o script falhar (ex.: BRM no TI), o job aparece como <strong>Falha</strong> — abra para ver o erro e o log completo.
+            Jobs <strong>Na fila</strong> ou <strong>Executando</strong> podem ser cancelados se você tiver permissão.
+            Concluídos recentes mantêm pedido, PEGA e contas enquanto a sessão da fila estiver ativa; o <strong>Histórico</strong> persiste no banco.
           </p>
+          <div id="jobs-history-filters" class="jobs-history-filters" hidden>
+            <label class="jobs-filter-label" for="jobs-filter-owner">Filtrar por usuário</label>
+            <select id="jobs-filter-owner" class="jobs-filter-select">
+              <option value="">Todos os usuários</option>
+            </select>
+          </div>
           <div id="jobs-list" class="jobs-list">
             <p class="empty">Carregando…</p>
           </div>

@@ -16,7 +16,7 @@ export function canSeeAllJobs(user) {
 }
 
 export function jobBelongsToUser(jobData, viewerVt) {
-  if (canSeeAllJobs({ vt: viewerVt })) return true;
+  if (isPlatformAdmin(viewerVt)) return true;
   const owner = normalizeVt(jobData?.createdByVt || jobData?.ownerVt || jobData?.userCode);
   const viewer = normalizeVt(viewerVt);
   if (!owner || !viewer) return false;

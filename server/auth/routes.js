@@ -4,6 +4,7 @@ import { authenticateLdap } from './ldap.js';
 import { authenticateLocal } from './localAuth.js';
 import { createSession, destroySession, bearerFromReq } from './session.js';
 import { listAccessControl, updateAccessControl } from './accessControl.js';
+import { listMassTypeSettings, updateMassTypeSettings } from '../massTypeSettings.js';
 import { attachAuth, requireAuth, requirePermission, requireManageAccess } from './middleware.js';
 import { normalizeVt } from './vt.js';
 
@@ -74,6 +75,20 @@ router.put('/access-control', attachAuth, requireAuth, requireManageAccess, asyn
   } catch (err) {
     console.error('[ACL] Erro ao salvar:', err.message);
     res.status(500).json({ error: err.message || 'Erro ao salvar permissões' });
+  }
+});
+
+router.get('/mass-types', attachAuth, requireAuth, requireManageAccess, (_req, res) => {
+  res.json({ types: listMassTypeSettings() });
+});
+
+router.put('/mass-types', attachAuth, requireAuth, requireManageAccess, async (req, res) => {
+  try {
+    const data = await updateMassTypeSettings(req.body || {});
+    res.json(data);
+  } catch (err) {
+    console.error('[MassTypes] Erro ao salvar:', err.message);
+    res.status(500).json({ error: err.message || 'Erro ao salvar tipos de massa' });
   }
 });
 

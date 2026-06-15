@@ -1,5 +1,4 @@
-# Garante replicas=1 se alguém escalar tdm-qa para 0 (build/quota no namespace compartilhado).
-# O rede-neutra não precisa disso porque o time deles sempre sobe os pods no deploy.
+# Garante replicas=1 se API ou Worker forem escalados para 0 (build, quota, etc.).
 apiVersion: v1
 kind: ServiceAccount
 metadata:

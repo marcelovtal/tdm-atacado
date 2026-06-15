@@ -1,5 +1,5 @@
 @echo off
-REM Deploy completo do atacado (modelo rede-neutra): apply + build + garante pods no ar.
+REM Deploy completo: apply + build + garante pods no ar.
 REM Executar na raiz do repo: deploy\openshift\deploy.cmd
 
 cd /d %~dp0\..\..
@@ -22,7 +22,7 @@ oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1
 echo === Build da imagem ===
 oc start-build tdm-qa --from-dir=. --wait
 if errorlevel 1 (
-  echo Build falhou. Se quota estiver cheia, aguarde build do rede-neutra terminar e rode de novo.
+  echo Build falhou. Se quota estiver cheia, libere recursos no namespace e rode de novo.
   exit /b 1
 )
 

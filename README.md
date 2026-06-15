@@ -221,10 +221,8 @@ Dependências **fora do cluster** (pods precisam de rede até elas):
 # Primeira vez
 oc new-build --name=tdm-qa --binary=true --strategy=docker -n qualidade-automation-tdm-qa
 
-# Deploy completo (modelo rede-neutra: apply + build + pods no ar)
+# Deploy completo (apply + build + pods no ar)
 deploy\openshift\deploy.cmd
-
-# Se o site cair sem build (pods em 0): deploy\openshift\wake-up.cmd
 ```
 
 **Opção B — Docker local + push** (se o build no cluster falhar por rede):
@@ -316,10 +314,11 @@ oc apply -f deploy/openshift/deployment-worker.yaml
 oc apply -f deploy/openshift/route.yaml
 ```
 
-- **API:** readiness/liveness em **TCP :3333** (`/api/config` exige login e retorna 401)
+- **API:** readiness/liveness HTTP em `/api/health` (porta 3333)
 - **Worker:** sem HTTP; processa fila Redis — se o worker cair, jobs ficam pendentes
+- **Keepalive:** CronJob `tdm-qa-keepalive` repõe API e Worker se ficarem em `0` réplicas
 
-Escale conforme necessidade (QA costuma usar `replicas: 1` em cada).
+QA usa `replicas: 1` em cada Deployment.
 
 ### 5. Route `atacado` (acesso web)
 
@@ -343,7 +342,7 @@ oc delete route tdm-qa-api -n qualidade-automation-tdm-qa
 oc apply -f deploy/openshift/route.yaml
 ```
 
-### 6. Validação e site fora do ar
+### 6. Validação
 
 ```bash
 oc get pods -l app=tdm-qa -n qualidade-automation-tdm-qa
@@ -352,13 +351,7 @@ oc logs deployment/tdm-qa-api -n qualidade-automation-tdm-qa --tail=50
 
 Esperado: API e Worker em `1/1 Running`; logs com `Perfil: qa` e Redis/MySQL conectados.
 
-Se aparecer *Application is not available*, na maioria dos casos os Deployments ficaram em `0` réplicas (após build). **Não precisa rebuild** — rode:
-
-```cmd
-deploy\openshift\wake-up.cmd
-```
-
-Detalhes de troubleshooting, quota e namespace compartilhado: [`deploy/openshift/README.md`](deploy/openshift/README.md).
+Se a Route mostrar *Application is not available*, use `deploy\openshift\wake-up.cmd` ou aguarde o CronJob keepalive (até 3 min). Detalhes: [`deploy/openshift/README.md`](deploy/openshift/README.md).
 
 ### 7. Testes funcionais
 

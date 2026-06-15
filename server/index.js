@@ -6,15 +6,26 @@ import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import { initQueue, getJobDataSchema } from './queue.js';
-import { config, ENVIRONMENTS, MASS_TYPES } from './config.js';
-import { runVtalScript } from './runScript.js';
+import { config, ENVIRONMENTS } from './config.js';
+import { findMassTypeConfig, listMassTypesGrouped } from './massTypeCatalog.js';
+import {
+  initMassTypeSettings,
+  isMassTypeActive,
+  getMassTypeActiveEnvironments,
+  listMassTypeSettings,
+} from './massTypeSettings.js';
+import { runVtalScript, parseScriptStdout } from './runScript.js';
 import {
   initDatabase,
-  listRecentJobExecutionsSummary,
+  listJobExecutionsForJobsPanel,
+  listJobExecutionOwnersForPanel,
   getJobExecutionById,
   getJobExecutionByJobId,
+  getUserExecutionSeqForExecution,
 } from './database.js';
+import { parseExecutedAtMs } from './database/jobsPanelHistory.js';
 import { persistJobExecution } from './jobPersistence.js';
+import { serializeJobResultSnapshot, resolveJobFieldsFromExecutionRow } from './jobResultSnapshot.js';
 import { buildJobReturnPayload, jobStatusFromResult } from './jobOutcome.js';
 import {
   getMonitorEvents,
@@ -33,9 +44,14 @@ import {
 import { publishJobCancel } from './jobCancelSignal.js';
 import { initJobCancelListener } from './jobCancelSignal.js';
 import { initAccessControl } from './auth/accessControl.js';
-import { canSeeAllJobs, jobBelongsToUser } from './auth/platformAdmin.js';
+import { isPlatformAdmin, jobBelongsToUser } from './auth/platformAdmin.js';
 import { buildDashboardStats } from './dashboardStats.js';
 import { normalizeVt } from './auth/vt.js';
+import {
+  isTerminalJobState,
+  sanitizeJobErrorMessage,
+  dbExecutionMatchesJobRun,
+} from './jobError.js';
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
 const clientDistDir = process.env.CLIENT_DIST_PATH || path.join(serverDir, '../client/dist');
@@ -72,11 +88,51 @@ function stripJobLogsFromResponse(payload) {
 }
 
 function historyRowOwnedBy(row, viewerVt) {
-  if (canSeeAllJobs({ vt: viewerVt })) return true;
+  if (isPlatformAdmin(viewerVt)) return true;
   const owner = normalizeVt(row.user_code);
   const viewer = normalizeVt(viewerVt);
   if (!owner) return false;
   return owner === viewer;
+}
+
+function formatHistoryJobRow(row) {
+  const fields = resolveJobFieldsFromExecutionRow(row, parseScriptStdout);
+  const executedMs = parseExecutedAtMs(row.executed_at);
+  const displayNumber =
+    row.user_execution_seq != null ? Number(row.user_execution_seq) : null;
+  return {
+    id: `hist-${row.id}`,
+    displayNumber: Number.isFinite(displayNumber) ? displayNumber : null,
+    massType: row.mass_type_label || 'Histórico',
+    environment: row.environment,
+    status: row.status || 'completed',
+    progress: 100,
+    timestamp: executedMs,
+    processedOn: null,
+    finishedOn: executedMs,
+    executedAt: executedMs,
+    orderId: fields.orderId,
+    orderNumber: fields.orderNumber,
+    error: sanitizeJobErrorMessage(row.error_message) || null,
+    ownerVt: row.user_code ? normalizeVt(row.user_code) : null,
+    accountBillingId: fields.accountBillingId,
+    accountBusinessId: fields.accountBusinessId,
+    accountOrganizationId: fields.accountOrganizationId,
+    contactTecnicoId: fields.contactTecnicoId,
+    pegaCaseId: fields.pegaCaseId,
+    pegaCaseIdPontaA: fields.pegaCaseIdPontaA,
+    pegaCaseIdPontaB: fields.pegaCaseIdPontaB,
+    pegaCaseIdEVC: fields.pegaCaseIdEVC,
+    pegaOrdemServicoOs: fields.pegaOrdemServicoOs,
+    pegaOrdemServicoOsPontaA: fields.pegaOrdemServicoOsPontaA,
+    pegaOrdemServicoOsPontaB: fields.pegaOrdemServicoOsPontaB,
+    pegaOrdemServicoOsEVC: fields.pegaOrdemServicoOsEVC,
+    subOrderOrderNumber: fields.subOrderOrderNumber,
+    subOrderOrderNumberPontaA: fields.subOrderOrderNumberPontaA,
+    subOrderOrderNumberPontaB: fields.subOrderOrderNumberPontaB,
+    subOrderOrderNumberEVC: fields.subOrderOrderNumberEVC,
+    source: 'db-history',
+  };
 }
 
 /**
@@ -93,14 +149,22 @@ function getEffectiveJobState(job, bullState) {
 }
 
 function getEffectiveJobError(job, bullState) {
+  const effective = getEffectiveJobState(job, bullState);
+  if (!isTerminalJobState(effective)) return null;
   if (job.returnvalue?.cancelled) return null;
+  if (bullState === 'failed') {
+    return sanitizeJobErrorMessage(job.failedReason) || 'Job falhou na fila.';
+  }
   if (bullState === 'completed' && job.returnvalue && job.returnvalue.success === false) {
     if (job.returnvalue.dbSaveError) {
-      return `Histórico não gravado no banco: ${job.returnvalue.dbSaveError}`;
+      return sanitizeJobErrorMessage(`Histórico não gravado no banco: ${job.returnvalue.dbSaveError}`);
     }
-    return job.returnvalue.error || 'Script terminou com erro (código de saída ≠ 0)';
+    return (
+      sanitizeJobErrorMessage(job.returnvalue.error) ||
+      'Script terminou com erro (código de saída ≠ 0)'
+    );
   }
-  return job.returnvalue?.error ?? job.failedReason ?? null;
+  return null;
 }
 
 /** Processor usado pela fila em memória (e compatível com worker Redis) */
@@ -119,9 +183,10 @@ async function processJob(job) {
     userCode: job.data?.createdByVt || null,
     status: jobStatusFromResult(result),
     durationMs: Date.now() - startedAt,
-    errorMessage: result.cancelled ? null : result.error ?? null,
+    errorMessage: result.cancelled ? null : sanitizeJobErrorMessage(result.error),
     stdout: result.stdout ?? null,
     stderr: result.stderr ?? null,
+    resultJson: serializeJobResultSnapshot(result),
   });
   return buildJobReturnPayload(result, dbSave);
 }
@@ -180,16 +245,33 @@ app.get('/api/monitor/db', requireAuth, requireManageAccess, async (req, res) =>
 });
 
 /** Lista tipos de massa e ambientes para o frontend */
-app.get('/api/config', requireAuth, (_req, res) => {
+app.get('/api/config', requireAuth, (req, res) => {
+  const isAdmin = !!req.user?.isPlatformAdmin;
+  const categories = listMassTypesGrouped()
+    .map((cat) => ({
+      ...cat,
+      types: cat.types
+        .map((t) => ({
+          ...t,
+          activeEnvironments: getMassTypeActiveEnvironments(t.id),
+        }))
+        .filter((t) => {
+          if (isAdmin) return true;
+          return Object.values(t.activeEnvironments).some(Boolean);
+        }),
+    }))
+    .filter((cat) => cat.types.length > 0);
+
   res.json({
     environments: ENVIRONMENTS.map((id) => ({ id, label: id.toUpperCase() })),
-    massTypes: MASS_TYPES.map(({ id, label }) => ({ id, label })),
-    quantities: [1, 5, 10],
-    user: _req.user
+    massCategories: categories,
+    massTypes: listMassTypeSettings(),
+    quantities: [1, 3, 5],
+    user: req.user
       ? {
-          vt: _req.user.vt,
-          permissions: _req.user.permissions,
-          isPlatformAdmin: !!_req.user.isPlatformAdmin,
+          vt: req.user.vt,
+          permissions: req.user.permissions,
+          isPlatformAdmin: isAdmin,
         }
       : null,
   });
@@ -215,11 +297,21 @@ app.post('/api/jobs', requireAuth, async (req, res) => {
     if (!ENVIRONMENTS.includes(environment)) {
       return res.status(400).json({ error: 'Ambiente inválido. Use: ti, trg' });
     }
-    const massConfig = MASS_TYPES.find((m) => m.id === massType);
+    const massConfig = findMassTypeConfig(massType);
     if (!massConfig) {
       return res.status(400).json({ error: 'Tipo de massa inválido' });
     }
-    const qty = Math.min(Math.max(1, parseInt(quantity, 10) || 1), 50);
+    if (!isMassTypeActive(massType, environment)) {
+      return res.status(403).json({
+        error: `Este tipo de massa está desativado no ambiente ${String(environment).toUpperCase()}. Escolha outro fluxo ou contate o admin.`,
+      });
+    }
+    const allowedQty = [1, 3, 5];
+    const parsedQty = parseInt(quantity, 10) || 1;
+    if (!allowedQty.includes(parsedQty)) {
+      return res.status(400).json({ error: 'Quantidade inválida. Use: 1, 3 ou 5' });
+    }
+    const qty = parsedQty;
 
     const data = getJobDataSchema(massType, environment, qty, extraEnv, req.user?.vt);
     const jobs = [];
@@ -244,56 +336,89 @@ app.post('/api/jobs', requireAuth, async (req, res) => {
   }
 });
 
-/** Lista jobs (últimos da fila: waiting, active, completed, failed) */
+/** Lista jobs: fila (waiting/active + concluídos recentes na fila) + histórico no banco. */
 app.get('/api/jobs', requireAuth, async (req, res) => {
   const queue = getQueue();
   if (!queue) return res.status(503).json({ error: 'Fila não inicializada' });
   try {
+    const isAdmin = isPlatformAdmin(req.user?.vt);
+    const historyDays = isAdmin ? config.jobsHistory.daysAdmin : config.jobsHistory.daysUser;
+    const ownerFilterRaw = String(req.query.ownerVt || '').trim();
+    const ownerFilter = isAdmin && ownerFilterRaw ? normalizeVt(ownerFilterRaw) : null;
+
     const [waiting, active, completed, failed] = await Promise.all([
       queue.getJobs(['waiting']),
       queue.getJobs(['active']),
       queue.getJobs(['completed'], 0, 99),
       queue.getJobs(['failed'], 0, 99),
     ]);
-    const all = [...waiting, ...active, ...completed, ...failed];
-    const withState = await Promise.all(
-      all.map(async (job) => {
-        const state = await job.getState();
-        const effective = getEffectiveJobState(job, state);
-        return {
-          ...formatJob(job),
-          status: effective,
-          error: getEffectiveJobError(job, state),
-        };
-      })
+
+    const inFlightRaw = [...waiting, ...active];
+    const terminalRaw = [...completed, ...failed];
+
+    const mapQueueJob = async (job) => {
+      const state = await job.getState();
+      const effective = getEffectiveJobState(job, state);
+      return {
+        ...formatJob(job),
+        status: effective,
+        error: getEffectiveJobError(job, state),
+        source: 'queue',
+      };
+    };
+
+    let inFlight = await Promise.all(inFlightRaw.map(mapQueueJob));
+    let terminal = await Promise.all(terminalRaw.map(mapQueueJob));
+
+    const matchesOwner = (j) => {
+      if (!ownerFilter) return true;
+      return normalizeVt(j.ownerVt) === ownerFilter;
+    };
+    inFlight = inFlight.filter(matchesOwner);
+    terminal = terminal.filter(matchesOwner);
+
+    const historyUserCode = isAdmin ? ownerFilter : normalizeVt(req.user.vt);
+    const historyRows = await listJobExecutionsForJobsPanel({
+      userCode: historyUserCode,
+      days: historyDays,
+      limit: config.jobsHistory.listLimit,
+    });
+
+    /** Jobs já gravados no banco — preferir histórico (persistente) em vez da fila em memória/Redis. */
+    const persistedQueueJobIds = new Set(
+      historyRows
+        .map((row) => (row.job_id != null ? String(row.job_id).trim() : ''))
+        .filter(Boolean),
     );
-    const historyRows = await listRecentJobExecutionsSummary(500);
-    const seeAll = canSeeAllJobs(req.user);
+    terminal = terminal.filter((j) => !persistedQueueJobIds.has(String(j.id)));
+
     const historyJobs = historyRows
       .filter((row) => historyRowOwnedBy(row, req.user.vt))
-      .map((row) => ({
-        id: `hist-${row.id}`,
-        massType: row.mass_type_label || 'Histórico',
-        environment: row.environment,
-        status: row.status || 'completed',
-        progress: 100,
-        timestamp: row.executed_at ? Date.parse(row.executed_at) : null,
-        processedOn: null,
-        finishedOn: row.executed_at ? Date.parse(row.executed_at) : null,
-        orderId: null,
-        orderNumber: row.order_number || null,
-        error: row.error_message || null,
-        ownerVt: row.user_code ? normalizeVt(row.user_code) : null,
-        accountBillingId: null,
-        accountBusinessId: null,
-        accountOrganizationId: null,
-        contactTecnicoId: null,
-      }));
+      .map(formatHistoryJobRow);
 
-    const merged = [...withState, ...historyJobs]
-      .filter((j) => seeAll || jobBelongsToUser({ createdByVt: j.ownerVt }, req.user.vt));
-    merged.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-    res.json({ jobs: merged });
+    const merged = [...inFlight, ...terminal, ...historyJobs]
+      .filter((j) => isAdmin || jobBelongsToUser({ createdByVt: j.ownerVt }, req.user.vt));
+    merged.sort((a, b) => (b.finishedOn || b.timestamp || 0) - (a.finishedOn || a.timestamp || 0));
+
+    const historyOwners = isAdmin
+      ? (await listJobExecutionOwnersForPanel({ days: historyDays }))
+          .map((vt) => normalizeVt(vt))
+          .filter(Boolean)
+      : [];
+
+    res.json({
+      jobs: merged,
+      meta: {
+        scope: isAdmin ? 'all' : 'user',
+        historyDays,
+        /** Seção "Histórico" paginada — apenas admin; usuário comum vê só fila + executados. */
+        showHistoryPanel: isAdmin,
+        showOwnerVt: isAdmin,
+        canFilterByUser: isAdmin,
+        historyOwners,
+        ownerFilter: ownerFilter || null,
+      },
+    });
   } catch (err) {
     console.error('GET /api/jobs', err);
     res.status(500).json({ error: err.message || 'Erro ao listar jobs' });
@@ -365,9 +490,16 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
       if (!historyRowOwnedBy(row, req.user.vt)) {
         return res.status(403).json({ error: 'Sem permissão para ver este job' });
       }
+      const isAdmin = isPlatformAdmin(req.user?.vt);
+      const historyDays = isAdmin ? config.jobsHistory.daysAdmin : config.jobsHistory.daysUser;
+      const displayNumber = await getUserExecutionSeqForExecution(row, historyDays);
+      const fields = resolveJobFieldsFromExecutionRow(row, parseScriptStdout);
+      const executedMs = parseExecutedAtMs(row.executed_at);
       return res.json(
         stripJobLogsFromResponse({
           id,
+          displayNumber,
+          ownerVt: row.user_code ? normalizeVt(row.user_code) : null,
           data: {
             massTypeLabel: row.mass_type_label || 'Histórico',
             environment: row.environment,
@@ -375,16 +507,17 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
           },
           state: row.status || 'completed',
           progress: 100,
-          timestamp: row.executed_at ? Date.parse(row.executed_at) : null,
+          timestamp: executedMs,
           processedOn: null,
-          finishedOn: row.executed_at ? Date.parse(row.executed_at) : null,
+          finishedOn: executedMs,
           result: {
-            orderNumber: row.order_number || null,
+            ...fields,
             durationMs: row.duration_ms ?? null,
-            error: row.error_message || null,
+            error: sanitizeJobErrorMessage(row.error_message) || null,
             source: 'db-history',
           },
-          orderNumber: row.order_number || null,
+          ...fields,
+          orderNumber: fields.orderNumber,
           failedReason: row.status === 'failed' ? (row.error_message || 'Falha registrada no histórico.') : null,
         })
       );
@@ -416,37 +549,77 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
       result.orderId = rv.orderId;
       result.orderNumber = rv.orderNumber;
       result.orderStatus = rv.orderStatus;
-      result.error = rv.error;
+      result.error = sanitizeJobErrorMessage(rv.error);
       result.accountBillingId = rv.accountBillingId;
       result.accountBusinessId = rv.accountBusinessId;
       result.accountOrganizationId = rv.accountOrganizationId;
       result.contactTecnicoId = rv.contactTecnicoId;
       result.pegaCaseId = rv.pegaCaseId;
+      result.pegaCaseIdPontaA = rv.pegaCaseIdPontaA;
+      result.pegaCaseIdPontaB = rv.pegaCaseIdPontaB;
+      result.pegaCaseIdEVC = rv.pegaCaseIdEVC;
       result.pegaOrdemServicoOs = rv.pegaOrdemServicoOs;
+      result.pegaOrdemServicoOsPontaA = rv.pegaOrdemServicoOsPontaA;
+      result.pegaOrdemServicoOsPontaB = rv.pegaOrdemServicoOsPontaB;
+      result.pegaOrdemServicoOsEVC = rv.pegaOrdemServicoOsEVC;
       result.subOrderOrderNumber = rv.subOrderOrderNumber;
+      result.subOrderOrderNumberPontaA = rv.subOrderOrderNumberPontaA;
+      result.subOrderOrderNumberPontaB = rv.subOrderOrderNumberPontaB;
+      result.subOrderOrderNumberEVC = rv.subOrderOrderNumberEVC;
     }
-    const rowByJob = await getJobExecutionByJobId(String(job.id));
-    if (rowByJob && result.result) {
-      if (rowByJob.order_number && !result.result.orderNumber) {
-        result.result.orderNumber = rowByJob.order_number;
-        result.orderNumber = rowByJob.order_number;
+    const rowByJob =
+      isTerminalJobState(effectiveState) ? await getJobExecutionByJobId(String(job.id)) : null;
+    if (rowByJob && dbExecutionMatchesJobRun(rowByJob, job)) {
+      const dbFields = resolveJobFieldsFromExecutionRow(rowByJob, parseScriptStdout);
+      if (result.result) {
+        if (dbFields.orderNumber && !result.result.orderNumber) {
+          result.result.orderNumber = dbFields.orderNumber;
+          result.orderNumber = dbFields.orderNumber;
+        }
+        if (rowByJob.error_message && !result.result.error) {
+          result.result.error = sanitizeJobErrorMessage(rowByJob.error_message);
+        }
+        for (const key of [
+          'orderId',
+          'accountBillingId',
+          'accountBusinessId',
+          'accountOrganizationId',
+          'contactTecnicoId',
+          'pegaCaseId',
+          'pegaCaseIdPontaA',
+          'pegaCaseIdPontaB',
+          'pegaCaseIdEVC',
+          'pegaOrdemServicoOs',
+          'pegaOrdemServicoOsPontaA',
+          'pegaOrdemServicoOsPontaB',
+          'pegaOrdemServicoOsEVC',
+        ]) {
+          if (dbFields[key] && !result.result[key]) {
+            result.result[key] = dbFields[key];
+            result[key] = dbFields[key];
+          }
+        }
+      } else {
+        result.result = {
+          ...dbFields,
+          error: sanitizeJobErrorMessage(rowByJob.error_message),
+          source: 'database',
+        };
+        Object.assign(result, dbFields);
       }
-      if (rowByJob.error_message && !result.result.error) {
-        result.result.error = rowByJob.error_message;
-      }
-    } else if (rowByJob && !result.result) {
-      result.result = {
-        orderNumber: rowByJob.order_number || null,
-        error: rowByJob.error_message || null,
-        source: 'database',
-      };
-      result.orderNumber = rowByJob.order_number || null;
     }
     if (state === 'failed') {
-      result.failedReason = job.failedReason;
+      result.failedReason = sanitizeJobErrorMessage(job.failedReason);
     }
     if (effectiveState === 'failed' && state === 'completed' && job.returnvalue?.success === false) {
       result.failedReason = getEffectiveJobError(job, state);
+    }
+    if (!isTerminalJobState(effectiveState)) {
+      if (result.result) {
+        result.result = { ...result.result, error: null };
+      }
+      result.error = null;
+      result.failedReason = null;
     }
     res.json(stripJobLogsFromResponse(result));
   } catch (err) {
@@ -472,20 +645,30 @@ function formatJob(job) {
     finishedOn: job.finishedOn,
     orderId: job.returnvalue?.orderId ?? null,
     orderNumber: job.returnvalue?.orderNumber ?? null,
-    error: job.returnvalue?.error ?? job.failedReason ?? null,
+    error: null,
     accountBillingId: job.returnvalue?.accountBillingId ?? null,
     accountBusinessId: job.returnvalue?.accountBusinessId ?? null,
     accountOrganizationId: job.returnvalue?.accountOrganizationId ?? null,
     contactTecnicoId: job.returnvalue?.contactTecnicoId ?? null,
     pegaCaseId: job.returnvalue?.pegaCaseId ?? null,
+    pegaCaseIdPontaA: job.returnvalue?.pegaCaseIdPontaA ?? null,
+    pegaCaseIdPontaB: job.returnvalue?.pegaCaseIdPontaB ?? null,
+    pegaCaseIdEVC: job.returnvalue?.pegaCaseIdEVC ?? null,
     pegaOrdemServicoOs: job.returnvalue?.pegaOrdemServicoOs ?? null,
+    pegaOrdemServicoOsPontaA: job.returnvalue?.pegaOrdemServicoOsPontaA ?? null,
+    pegaOrdemServicoOsPontaB: job.returnvalue?.pegaOrdemServicoOsPontaB ?? null,
+    pegaOrdemServicoOsEVC: job.returnvalue?.pegaOrdemServicoOsEVC ?? null,
     subOrderOrderNumber: job.returnvalue?.subOrderOrderNumber ?? null,
+    subOrderOrderNumberPontaA: job.returnvalue?.subOrderOrderNumberPontaA ?? null,
+    subOrderOrderNumberPontaB: job.returnvalue?.subOrderOrderNumberPontaB ?? null,
+    subOrderOrderNumberEVC: job.returnvalue?.subOrderOrderNumberEVC ?? null,
     ownerVt: job.data?.createdByVt || null,
   };
 }
 
 initDatabase()
   .then(() => initAccessControl())
+  .then(() => initMassTypeSettings())
   .then(() => initJobCancelListener())
   .then(() => initQueue(processJob))
   .then(({ massQueue: q, isRedis }) => {

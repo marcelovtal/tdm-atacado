@@ -49,7 +49,8 @@ const { buildContactPayload } = require('../support/utils/salesforce/contactPayl
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
-const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
+const { finalizePedidoLinkDedicadoWithOptionalPega } = require('../support/utils/finalizePedidoLinkDedicadoWithOptionalPega.js');
+const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
 const { extractLinkDedicadoSubpedidos } = require('../support/utils/extractLinkDedicadoSubpedidos.js');
 
 const env = loadEnv();
@@ -2254,7 +2255,9 @@ async function main() {
       const accountIds = await runLeadFlow(instanceUrl, accessToken, cookie);
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        await finalizePedidoGerado(result);
+        await finalizePedidoLinkDedicadoWithOptionalPega(
+          mergeAccountIdsIntoPedidoResult(result, accountIds),
+        );
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

@@ -14,7 +14,8 @@
     "client:dev": "vite",
     "client:build": "vite build",
     "preview": "vite preview",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "db:clear-jobs": "cross-env APP_PROFILE=qa node scripts/clear-job-executions.mjs"
   },
   "dependencies": {
     "bullmq": "5.34.0",

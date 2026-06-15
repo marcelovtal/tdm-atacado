@@ -27,7 +27,13 @@ export function buildJobReturnPayload(result, dbSave) {
     contactTecnicoId: result.contactTecnicoId,
     pegaCaseId: result.pegaCaseId,
     pegaOrdemServicoOs: result.pegaOrdemServicoOs,
+    pegaOrdemServicoOsPontaA: result.pegaOrdemServicoOsPontaA,
+    pegaOrdemServicoOsPontaB: result.pegaOrdemServicoOsPontaB,
+    pegaOrdemServicoOsEVC: result.pegaOrdemServicoOsEVC,
     subOrderOrderNumber: result.subOrderOrderNumber,
+    subOrderOrderNumberPontaA: result.subOrderOrderNumberPontaA,
+    subOrderOrderNumberPontaB: result.subOrderOrderNumberPontaB,
+    subOrderOrderNumberEVC: result.subOrderOrderNumberEVC,
     scriptSuccess: cancelled ? false : !scriptFailed,
     dbSaveError: dbSave.error ?? null,
   });

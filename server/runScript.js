@@ -1,8 +1,75 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { createRequire } from 'module';
 import { config } from './config.js';
 import { registerJobProcess, unregisterJobProcess, wasJobCancelled } from './jobCancelRegistry.js';
+import { sanitizeJobErrorMessage } from './jobError.js';
+
+const require = createRequire(import.meta.url);
+const { resolvePedidoPanelStatus } = require('../support/utils/resolvePedidoPanelStatus.js');
+
+function parseLabeledField(text, label) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = text.match(new RegExp(`${escaped}:\\s*(\\S+)`, 'i'));
+  return m ? m[1].trim() : null;
+}
+
+function parseOfsInstalacaoConcluida(text) {
+  const m = text.match(/OFS Instalação concluída:\s*(sim|não|nao)/i);
+  if (!m) return null;
+  return /^sim$/i.test(m[1].trim());
+}
+
+/** Parse stdout/stderr do script — reutilizado na fila e no histórico do banco. */
+export function parseScriptStdout(text) {
+  const pegaOrdemServicoOsPontaA = parseLabeledField(text, 'PEGA OS Ponta A');
+  const pegaOrdemServicoOsPontaB = parseLabeledField(text, 'PEGA OS Ponta B');
+  const pegaOrdemServicoOsEVC = parseLabeledField(text, 'PEGA OS EVC');
+  const pegaCaseIdPontaA =
+    parseLabeledField(text, 'PEGA Caso Ponta A') || parseLabeledField(text, 'Ponta A caseId');
+  const pegaCaseIdPontaB =
+    parseLabeledField(text, 'PEGA Caso Ponta B') || parseLabeledField(text, 'Ponta B caseId');
+  const pegaCaseIdEVC = parseLabeledField(text, 'PEGA Caso EVC') || parseLabeledField(text, 'EVC caseId');
+  const pegaOrdemServicoOs =
+    parsePegaOrdemServicoOs(text) ||
+    pegaOrdemServicoOsEVC ||
+    pegaOrdemServicoOsPontaA ||
+    pegaOrdemServicoOsPontaB ||
+    null;
+
+  const subOrderEmImplantacao = parseSubOrderEmImplantacao(text);
+  const rawOrderStatus = parseOrderStatus(text);
+
+  return {
+    orderId: parseOrderId(text),
+    orderNumber: parseOrderNumber(text),
+    orderStatus: resolvePedidoPanelStatus({
+      orderStatus: rawOrderStatus,
+      subOrderEmImplantacao,
+    }),
+    subOrderEmImplantacao,
+    accountBillingId: parseAccountBillingId(text),
+    accountBusinessId: parseAccountBusinessId(text),
+    accountOrganizationId: parseAccountOrganizationId(text),
+    contactTecnicoId: parseContactTecnicoId(text),
+    pegaCaseId: parsePegaCaseId(text) || pegaCaseIdPontaA || pegaCaseIdEVC || pegaCaseIdPontaB || null,
+    pegaCaseIdPontaA,
+    pegaCaseIdPontaB,
+    pegaCaseIdEVC,
+    subOrderOrderNumber: parseSubpedidoOrderNumber(text),
+    pegaOrdemServicoOs,
+    pegaOrdemServicoOsPontaA,
+    pegaOrdemServicoOsPontaB,
+    pegaOrdemServicoOsEVC,
+    subOrderOrderNumberPontaA: parseLabeledField(text, 'SubpedidoOrderNumber Ponta A'),
+    subOrderOrderNumberPontaB: parseLabeledField(text, 'SubpedidoOrderNumber Ponta B'),
+    subOrderOrderNumberEVC: parseLabeledField(text, 'SubpedidoOrderNumber EVC'),
+    ofsActivityId: parseLabeledField(text, 'OFS ActivityId'),
+    ofsActivityStatus: parseLabeledField(text, 'OFS Status'),
+    ofsInstalacaoConcluida: parseOfsInstalacaoConcluida(text),
+  };
+}
 
 export function runVtalScript(scriptName, environment, envVars = {}, options = {}) {
   const jobId = options.jobId != null ? String(options.jobId) : null;
@@ -19,7 +86,13 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
       orderStatus: null,
       pegaCaseId: null,
       pegaOrdemServicoOs: null,
+      pegaOrdemServicoOsPontaA: null,
+      pegaOrdemServicoOsPontaB: null,
+      pegaOrdemServicoOsEVC: null,
       subOrderOrderNumber: null,
+      subOrderOrderNumberPontaA: null,
+      subOrderOrderNumberPontaB: null,
+      subOrderOrderNumberEVC: null,
     });
   }
 
@@ -28,6 +101,7 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
       ...process.env,
       ENVIRONMENT: environment || 'ti',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
+      NODE_NO_WARNINGS: '1',
       ...envVars,
     };
 
@@ -65,7 +139,13 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
         orderStatus: null,
         pegaCaseId: null,
         pegaOrdemServicoOs: null,
+        pegaOrdemServicoOsPontaA: null,
+        pegaOrdemServicoOsPontaB: null,
+        pegaOrdemServicoOsEVC: null,
         subOrderOrderNumber: null,
+        subOrderOrderNumberPontaA: null,
+        subOrderOrderNumberPontaB: null,
+        subOrderOrderNumberEVC: null,
       });
     });
 
@@ -74,16 +154,7 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
         wasJobCancelled(jobId) || signal === 'SIGTERM' || signal === 'SIGKILL';
       if (jobId) unregisterJobProcess(jobId);
       const success = !cancelled && code === 0;
-      const orderId = parseOrderId(stdout);
-      const orderNumber = parseOrderNumber(stdout);
-      const orderStatus = parseOrderStatus(stdout);
-      const accountBillingId = parseAccountBillingId(stdout);
-      const accountBusinessId = parseAccountBusinessId(stdout);
-      const accountOrganizationId = parseAccountOrganizationId(stdout);
-      const contactTecnicoId = parseContactTecnicoId(stdout);
-      const pegaCaseId = parsePegaCaseId(stdout);
-      const subOrderOrderNumber = parseSubpedidoOrderNumber(stdout);
-      const pegaOrdemServicoOs = parsePegaOrdemServicoOs(stdout);
+      const parsed = parseScriptStdout(`${stdout}\n${stderr}`);
 
       resolve({
         success,
@@ -97,16 +168,7 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
           : success
             ? null
             : buildScriptFailureMessage(stderr, stdout, code),
-        orderId,
-        orderNumber,
-        orderStatus,
-        accountBillingId,
-        accountBusinessId,
-        accountOrganizationId,
-        contactTecnicoId,
-        pegaCaseId,
-        pegaOrdemServicoOs,
-        subOrderOrderNumber,
+        ...parsed,
       });
     });
   });
@@ -114,8 +176,22 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
 
 /** Mensagem exibida no front quando o script falha; stderr nem sempre vem preenchido. */
 function buildScriptFailureMessage(stderr, stdout, code) {
-  const err = (stderr || '').trim();
-  if (err) return err;
+  const combined = `${stderr || ''}\n${stdout || ''}`;
+  const errRuns = combined
+    .split(/(?=ERRO \(run \d+\):)/)
+    .map((s) => s.trim())
+    .filter((s) => /^ERRO \(run \d+\):/.test(s));
+  if (errRuns.length) {
+    const last = sanitizeJobErrorMessage(
+      errRuns[errRuns.length - 1]
+        .replace(/\nStatus:\s*0\s*\nBody:\s*undefined\s*/g, '\n')
+        .trim(),
+    );
+    if (last) return last.length > 2500 ? `${last.slice(0, 2500)}…` : last;
+  }
+
+  const err = sanitizeJobErrorMessage((stderr || '').trim());
+  if (err) return err.length > 2500 ? `${err.slice(0, 2500)}…` : err;
   const lines = (stdout || '').split('\n');
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i].trim();
@@ -137,9 +213,24 @@ function parseOrderNumber(text) {
   return m ? m[1].trim() : null;
 }
 
+function extractPedidoGeradoBlock(text) {
+  const m = text.match(/\*\*\* PEDIDO GERADO \*\*\*([\s\S]*?)(?=\n\*\*\*|\n={5,}|$)/);
+  return m ? m[1] : null;
+}
+
 function parseOrderStatus(text) {
-  const m = text.match(/Status:\s*(\S+)/);
+  const block = extractPedidoGeradoBlock(text);
+  const src = block || text;
+  const m = src.match(/^\s+Status:\s*(.+)$/m);
   return m ? m[1].trim() : null;
+}
+
+function parseSubOrderEmImplantacao(text) {
+  const block = extractPedidoGeradoBlock(text);
+  const src = block || text;
+  const m = src.match(/Subpedido "Em implantação":\s*(sim|não|nao)/i);
+  if (!m) return null;
+  return /^sim$/i.test(m[1].trim());
 }
 
 function parseAccountBillingId(text) {
@@ -162,13 +253,15 @@ function parseContactTecnicoId(text) {
   return m ? m[1].trim() : null;
 }
 
+const PEGA_CASE_ID_RE = '(?:A|ATV|PNT|EVC)-\\d+';
+
 /** Linhas emitidas pelo script PEGA (stdout pode vir prefixado com `[SCRIPT …] `). */
 function parsePegaCaseId(text) {
-  let m = text.match(/^\s*PEGA:\s*(A-\d+)\s*$/m);
+  let m = text.match(new RegExp(`^\\s*PEGA:\\s*(${PEGA_CASE_ID_RE})\\s*$`, 'm'));
   if (m) return m[1].trim();
-  m = text.match(/PEGA:\s*(A-\d+)/);
+  m = text.match(new RegExp(`PEGA:\\s*(${PEGA_CASE_ID_RE})`));
   if (m) return m[1].trim();
-  m = text.match(/PegaCaseId:\s*(A-\d+)/);
+  m = text.match(new RegExp(`PegaCaseId:\\s*(${PEGA_CASE_ID_RE})`));
   return m ? m[1].trim() : null;
 }
 

@@ -1,13 +1,56 @@
 const { getPegaFixture, getPegaDefaults } = require('../../../config/env.js');
-const { parseObterDadosOrdemResponse, extractOrdemServicoOsFromItem } = require('./obterDadosOrdem.js');
+const {
+  parseObterDadosOrdemResponse,
+  extractOrdemServicoOsFromItem,
+  isLinkDedicadoObterDadosArray,
+} = require('./obterDadosOrdem.js');
 const { resolvePegaBearerToken } = require('./resolvePegaBearerToken.js');
 const { delay } = require('../helpers/waitHelper.js');
+
+function buildParseOpts(ordemServico, options = {}) {
+  const parseOpts = {};
+  const ldLeg = options.ldLeg != null ? String(options.ldLeg).trim() : '';
+  if (options.linkDedicado || ldLeg) {
+    parseOpts.linkDedicado = true;
+    parseOpts.matchOrdemServico = ordemServico;
+    if (ldLeg) parseOpts.ldLeg = ldLeg;
+  }
+  return parseOpts;
+}
+
+function extractOsFromObterDados(data, ordemServico, options = {}) {
+  const parseOpts = buildParseOpts(ordemServico, options);
+  let parseOptsFinal = parseOpts;
+  if (!parseOpts.linkDedicado && isLinkDedicadoObterDadosArray(data)) {
+    parseOptsFinal = {
+      linkDedicado: true,
+      matchOrdemServico: ordemServico,
+      ldLeg: options.ldLeg || 'evc',
+    };
+  }
+  const parsed = parseObterDadosOrdemResponse(data, parseOptsFinal);
+  let pegaOrdemServicoOs = extractOrdemServicoOsFromItem(parsed?.item);
+  if (!pegaOrdemServicoOs && parseOptsFinal.linkDedicado && String(parseOptsFinal.ldLeg).toLowerCase() === 'evc') {
+    const evcRow = data.find((i) => String(i?.PontaView ?? '').trim() === 'EVC');
+    if (evcRow) pegaOrdemServicoOs = extractOrdemServicoOsFromItem(evcRow);
+  }
+  return { pegaOrdemServicoOs, caseId: parsed?.caseId || null };
+}
 
 /**
  * Consulta leve ao PEGA: GET obterdadosordem com ORDEMSERVICO = número do subpedido CRM.
  * Retorna CaseOrdemServico (ex. OS-154002) — "Número Pedido OSS" no PEGA.
+ *
+ * @param {string} ordemServicoCrm
+ * @param {typeof fetch} [fetchImpl]
+ * @param {{
+ *   linkDedicado?: boolean,
+ *   ldLeg?: 'pontaA'|'pontaB'|'evc'|string,
+ *   maxTries?: number,
+ *   retryMs?: number,
+ * }} [options]
  */
-async function fetchPegaOrdemOsFromCrm(ordemServicoCrm, fetchImpl = global.fetch) {
+async function fetchPegaOrdemOsFromCrm(ordemServicoCrm, fetchImpl = global.fetch, options = {}) {
   if (!ordemServicoCrm) return null;
   if (process.env.SKIP_PEGA === '1') return null;
   if (typeof fetchImpl !== 'function') return null;
@@ -39,16 +82,13 @@ async function fetchPegaOrdemOsFromCrm(ordemServicoCrm, fetchImpl = global.fetch
     ...(cookie ? { Cookie: cookie } : {}),
   };
 
-  const maxTries = Math.max(
-    1,
-    parseInt(String(process.env.PEGA_OBTER_DADOS_EMPTY_MAX_TRIES || '12').trim(), 10) || 12,
-  );
-  const retryMs = Math.max(
-    0,
-    parseInt(String(process.env.PEGA_OBTER_DADOS_EMPTY_RETRY_MS || '5000').trim(), 10) || 5000,
-  );
+  const defaultMaxTries = parseInt(String(process.env.PEGA_OBTER_DADOS_EMPTY_MAX_TRIES || '12').trim(), 10) || 12;
+  const defaultRetryMs = parseInt(String(process.env.PEGA_OBTER_DADOS_EMPTY_RETRY_MS || '5000').trim(), 10) || 5000;
+  const maxTries = Math.max(1, options.maxTries ?? defaultMaxTries);
+  const retryMs = Math.max(0, options.retryMs ?? defaultRetryMs);
 
-  console.log(`[PEGA] Consultando ordem OSS (obterdadosordem) — subpedido CRM ${ordemServico}...`);
+  const legHint = options.ldLeg ? ` [LD ${options.ldLeg}]` : '';
+  console.log(`[PEGA] Consultando ordem OSS (obterdadosordem)${legHint} — subpedido CRM ${ordemServico}...`);
 
   for (let i = 1; i <= maxTries; i++) {
     const url = `${base}/prweb/api/APIOrdemDeServico/v1/obterdadosordem?ORDEMSERVICO=${encodeURIComponent(ordemServico)}`;
@@ -73,9 +113,7 @@ async function fetchPegaOrdemOsFromCrm(ordemServicoCrm, fetchImpl = global.fetch
       continue;
     }
 
-    const parsed = parseObterDadosOrdemResponse(data);
-    const pegaOrdemServicoOs = extractOrdemServicoOsFromItem(parsed?.item);
-    const caseId = parsed?.caseId || null;
+    const { pegaOrdemServicoOs, caseId } = extractOsFromObterDados(data, ordemServico, options);
 
     if (pegaOrdemServicoOs) {
       console.log(`[PEGA] Ordem OSS: ${pegaOrdemServicoOs}${caseId ? ` | Caso: ${caseId}` : ''}`);
@@ -90,4 +128,4 @@ async function fetchPegaOrdemOsFromCrm(ordemServicoCrm, fetchImpl = global.fetch
   return null;
 }
 
-module.exports = { fetchPegaOrdemOsFromCrm };
+module.exports = { fetchPegaOrdemOsFromCrm, extractOsFromObterDados };

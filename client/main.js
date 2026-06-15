@@ -22,11 +22,156 @@ const FORM_MESSAGE_SUCCESS_HIDE_MS = 6000;
 const LAST_RUN_SUMMARY_HIDE_MS = 4000;
 
 /**
- * Único tipo de massa que usa o card lateral `#brm-massa-pronta-fields` e `ativacao-brm-massa-pronta.js`
- * (só Billing no BRM). Não misturar com IP/VPN/Link Dedicado nem com `conta-ativacao-brm` / `conta-ativacao-brm-msa`.
- * @see server/config.js massTypes id
+ * Card BRM massa pronta usa `#brm-massa-pronta-fields` — formVariant `brm-massa-pronta` na API.
  */
-const MASS_TYPE_BRM_MASSA_PRONTA = 'conta-ativacao-brm-massa-pronta';
+
+/** Config carregada de GET /api/config (tipos de massa + permissões). */
+let appConfig = { massCategories: [], user: null };
+let massTypeToggleBusy = false;
+
+function renderCategoryHint(hint) {
+  if (!hint) return '';
+  return hint
+    .split(' · ')
+    .map((part) => `<code>${escapeHtml(part.trim())}</code>`)
+    .join(' · ');
+}
+
+function getSelectedEnvironment() {
+  return document.getElementById('environment')?.value || 'ti';
+}
+
+function isTypeActiveInEnv(type, environment) {
+  return type.activeEnvironments?.[environment] !== false;
+}
+
+function formatEnvSummary(activeEnvironments = {}) {
+  return ['ti', 'trg']
+    .map((env) => `${env.toUpperCase()}: ${activeEnvironments[env] !== false ? 'ativo' : 'off'}`)
+    .join(' · ');
+}
+
+function renderMassTypeCard(type, { isAdmin, environment, checkFirstActive }) {
+  const activeInEnv = isTypeActiveInEnv(type, environment);
+  if (!isAdmin && !activeInEnv) return '';
+
+  const envLabel = environment.toUpperCase();
+  const cardClasses = ['choice-card', type.cardClass, !activeInEnv ? 'choice-card--inactive' : '']
+    .filter(Boolean)
+    .join(' ');
+  const checked = activeInEnv && checkFirstActive.value ? ' checked' : '';
+  if (activeInEnv && checkFirstActive.value) checkFirstActive.value = false;
+
+  const toggleBtn = isAdmin
+    ? `<button type="button" class="btn btn-secondary btn-sm mass-type-toggle" data-mass-type-id="${escapeHtml(type.id)}" data-mass-type-environment="${escapeHtml(environment)}" data-mass-type-active="${activeInEnv ? '1' : '0'}">${activeInEnv ? `Desativar em ${envLabel}` : `Ativar em ${envLabel}`}</button>`
+    : '';
+  const badge = !activeInEnv && isAdmin ? `<span class="mass-type-badge">Inativo em ${envLabel}</span>` : '';
+  const envSummary = isAdmin
+    ? `<span class="mass-type-env-summary">${escapeHtml(formatEnvSummary(type.activeEnvironments))}</span>`
+    : '';
+
+  const envData = type.activeEnvironments || {};
+  return `
+    <label class="${cardClasses}" data-mass-type-id="${escapeHtml(type.id)}" data-form-variant="${escapeHtml(type.formVariant || '')}" data-active-ti="${envData.ti !== false ? 'true' : 'false'}" data-active-trg="${envData.trg !== false ? 'true' : 'false'}">
+      <input type="radio" name="massType" value="${escapeHtml(type.id)}"${!activeInEnv ? ' disabled' : ''}${checked} />
+      <span class="choice-title">${escapeHtml(type.label)}</span>
+      ${badge}
+      ${envSummary}
+      <span class="choice-subtitle">${escapeHtml(type.subtitle || '')}</span>
+      ${toggleBtn}
+    </label>
+  `;
+}
+
+function renderMassTypes(categories, isAdmin, environment = 'ti') {
+  const root = document.getElementById('mass-types-root');
+  if (!root) return;
+
+  const env = environment || 'ti';
+  const visibleCategories = categories
+    .map((cat) => ({
+      ...cat,
+      types: cat.types.filter((t) => isAdmin || isTypeActiveInEnv(t, env)),
+    }))
+    .filter((cat) => cat.types.length > 0);
+
+  if (!visibleCategories.length) {
+    root.innerHTML = `<p class="empty">Nenhum tipo de massa disponível em ${env.toUpperCase()}. ${isAdmin ? 'Ative fluxos em Admin ou use os botões abaixo.' : 'Contate o administrador.'}</p>`;
+    return;
+  }
+
+  const checkFirstActive = { value: true };
+  root.innerHTML = visibleCategories
+    .map(
+      (cat) => `
+    <div class="flow-category" data-category="${escapeHtml(cat.id)}">
+      <h3 class="flow-category__title">${escapeHtml(cat.title)}</h3>
+      <p class="flow-category__hint">${renderCategoryHint(cat.hint)}</p>
+      <div class="choice-group">
+        ${cat.types.map((t) => renderMassTypeCard(t, { isAdmin, environment: env, checkFirstActive })).join('')}
+      </div>
+    </div>
+  `
+    )
+    .join('');
+
+  root.querySelectorAll('input[name="massType"]:not([disabled])').forEach((input) => {
+    input.addEventListener('change', updateMassaProntaVisibility);
+  });
+  root.querySelectorAll('.mass-type-toggle').forEach((btn) => {
+    btn.addEventListener('click', onMassTypeToggleClick);
+  });
+  updateMassaProntaVisibility();
+}
+
+function refreshMassTypesForEnvironment() {
+  renderMassTypes(
+    appConfig.massCategories || [],
+    !!appConfig.user?.isPlatformAdmin,
+    getSelectedEnvironment(),
+  );
+}
+
+async function loadAppConfig() {
+  const data = await api('/config');
+  appConfig = data;
+  refreshMassTypesForEnvironment();
+}
+
+async function onMassTypeToggleClick(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (massTypeToggleBusy) return;
+  const btn = e.currentTarget;
+  const id = btn.dataset.massTypeId;
+  const environment = btn.dataset.massTypeEnvironment || getSelectedEnvironment();
+  const nextActive = btn.dataset.massTypeActive !== '1';
+  massTypeToggleBusy = true;
+  btn.disabled = true;
+  try {
+    await api('/auth/mass-types', {
+      method: 'PUT',
+      body: JSON.stringify({ types: [{ id, environment, active: nextActive }] }),
+    });
+    await loadAppConfig();
+  } catch (err) {
+    const msg = document.getElementById('form-message');
+    showMessage(msg, err.message || 'Erro ao alterar tipo de massa', 'error');
+  } finally {
+    massTypeToggleBusy = false;
+    btn.disabled = false;
+  }
+}
+
+function getSelectedMassTypeMeta() {
+  const input = document.querySelector('input[name="massType"]:checked:not([disabled])');
+  if (!input) return null;
+  const card = input.closest('.choice-card');
+  return {
+    id: input.value,
+    formVariant: card?.dataset?.formVariant || null,
+  };
+}
 
 /** Só a última requisição disparada por “Atualizar” atualiza o texto (evita “dança” com cliques em rajada). */
 let jobsRefreshSeq = 0;
@@ -34,7 +179,8 @@ let jobsRefreshSeq = 0;
 const JOBS_PAGE_SIZE = 10;
 /** Última lista recebida da API — usada ao mudar de página sem novo fetch. */
 let cachedJobsForList = [];
-/** Páginas 1-based por seção (`current` = execuções na fila, `history` = SQLite). */
+let cachedJobsMeta = { scope: 'user', historyDays: 7, showOwnerVt: false, showHistoryPanel: false };
+/** Páginas 1-based por seção (`current` = na fila, `history` = banco). */
 const jobsListPages = { current: 1, history: 1 };
 
 function paginateSlice(items, page, pageSize) {
@@ -119,7 +265,209 @@ function formatTime(ts) {
   });
 }
 
-function renderJobCard(j) {
+function jobPrimaryPegaOs(j) {
+  return (
+    j.pegaOrdemServicoOsEVC ||
+    j.pegaOrdemServicoOs ||
+    j.pegaOrdemServicoOsPontaA ||
+    j.pegaOrdemServicoOsPontaB ||
+    null
+  );
+}
+
+function jobLegPegaDisplay(j, osKey, caseKey) {
+  return j[osKey] || j[caseKey] || null;
+}
+
+function jobHasLinkDedicadoPegaLegs(j) {
+  return !!(
+    j.pegaOrdemServicoOsPontaA ||
+    j.pegaOrdemServicoOsPontaB ||
+    j.pegaOrdemServicoOsEVC ||
+    j.pegaCaseIdPontaA ||
+    j.pegaCaseIdPontaB ||
+    j.pegaCaseIdEVC
+  );
+}
+
+function jobHasLinkDedicadoSubpedidos(j) {
+  return !!(
+    j.subOrderOrderNumberPontaA ||
+    j.subOrderOrderNumberPontaB ||
+    j.subOrderOrderNumberEVC
+  );
+}
+
+function formatJobListLinkDedicadoSubpedidos(j) {
+  if (!jobHasLinkDedicadoSubpedidos(j)) return null;
+  const parts = [];
+  if (j.subOrderOrderNumberPontaA) parts.push(`A: ${j.subOrderOrderNumberPontaA}`);
+  if (j.subOrderOrderNumberPontaB) parts.push(`B: ${j.subOrderOrderNumberPontaB}`);
+  if (j.subOrderOrderNumberEVC) parts.push(`EVC: ${j.subOrderOrderNumberEVC}`);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+function formatJobListResultSummary(j) {
+  const orderPart = j.orderNumber ? `Pedido: ${j.orderNumber}` : null;
+  const pegaSummary = formatJobListPegaSummary(j);
+  const ldSubpedidos = !pegaSummary ? formatJobListLinkDedicadoSubpedidos(j) : null;
+  const subpedidoPart =
+    j.subOrderOrderNumber && !pegaSummary && !ldSubpedidos
+      ? `Subpedido: ${j.subOrderOrderNumber}`
+      : ldSubpedidos
+        ? `Subpedidos: ${ldSubpedidos}`
+        : null;
+
+  if (orderPart && pegaSummary) return `${orderPart} · PEGA: ${pegaSummary}`;
+  if (orderPart && subpedidoPart) return `${orderPart} · ${subpedidoPart}`;
+  if (orderPart) return orderPart;
+  if (pegaSummary) return `PEGA: ${pegaSummary}`;
+  if (subpedidoPart) return subpedidoPart;
+  return null;
+}
+
+function formatJobListPegaSummary(j) {
+  if (jobHasLinkDedicadoPegaLegs(j)) {
+    const parts = [];
+    const legA = jobLegPegaDisplay(j, 'pegaOrdemServicoOsPontaA', 'pegaCaseIdPontaA');
+    const legB = jobLegPegaDisplay(j, 'pegaOrdemServicoOsPontaB', 'pegaCaseIdPontaB');
+    const legEvc = jobLegPegaDisplay(j, 'pegaOrdemServicoOsEVC', 'pegaCaseIdEVC');
+    if (legA) parts.push(`A: ${legA}`);
+    if (legB) parts.push(`B: ${legB}`);
+    if (legEvc) parts.push(`EVC: ${legEvc}`);
+    if (parts.length) return parts.join(' · ');
+  }
+  return jobPrimaryPegaOs(j) || j.pegaCaseId || null;
+}
+
+function renderJobAccountsSection(r) {
+  if (!r.accountOrganizationId && !r.accountBusinessId && !r.accountBillingId && !r.contactTecnicoId) {
+    return '';
+  }
+  return `
+      <div class="detail-row">
+        <div class="detail-label">Contas</div>
+        <div class="detail-value">
+          ${r.accountOrganizationId ? `Conta Organization: ${escapeHtml(r.accountOrganizationId)}<br>` : ''}
+          ${r.accountBusinessId ? `Conta Business: ${escapeHtml(r.accountBusinessId)}<br>` : ''}
+          ${r.accountBillingId ? `Conta Billing: ${escapeHtml(r.accountBillingId)}<br>` : ''}
+          ${r.contactTecnicoId ? `Contato técnico: ${escapeHtml(r.contactTecnicoId)}` : ''}
+        </div>
+      </div>`;
+}
+
+function renderJobSubpedidoDetailLines(r) {
+  if (jobHasLinkDedicadoSubpedidos(r)) {
+    const lines = [];
+    if (r.subOrderOrderNumberPontaA) {
+      lines.push(`Subpedido Ponta A (SF): ${escapeHtml(r.subOrderOrderNumberPontaA)}`);
+    }
+    if (r.subOrderOrderNumberPontaB) {
+      lines.push(`Subpedido Ponta B (SF): ${escapeHtml(r.subOrderOrderNumberPontaB)}`);
+    }
+    if (r.subOrderOrderNumberEVC) {
+      lines.push(`Subpedido EVC (SF): ${escapeHtml(r.subOrderOrderNumberEVC)}`);
+    }
+    return lines.length ? `${lines.join('<br>')}<br>` : '';
+  }
+  if (r.subOrderOrderNumber && !r.pegaOrdemServicoOs && !jobHasLinkDedicadoPegaLegs(r)) {
+    return `Subpedido (SF): ${escapeHtml(r.subOrderOrderNumber)}<br>`;
+  }
+  return '';
+}
+
+function renderJobPegaDetailLines(r) {
+  if (jobHasLinkDedicadoPegaLegs(r)) {
+    const lines = [];
+    const legA = jobLegPegaDisplay(r, 'pegaOrdemServicoOsPontaA', 'pegaCaseIdPontaA');
+    const legB = jobLegPegaDisplay(r, 'pegaOrdemServicoOsPontaB', 'pegaCaseIdPontaB');
+    const legEvc = jobLegPegaDisplay(r, 'pegaOrdemServicoOsEVC', 'pegaCaseIdEVC');
+    if (legA) {
+      lines.push(
+        r.pegaOrdemServicoOsPontaA
+          ? `PEGA Ponta A (OSS): ${escapeHtml(legA)}`
+          : `PEGA Ponta A (caso): ${escapeHtml(legA)}`,
+      );
+    }
+    if (legB) {
+      lines.push(
+        r.pegaOrdemServicoOsPontaB
+          ? `PEGA Ponta B (OSS): ${escapeHtml(legB)}`
+          : `PEGA Ponta B (caso): ${escapeHtml(legB)}`,
+      );
+    }
+    if (legEvc) {
+      lines.push(
+        r.pegaOrdemServicoOsEVC
+          ? `PEGA EVC (OSS): ${escapeHtml(legEvc)}`
+          : `PEGA EVC (caso): ${escapeHtml(legEvc)}`,
+      );
+    }
+    return lines.length ? `${lines.join('<br>')}<br>` : '';
+  }
+  if (r.pegaOrdemServicoOs) {
+    return `PEGA Ordem (OSS): ${escapeHtml(r.pegaOrdemServicoOs)}<br>`;
+  }
+  return '';
+}
+
+function formatJobCardTime(j, showOwnerVt = false) {
+  const ts = j.finishedOn || j.timestamp;
+  const isHistory = String(j.id).startsWith('hist-');
+  let text = '—';
+  if (ts) {
+    const d = new Date(ts);
+    if (isHistory) {
+      text = d.toLocaleString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } else {
+      text = formatTime(ts);
+    }
+  }
+  if (showOwnerVt && j.ownerVt) {
+    text += ` · ${j.ownerVt}`;
+  }
+  return text;
+}
+
+function renderOwnerFilter(meta) {
+  const wrap = document.getElementById('jobs-history-filters');
+  const sel = document.getElementById('jobs-filter-owner');
+  if (!wrap || !sel) return;
+  if (!meta?.canFilterByUser) {
+    wrap.hidden = true;
+    return;
+  }
+  wrap.hidden = false;
+  const selected = meta.ownerFilter || sel.value || '';
+  const owners = meta.historyOwners || [];
+  sel.innerHTML =
+    '<option value="">Todos os usuários</option>' +
+    owners
+      .map((vt) => {
+        const v = escapeHtml(vt);
+        return `<option value="${v}"${vt === selected ? ' selected' : ''}>${v}</option>`;
+      })
+      .join('');
+}
+
+function formatJobDisplayLabel(j, { showOwnerVt = false } = {}) {
+  const num = j?.displayNumber;
+  if (num != null && Number.isFinite(num)) {
+    if (showOwnerVt && j.ownerVt) {
+      return `${j.ownerVt} #${num}`;
+    }
+    return `#${num}`;
+  }
+  return `#${String(j?.id ?? '—')}`;
+}
+
+function renderJobCard(j, { showOwnerVt = false } = {}) {
   const status = (j.status || '').toLowerCase();
   const canCancel =
     typeof window !== 'undefined' &&
@@ -133,19 +481,17 @@ function renderJobCard(j) {
       : '';
   return `
     <article class="job-item" data-job-id="${j.id}" role="button" tabindex="0">
-      <span class="job-id">#${j.id}</span>
+      <span class="job-id">${escapeHtml(formatJobDisplayLabel(j, { showOwnerVt }))}</span>
       <span class="job-type">${escapeHtml(j.massType || '—')}</span>
       <span class="job-env">${escapeHtml((j.environment || '').toUpperCase())}</span>
       <span class="job-status ${(j.status || '').toLowerCase()}">${statusLabel(j.status)}</span>
-      <span class="job-time">${formatTime(j.timestamp)}</span>
+      <span class="job-time" title="Data de execução">${escapeHtml(formatJobCardTime(j, showOwnerVt))}</span>
       ${
         (() => {
-          const pegaOs = j.pegaOrdemServicoOs;
-          if (j.orderNumber && pegaOs) {
-            return `<span class="job-result">Pedido: ${escapeHtml(j.orderNumber)} · PEGA: ${escapeHtml(pegaOs)}</span>`;
+          const resultSummary = formatJobListResultSummary(j);
+          if (resultSummary) {
+            return `<span class="job-result">${escapeHtml(resultSummary)}</span>`;
           }
-          if (pegaOs) return `<span class="job-result">PEGA: ${escapeHtml(pegaOs)}</span>`;
-          if (j.orderNumber) return `<span class="job-result">Pedido: ${escapeHtml(j.orderNumber)}</span>`;
           return null;
         })() ||
         (j.status === 'failed' && j.error
@@ -154,51 +500,101 @@ function renderJobCard(j) {
               ? `<span class="job-result job-result--muted">Cancelado</span>`
               : j.accountBillingId
               ? `<span class="job-result">Conta BRM: ${escapeHtml(j.accountBillingId)}</span>`
-              : '')
+              : '<span class="job-result job-result--muted">—</span>')
       }
       <span class="job-actions">${cancelBtn}</span>
     </article>
   `;
 }
 
-function renderJobsList(jobs) {
+function renderJobsList(jobs, meta = cachedJobsMeta) {
   const list = document.getElementById('jobs-list');
   cachedJobsForList = jobs;
+  cachedJobsMeta = meta || cachedJobsMeta;
+  const cardOpts = { showOwnerVt: !!meta?.showOwnerVt };
 
   if (!jobs.length) {
-    list.innerHTML = '<p class="empty">Nenhum job na fila.</p>';
+    list.innerHTML = '<p class="empty">Nenhum job encontrado no período.</p>';
     return;
   }
 
-  const currentJobs = jobs.filter((j) => !String(j.id).startsWith('hist-'));
+  const showHistoryPanel = !!meta?.showHistoryPanel;
+  const liveJobs = jobs.filter((j) => !String(j.id).startsWith('hist-'));
   const historyJobs = jobs.filter((j) => String(j.id).startsWith('hist-'));
 
-  const curMeta = paginateSlice(currentJobs, jobsListPages.current, JOBS_PAGE_SIZE);
-  jobsListPages.current = curMeta.page;
-  const histMeta = paginateSlice(historyJobs, jobsListPages.history, JOBS_PAGE_SIZE);
+  const inFlight = liveJobs.filter((j) => {
+    const s = (j.status || '').toLowerCase();
+    return s === 'waiting' || s === 'active';
+  });
+  let recentDone = liveJobs.filter((j) => {
+    const s = (j.status || '').toLowerCase();
+    return s !== 'waiting' && s !== 'active';
+  });
+
+  /** Usuário comum: jobs persistidos entram na mesma lista de executados (sem seção Histórico). */
+  if (!showHistoryPanel && historyJobs.length) {
+    const seen = new Set(recentDone.map((j) => String(j.id)));
+    const merged = [...recentDone];
+    for (const j of historyJobs) {
+      const id = String(j.id);
+      if (!seen.has(id)) {
+        seen.add(id);
+        merged.push(j);
+      }
+    }
+    merged.sort((a, b) => (b.finishedOn || b.timestamp || 0) - (a.finishedOn || a.timestamp || 0));
+    recentDone = merged;
+  }
+
+  const historyForPanel = showHistoryPanel ? [...historyJobs] : [];
+  if (showHistoryPanel && cardOpts.showOwnerVt && historyForPanel.length > 1) {
+    historyForPanel.sort((a, b) => {
+      const vt = String(a.ownerVt || '').localeCompare(String(b.ownerVt || ''), 'pt-BR', {
+        sensitivity: 'base',
+      });
+      if (vt !== 0) return vt;
+      return (b.displayNumber || 0) - (a.displayNumber || 0);
+    });
+  }
+  const histMeta = paginateSlice(historyForPanel, jobsListPages.history, JOBS_PAGE_SIZE);
   jobsListPages.history = histMeta.page;
 
+  const doneTitle = showHistoryPanel
+    ? 'Concluídos recentes <span class="jobs-section__hint">Detalhes completos (pedido, PEGA, contas)</span>'
+    : 'Executados <span class="jobs-section__hint">Seus jobs finalizados (pedido, PEGA, contas)</span>';
+
   const sections = [];
-  if (currentJobs.length) {
+  if (inFlight.length) {
     sections.push(`
       <div class="jobs-section">
-        <p class="jobs-section__title">Execucoes atuais</p>
-        ${curMeta.slice.map(renderJobCard).join('')}
-        ${renderPaginationNav('current', curMeta)}
+        <p class="jobs-section__title">Na fila / executando</p>
+        ${inFlight.map((j) => renderJobCard(j, cardOpts)).join('')}
       </div>
     `);
   }
-  if (historyJobs.length) {
+  if (recentDone.length) {
     sections.push(`
       <div class="jobs-section">
-        <p class="jobs-section__title">Historico</p>
-        ${histMeta.slice.map(renderJobCard).join('')}
+        <p class="jobs-section__title">${doneTitle}</p>
+        ${recentDone.map((j) => renderJobCard(j, cardOpts)).join('')}
+      </div>
+    `);
+  }
+  if (historyForPanel.length) {
+    const historyHint =
+      meta?.historyDays === 30
+        ? 'Últimos 30 dias (todas as execuções)'
+        : `Últimos ${meta?.historyDays || 7} dias`;
+    sections.push(`
+      <div class="jobs-section">
+        <p class="jobs-section__title">Histórico <span class="jobs-section__hint">${escapeHtml(historyHint)}</span></p>
+        ${histMeta.slice.map((j) => renderJobCard(j, cardOpts)).join('')}
         ${renderPaginationNav('history', histMeta)}
       </div>
     `);
   }
 
-  list.innerHTML = sections.join('');
+  list.innerHTML = sections.join('') || '<p class="empty">Nenhum job encontrado no período.</p>';
 
   list.querySelectorAll('.job-item').forEach((el) => {
     el.addEventListener('click', (e) => {
@@ -247,6 +643,16 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
+/** Erro só após o job terminar em falha — nunca durante execução ou na fila. */
+function showJobError(job, result) {
+  const state = (job.state || '').toLowerCase();
+  return state === 'failed' && !!(result?.error || job.failedReason);
+}
+
+function jobErrorText(job, result) {
+  return result?.error || job.failedReason || '';
+}
+
 async function loadJobs({ fromUiRefresh = false } = {}) {
   const list = document.getElementById('jobs-list');
   const statusEl = document.getElementById('jobs-refresh-status');
@@ -265,8 +671,11 @@ async function loadJobs({ fromUiRefresh = false } = {}) {
 
   let ok = false;
   try {
-    const { jobs } = await api('/jobs');
-    renderJobsList(jobs);
+    const ownerVt = document.getElementById('jobs-filter-owner')?.value?.trim();
+    const qs = ownerVt ? `?ownerVt=${encodeURIComponent(ownerVt)}` : '';
+    const { jobs, meta } = await api(`/jobs${qs}`);
+    renderOwnerFilter(meta);
+    renderJobsList(jobs, meta);
     ok = true;
   } catch (e) {
     list.innerHTML = `<p class="empty error">Erro ao carregar: ${escapeHtml(e.message)}</p>`;
@@ -301,20 +710,60 @@ async function loadJobs({ fromUiRefresh = false } = {}) {
   }
 }
 
+function mergeJobResultFields(job) {
+  const r = job.result || {};
+  return {
+    ...r,
+    orderId: r.orderId ?? job.orderId ?? null,
+    orderNumber: r.orderNumber ?? job.orderNumber ?? null,
+    orderStatus: r.orderStatus ?? job.orderStatus ?? null,
+    accountOrganizationId: r.accountOrganizationId ?? job.accountOrganizationId ?? null,
+    accountBusinessId: r.accountBusinessId ?? job.accountBusinessId ?? null,
+    accountBillingId: r.accountBillingId ?? job.accountBillingId ?? null,
+    contactTecnicoId: r.contactTecnicoId ?? job.contactTecnicoId ?? null,
+    pegaCaseId: r.pegaCaseId ?? job.pegaCaseId ?? null,
+    pegaCaseIdPontaA: r.pegaCaseIdPontaA ?? job.pegaCaseIdPontaA ?? null,
+    pegaCaseIdPontaB: r.pegaCaseIdPontaB ?? job.pegaCaseIdPontaB ?? null,
+    pegaCaseIdEVC: r.pegaCaseIdEVC ?? job.pegaCaseIdEVC ?? null,
+    pegaOrdemServicoOs: r.pegaOrdemServicoOs ?? job.pegaOrdemServicoOs ?? null,
+    pegaOrdemServicoOsPontaA: r.pegaOrdemServicoOsPontaA ?? job.pegaOrdemServicoOsPontaA ?? null,
+    pegaOrdemServicoOsPontaB: r.pegaOrdemServicoOsPontaB ?? job.pegaOrdemServicoOsPontaB ?? null,
+    pegaOrdemServicoOsEVC: r.pegaOrdemServicoOsEVC ?? job.pegaOrdemServicoOsEVC ?? null,
+    subOrderOrderNumber: r.subOrderOrderNumber ?? job.subOrderOrderNumber ?? null,
+    subOrderOrderNumberPontaA: r.subOrderOrderNumberPontaA ?? job.subOrderOrderNumberPontaA ?? null,
+    subOrderOrderNumberPontaB: r.subOrderOrderNumberPontaB ?? job.subOrderOrderNumberPontaB ?? null,
+    subOrderOrderNumberEVC: r.subOrderOrderNumberEVC ?? job.subOrderOrderNumberEVC ?? null,
+  };
+}
+
 async function openJobDetail(id) {
   const modal = document.getElementById('modal');
   const body = document.getElementById('modal-body');
   const title = document.getElementById('modal-title');
   modal.hidden = false;
-  title.textContent = `Job #${id}`;
+  const cached = cachedJobsForList.find((j) => String(j.id) === String(id));
+  title.textContent = cached
+    ? `Job ${formatJobDisplayLabel(cached, { showOwnerVt: !!cachedJobsMeta?.showOwnerVt })}`
+    : `Job #${id}`;
   body.innerHTML = '<p>Carregando…</p>';
 
   try {
     const job = await api(`/jobs/${id}`);
-    const r = job.result || {};
-    const isBrmFlow =
-      (job.data?.massTypeId || '').includes('conta-ativacao-brm') ||
-      (job.data?.massTypeLabel || '').toLowerCase().includes('brm');
+    if (job.displayNumber != null) {
+      title.textContent = `Job ${formatJobDisplayLabel(
+        { ...job, ownerVt: job.ownerVt || job.data?.createdByVt },
+        { showOwnerVt: !!cachedJobsMeta?.showOwnerVt },
+      )}`;
+    }
+    const r = mergeJobResultFields(job);
+    const hasOrderResult =
+      r.orderId ||
+      r.orderNumber ||
+      r.subOrderOrderNumber ||
+      jobHasLinkDedicadoSubpedidos(r) ||
+      r.pegaCaseId ||
+      r.pegaOrdemServicoOs ||
+      jobHasLinkDedicadoPegaLegs(r);
     body.innerHTML = `
       <div class="detail-row">
         <div class="detail-label">Status</div>
@@ -328,29 +777,18 @@ async function openJobDetail(id) {
         <div class="detail-label">Horário</div>
         <div class="detail-value">${formatTime(job.timestamp)} — ${job.finishedOn ? 'Finalizado ' + formatTime(job.finishedOn) : 'Em execução'}</div>
       </div>
+      ${renderJobAccountsSection(r)}
       ${
-        isBrmFlow
-          ? (r.accountBillingId || r.accountBusinessId || r.accountOrganizationId || r.contactTecnicoId) ? `
-      <div class="detail-row">
-        <div class="detail-label">Resultado (BRM)</div>
-        <div class="detail-value">
-          ${r.accountBillingId ? `AccountBillingId: ${escapeHtml(r.accountBillingId)}<br>` : ''}
-          ${r.accountBusinessId ? `AccountBusinessId: ${escapeHtml(r.accountBusinessId)}<br>` : ''}
-          ${r.accountOrganizationId ? `AccountOrganizationId: ${escapeHtml(r.accountOrganizationId)}<br>` : ''}
-          ${r.contactTecnicoId ? `ContactTecnicoId: ${escapeHtml(r.contactTecnicoId)}` : ''}
-        </div>
-      </div>
-          ` : ''
-          : (r.orderId || r.orderNumber || r.subOrderOrderNumber || r.pegaCaseId || r.pegaOrdemServicoOs) ? `
+        hasOrderResult ? `
       <div class="detail-row">
         <div class="detail-label">Resultado</div>
         <div class="detail-value">
           ${r.orderId ? `OrderId: ${escapeHtml(r.orderId)}<br>` : ''}
           ${r.orderNumber ? `OrderNumber (pedido): ${escapeHtml(r.orderNumber)}<br>` : ''}
           ${r.orderStatus ? `Status: ${escapeHtml(r.orderStatus)}<br>` : ''}
-          ${r.pegaOrdemServicoOs ? `PEGA Ordem (OSS): ${escapeHtml(r.pegaOrdemServicoOs)}<br>` : ''}
-          ${r.pegaCaseId ? `PEGA Caso: ${escapeHtml(r.pegaCaseId)}<br>` : ''}
-          ${r.subOrderOrderNumber && !r.pegaOrdemServicoOs ? `Subpedido (SF): ${escapeHtml(r.subOrderOrderNumber)}` : ''}
+          ${renderJobSubpedidoDetailLines(r)}
+          ${renderJobPegaDetailLines(r)}
+          ${r.pegaCaseId && !jobHasLinkDedicadoPegaLegs(r) ? `PEGA Caso: ${escapeHtml(r.pegaCaseId)}<br>` : ''}
         </div>
       </div>
           ` : ''
@@ -360,10 +798,15 @@ async function openJobDetail(id) {
         <div class="detail-label">Observação</div>
         <div class="detail-value">Execução cancelada pelo usuário.</div>
       </div>
-      ` : (r.error || job.failedReason) ? `
+      ` : showJobError(job, r) ? `
       <div class="detail-row">
         <div class="detail-label">Erro</div>
-        <div class="detail-value" style="color: var(--error);">${escapeHtml(r.error || job.failedReason || '')}</div>
+        <div class="detail-value" style="color: var(--error);">${escapeHtml(jobErrorText(job, r))}</div>
+      </div>
+      ` : job.state === 'active' || job.state === 'waiting' ? `
+      <div class="detail-row">
+        <div class="detail-label">Progresso</div>
+        <div class="detail-value">Em execução — o resultado aparecerá quando o fluxo terminar.</div>
       </div>
       ` : ''}
       <p class="card-hint" style="margin-top: 1rem;">
@@ -387,17 +830,15 @@ async function submitForm(e) {
   const environment = form.environment.value;
   const massType = form.massType.value;
   const quantity = parseInt(form.quantity.value, 10) || 1;
+  const selectedMeta = getSelectedMassTypeMeta();
+
+  if (!massType || !selectedMeta) {
+    showMessage(msg, 'Selecione um tipo de massa disponível.', 'error');
+    return;
+  }
 
   let extraEnv = {};
-  // Massa pronta Opp → pedido (IP / VPN / Link Dedicado): inalterado em relação ao fluxo original.
-  if (
-    massType === 'massa-pronta-opp-pedido' ||
-    massType === 'massa-pronta-opp-pedido-pega' ||
-    massType === 'massa-pronta-opp-pedido-vpn' ||
-    massType === 'massa-pronta-opp-pedido-vpn-pega' ||
-    massType === 'massa-pronta-opp-pedido-link-dedicado' ||
-    massType === 'massa-pronta-opp-pedido-link-dedicado-pega'
-  ) {
+  if (selectedMeta.formVariant === 'massa-pronta-triple') {
     const org = document.getElementById('accountOrganizationId')?.value?.trim();
     const business = document.getElementById('accountBusinessId')?.value?.trim();
     const billing = document.getElementById('accountBillingId')?.value?.trim();
@@ -411,7 +852,7 @@ async function submitForm(e) {
       ACCOUNT_BUSINESS_ID: business,
       ACCOUNT_BILLING_ID: billing,
     };
-  } else if (massType === MASS_TYPE_BRM_MASSA_PRONTA) {
+  } else if (selectedMeta.formVariant === 'brm-massa-pronta') {
     const billing = document.getElementById('accountBillingIdBrmOnly')?.value?.trim();
     if (!billing) {
       showMessage(msg, 'Informe o Id da conta Billing para ativar no BRM.', 'error');
@@ -420,7 +861,7 @@ async function submitForm(e) {
     extraEnv = { ACCOUNT_BILLING_ID: billing };
   }
 
-  const effectiveQuantity = massType === MASS_TYPE_BRM_MASSA_PRONTA ? 1 : quantity;
+  const effectiveQuantity = selectedMeta.formVariant === 'brm-massa-pronta' ? 1 : quantity;
 
   setSubmitLoading(true);
   showMessage(
@@ -446,6 +887,10 @@ async function submitForm(e) {
 
 document.getElementById('form-mass').addEventListener('submit', submitForm);
 document.getElementById('btn-refresh').addEventListener('click', () => loadJobs({ fromUiRefresh: true }));
+document.getElementById('jobs-filter-owner')?.addEventListener('change', () => {
+  jobsListPages.history = 1;
+  loadJobs({ fromUiRefresh: true });
+});
 document.getElementById('jobs-list')?.addEventListener('click', (e) => {
   const cancelBtn = e.target.closest('.job-cancel-btn');
   if (cancelBtn) {
@@ -462,25 +907,18 @@ document.getElementById('jobs-list')?.addEventListener('click', (e) => {
   if (action === 'prev') jobsListPages[section] = Math.max(1, jobsListPages[section] - 1);
   else if (action === 'next') jobsListPages[section] += 1;
   else return;
-  renderJobsList(cachedJobsForList);
+  renderJobsList(cachedJobsForList, cachedJobsMeta);
 });
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.querySelector('.modal-backdrop').addEventListener('click', closeModal);
 
 function updateMassaProntaVisibility() {
-  const massType = document.querySelector('input[name="massType"]:checked')?.value;
+  const meta = getSelectedMassTypeMeta();
   const block = document.getElementById('massa-pronta-fields');
   const brmBlock = document.getElementById('brm-massa-pronta-fields');
   if (!block) return;
-  // Três IDs: só cards IP/VPN/LD massa pronta. Card BRM massa pronta usa bloco separado (um Id).
-  const showTriple =
-    massType === 'massa-pronta-opp-pedido' ||
-    massType === 'massa-pronta-opp-pedido-pega' ||
-    massType === 'massa-pronta-opp-pedido-vpn' ||
-    massType === 'massa-pronta-opp-pedido-vpn-pega' ||
-    massType === 'massa-pronta-opp-pedido-link-dedicado' ||
-    massType === 'massa-pronta-opp-pedido-link-dedicado-pega';
-  const showBrm = massType === MASS_TYPE_BRM_MASSA_PRONTA;
+  const showTriple = meta?.formVariant === 'massa-pronta-triple';
+  const showBrm = meta?.formVariant === 'brm-massa-pronta';
   block.hidden = !showTriple;
   if (brmBlock) {
     brmBlock.hidden = !showBrm;
@@ -497,16 +935,13 @@ function updateMassaProntaVisibility() {
   }
 }
 
-document.querySelectorAll('input[name="massType"]').forEach((input) => {
-  input.addEventListener('change', updateMassaProntaVisibility);
-});
 
 /** Filtra cards por texto (útil com muitos tipos de massa). */
 const massTypeFilter = document.getElementById('mass-type-filter');
 if (massTypeFilter) {
   massTypeFilter.addEventListener('input', () => {
     const q = massTypeFilter.value.trim().toLowerCase();
-    document.querySelectorAll('.flow-category').forEach((cat) => {
+    document.querySelectorAll('#mass-types-root .flow-category').forEach((cat) => {
       const cards = cat.querySelectorAll('.choice-card');
       let anyVisible = false;
       cards.forEach((card) => {
@@ -519,4 +954,9 @@ if (massTypeFilter) {
   });
 }
 
+loadAppConfig().catch((err) => {
+  const root = document.getElementById('mass-types-root');
+  if (root) root.innerHTML = `<p class="error">${escapeHtml(err.message)}</p>`;
+});
+document.getElementById('environment')?.addEventListener('change', refreshMassTypesForEnvironment);
 loadJobs();

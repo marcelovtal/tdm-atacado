@@ -41,7 +41,8 @@ const { buildContactPayload } = require('../support/utils/salesforce/contactPayl
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
-const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
+const { finalizePedidoWithOptionalPega } = require('../support/utils/finalizePedidoWithOptionalPega.js');
+const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
 
 const env = loadEnv();
 const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
@@ -1324,7 +1325,13 @@ async function main() {
       if (readyQuote) {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
-          await finalizePedidoGerado(result);
+          await finalizePedidoWithOptionalPega(
+            mergeAccountIdsIntoPedidoResult(result, {
+              ...readyQuote,
+              accountBillingId: process.env.ACCOUNT_BILLING_ID?.trim() || readyQuote.accountBillingId,
+            }),
+            { flowVariant: 'vpn' },
+          );
           process.exit(0);
         }
       }
@@ -1342,7 +1349,9 @@ async function main() {
       }
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        await finalizePedidoGerado(result);
+        await finalizePedidoWithOptionalPega(mergeAccountIdsIntoPedidoResult(result, accountIds), {
+          flowVariant: 'vpn',
+        });
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

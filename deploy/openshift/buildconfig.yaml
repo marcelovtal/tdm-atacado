@@ -1,4 +1,4 @@
-# BuildConfig binario (igual rede-neutra). Criar uma vez: oc apply -f deploy/openshift/buildconfig.yaml
+# BuildConfig binario. Criar uma vez: oc apply -f deploy/openshift/buildconfig.yaml
 apiVersion: build.openshift.io/v1
 kind: BuildConfig
 metadata:

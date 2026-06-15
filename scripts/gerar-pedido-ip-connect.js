@@ -34,8 +34,8 @@ const { buildLeadPayload } = require('../support/utils/salesforce/leadPayload.js
 const { buildConvertLeadPayload, getFieldValue } = require('../support/utils/salesforce/convertLeadPayload.js');
 const { buildOrganizationPatchPayload, resolveLxdFantasyName } = require('../support/utils/salesforce/organizationPatchPayload.js');
 const { buildBusinessAccountPatchPayload } = require('../support/utils/salesforce/businessAccountPatchPayload.js');
-const { logPedidoGerado } = require('../support/utils/logPedidoGerado.js');
-const { enrichPedidoComPegaOrdem } = require('../support/utils/enrichPedidoComPegaOrdem.js');
+const { finalizePedidoWithOptionalPega } = require('../support/utils/finalizePedidoWithOptionalPega.js');
+const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
 const { buildBillingAccountPatchPayload } = require('../support/utils/salesforce/billingAccountPatchPayload.js');
 const { buildContactPayload } = require('../support/utils/salesforce/contactPayload.js');
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
@@ -1236,14 +1236,14 @@ async function main() {
       if (readyQuote) {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
-          logPedidoGerado(await enrichPedidoComPegaOrdem(result));
+          await finalizePedidoWithOptionalPega(mergeAccountIdsIntoPedidoResult(result, readyQuote));
           process.exit(0);
         }
       }
       const accountIds = skipLead || (await runLeadFlow(instanceUrl, accessToken, cookie));
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        logPedidoGerado(await enrichPedidoComPegaOrdem(result));
+        await finalizePedidoWithOptionalPega(mergeAccountIdsIntoPedidoResult(result, accountIds));
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);
