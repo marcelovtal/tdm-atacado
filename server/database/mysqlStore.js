@@ -168,13 +168,12 @@ export async function listRecentJobExecutionsSummaryMysql(limit) {
 /** Histórico para a tela Jobs — MySQL (QA/produção). Filtro 7d/30d + VT; dashboard inalterado. */
 export async function listJobExecutionsForJobsPanelMysql(options = {}) {
   const { userCode, days, limit } = normalizeJobsPanelHistoryOptions(options);
-  const params = [days];
+  const params = [];
   let userClause = '';
   if (userCode) {
     userClause = 'AND UPPER(user_code) = UPPER(?)';
     params.push(userCode);
   }
-  params.push(limit);
 
   return all(
     `
@@ -182,11 +181,11 @@ export async function listJobExecutionsForJobsPanelMysql(options = {}) {
         SELECT ${JOBS_PANEL_HISTORY_COLUMNS},
           ${buildUserExecutionSeqSelectMysql()}
         FROM job_executions
-        WHERE executed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+        WHERE executed_at >= DATE_SUB(NOW(), INTERVAL ${days} DAY)
         ${userClause}
       ) ranked
       ORDER BY executed_at DESC
-      LIMIT ?
+      LIMIT ${limit}
     `,
     params
   );
@@ -201,12 +200,12 @@ export async function getUserExecutionSeqForExecutionMysql(row, days = 7) {
         SELECT id,
           ${buildUserExecutionSeqSelectMysql()}
         FROM job_executions
-        WHERE executed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+        WHERE executed_at >= DATE_SUB(NOW(), INTERVAL ${safeDays} DAY)
       ) ranked
       WHERE id = ?
       LIMIT 1
     `,
-    [safeDays, row.id]
+    [row.id]
   );
   const n = ranked?.user_execution_seq;
   return n != null ? Number(n) : null;
@@ -220,10 +219,9 @@ export async function listJobExecutionOwnersForPanelMysql(options = {}) {
       SELECT DISTINCT user_code
       FROM job_executions
       WHERE user_code IS NOT NULL AND TRIM(user_code) <> ''
-        AND executed_at >= DATE_SUB(NOW(), INTERVAL ? DAY)
+        AND executed_at >= DATE_SUB(NOW(), INTERVAL ${days} DAY)
       ORDER BY user_code ASC
-    `,
-    [days]
+    `
   );
   return rows.map((r) => r.user_code).filter(Boolean);
 }
