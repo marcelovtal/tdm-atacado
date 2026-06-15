@@ -7,7 +7,12 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 dotenv.config({ path: path.join(rootDir, '.env') });
 
-const profile = (process.env.APP_PROFILE || 'local').trim().toLowerCase();
+/** FDL_APP_PROFILE vem dos scripts npm — tem prioridade sobre APP_PROFILE do terminal Windows. */
+const profile = (
+  process.env.FDL_APP_PROFILE ||
+  process.env.APP_PROFILE ||
+  'local'
+).trim().toLowerCase();
 
 const profileEnvPath = path.join(rootDir, `.env.${profile}`);
 if (fs.existsSync(profileEnvPath)) {

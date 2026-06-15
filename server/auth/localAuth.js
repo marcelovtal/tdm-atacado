@@ -11,9 +11,10 @@ export function authenticateLocal(username, password) {
   }
 
   const vt = normalizeVt(user);
-  if (vt.startsWith('VT') && pass.length > 0) {
-    return createSession({ vt, bindUser: user });
+  if (user.length > 0 && pass.length > 0) {
+    const sessionVt = vt || user.toUpperCase();
+    return createSession({ vt: sessionVt, bindUser: user });
   }
 
-  throw new Error('Usuário ou senha inválidos (modo local: admin/admin)');
+  throw new Error('Usuário ou senha inválidos (modo local: admin/admin ou qualquer VT + senha)');
 }

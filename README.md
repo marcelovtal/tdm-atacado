@@ -71,7 +71,9 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
-O `dev` usa `APP_PROFILE=local` e fila em memória — Redis e MySQL da empresa **não** são necessários.
+O `dev` usa `APP_PROFILE=local`, SQLite e fila em memória — Redis, MySQL e LDAP **não** são necessários.
+
+Login local: qualquer `VT` + qualquer senha (ex.: `vt123` / `123`) ou `admin` / `admin`.
 
 3. **Ambiente QA (empresa / OpenShift):**
 

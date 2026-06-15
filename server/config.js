@@ -49,6 +49,7 @@ const LOCAL_DEFAULTS = {
 };
 
 const defaults = profile === 'qa' ? QA_DEFAULTS : LOCAL_DEFAULTS;
+const isLocalProfile = profile === 'local';
 
 const redisMode = (process.env.REDIS_MODE || defaults.redisMode).trim().toLowerCase();
 const sentinelHost = process.env.REDIS_SENTINEL_HOST || process.env.REDIS_HOST || defaults.redisSentinelHost;
@@ -59,7 +60,7 @@ export const config = {
   port: envInt('PORT', 3333),
   /** Caminho para a raiz do FDL VTAL (scripts/, support/, config/). */
   vtalPath: path.resolve(__dirname, '..'),
-  useMemoryQueue: envBool('USE_MEMORY_QUEUE', defaults.useMemoryQueue),
+  useMemoryQueue: isLocalProfile ? true : envBool('USE_MEMORY_QUEUE', defaults.useMemoryQueue),
   redis: {
     mode: redisMode,
     host: process.env.REDIS_HOST || defaults.redisHost,
@@ -71,7 +72,10 @@ export const config = {
     maxRetriesPerRequest: null,
   },
   database: {
-    driver: (process.env.DATABASE_DRIVER || defaults.databaseDriver).trim().toLowerCase(),
+    /** Perfil local ignora DATABASE_DRIVER do .env/terminal — sempre SQLite. */
+    driver: isLocalProfile
+      ? 'sqlite'
+      : (process.env.DATABASE_DRIVER || defaults.databaseDriver).trim().toLowerCase(),
     mysql: {
       host: process.env.MYSQL_HOST || defaults.mysqlHost,
       port: envInt('MYSQL_PORT', defaults.mysqlPort),
@@ -85,7 +89,10 @@ export const config = {
   workerConcurrency: envInt('WORKER_CONCURRENCY', profile === 'qa' ? 1 : 3),
   jobAttempts: envInt('JOB_ATTEMPTS', 2),
   auth: {
-    mode: (process.env.AUTH_MODE || (profile === 'local' ? 'local' : 'ldap')).trim().toLowerCase(),
+    /** Perfil local ignora AUTH_MODE do .env/terminal — nunca LDAP. */
+    mode: isLocalProfile
+      ? 'local'
+      : (process.env.AUTH_MODE || 'ldap').trim().toLowerCase(),
     ldap: {
       url: process.env.LDAP_URL || 'ldap://10.101.0.13:389',
       domain: process.env.LDAP_DOMAIN || 'CORPORATIVO',

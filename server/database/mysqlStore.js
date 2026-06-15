@@ -29,12 +29,14 @@ function getPool() {
 }
 
 async function run(sql, params = []) {
-  const [result] = await getPool().execute(sql, params);
+  const pool = getPool();
+  const [result] = await pool.query(sql, params);
   return result;
 }
 
 async function all(sql, params = []) {
-  const [rows] = await getPool().execute(sql, params);
+  const pool = getPool();
+  const [rows] = await pool.query(sql, params);
   return rows;
 }
 

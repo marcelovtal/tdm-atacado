@@ -26,6 +26,9 @@ if errorlevel 1 (
   exit /b 1
 )
 
+echo === Reiniciando pods com imagem nova ===
+oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker
+
 echo === Aguardando rollout ===
 oc rollout status deployment/tdm-qa-api --timeout=180s
 oc rollout status deployment/tdm-qa-worker --timeout=180s
