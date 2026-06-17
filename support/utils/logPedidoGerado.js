@@ -1,4 +1,9 @@
 /** Linhas padronizadas no stdout — parseadas em server/runScript.js para o painel FDL. */
+const {
+  PANEL_SNAPSHOT_PREFIX,
+  buildPanelSnapshotPayload,
+} = require('./panelSnapshot.js');
+
 function logPedidoGerado(result = {}) {
   console.log('\n*** PEDIDO GERADO ***');
   if (result.accountOrganizationId) {
@@ -36,8 +41,16 @@ function logPedidoGerado(result = {}) {
     result.subOrderOrderNumberPontaA ||
     result.subOrderOrderNumberPontaB ||
     result.subOrderOrderNumberEVC;
+  const hasLdPega =
+    hasLdLegs ||
+    result.pegaOrdemServicoOsPontaA ||
+    result.pegaOrdemServicoOsPontaB ||
+    result.pegaOrdemServicoOsEVC ||
+    result.pegaCaseIdPontaA ||
+    result.pegaCaseIdPontaB ||
+    result.pegaCaseIdEVC;
 
-  if (hasLdLegs) {
+  if (hasLdPega) {
     if (result.pegaOrdemServicoOsPontaA) console.log('  PEGA OS Ponta A:', result.pegaOrdemServicoOsPontaA);
     else if (result.pegaCaseIdPontaA) console.log('  PEGA Caso Ponta A:', result.pegaCaseIdPontaA);
     if (result.pegaOrdemServicoOsPontaB) console.log('  PEGA OS Ponta B:', result.pegaOrdemServicoOsPontaB);
@@ -50,9 +63,24 @@ function logPedidoGerado(result = {}) {
 
   if (result.pegaOrdemServicoOs) console.log('  PEGA OS:', result.pegaOrdemServicoOs);
   if (result.ofsActivityId) console.log('  OFS ActivityId:', result.ofsActivityId);
+  if (result.ofsActivityIdPontaA) console.log('  OFS ActivityId Ponta A:', result.ofsActivityIdPontaA);
+  if (result.ofsActivityIdPontaB) console.log('  OFS ActivityId Ponta B:', result.ofsActivityIdPontaB);
   if (result.ofsActivityStatus) console.log('  OFS Status:', result.ofsActivityStatus);
+  if (result.ofsActivityStatusPontaA) console.log('  OFS Status Ponta A:', result.ofsActivityStatusPontaA);
+  if (result.ofsActivityStatusPontaB) console.log('  OFS Status Ponta B:', result.ofsActivityStatusPontaB);
+  if (result.ofsInstalacaoConcluidaPontaA != null) {
+    console.log('  OFS Instalação concluída Ponta A:', result.ofsInstalacaoConcluidaPontaA ? 'sim' : 'não');
+  }
+  if (result.ofsInstalacaoConcluidaPontaB != null) {
+    console.log('  OFS Instalação concluída Ponta B:', result.ofsInstalacaoConcluidaPontaB ? 'sim' : 'não');
+  }
   if (result.ofsInstalacaoConcluida != null) {
     console.log('  OFS Instalação concluída:', result.ofsInstalacaoConcluida ? 'sim' : 'não');
+  }
+
+  const panelSnapshot = buildPanelSnapshotPayload(result);
+  if (panelSnapshot) {
+    console.log(`${PANEL_SNAPSHOT_PREFIX}${JSON.stringify(panelSnapshot)}`);
   }
 }
 

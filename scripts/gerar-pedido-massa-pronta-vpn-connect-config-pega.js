@@ -40,14 +40,6 @@
  * Se o org não tiver o IP "XOMOnSubmitOrder" ativo, definir IP_XOM_SUBMIT_ORDER com o nome real do IP
  * (ex.: .../integrationprocedure/Vtal_SubmitOrderToOM) para o subpedido ir para "Em implantação".
  */
-const { loadEnv, getTokenUrl, getUserFixture, getPegaFixture, getPegaDefaults } = require('../config/env.js');
-const {
-  runPegaDesignacaoEConfiguracao,
-  PEGA_TOTAL_STEPS_VPN,
-} = require('../support/utils/pega/runPegaDesignacaoConfiguracao.js');
-const { getPegaAccessToken } = require('../support/utils/pega/getPegaAccessToken.js');
-
-const PEGA_ENV_DEFAULTS = getPegaDefaults();
 const { buildLeadPayload } = require('../support/utils/salesforce/leadPayload.js');
 const { buildConvertLeadPayload, getFieldValue } = require('../support/utils/salesforce/convertLeadPayload.js');
 const { buildOrganizationPatchPayload } = require('../support/utils/salesforce/organizationPatchPayload.js');
@@ -57,127 +49,65 @@ const { buildContactPayload } = require('../support/utils/salesforce/contactPayl
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
-const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
+const { finalizePedidoWithOptionalPega } = require('../support/utils/finalizePedidoWithOptionalPega.js');
+const { finalizePedidoWithOptionalPegaAndOfs } = require('../support/utils/finalizePedidoWithOptionalPegaAndOfs.js');
 const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
-const { mergePegaSingleLegIntoPedido } = require('../support/utils/mergePegaSingleLegIntoPedido.js');
 
-const env = loadEnv();
-const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
-const tokenUrl = getTokenUrl(env) || (baseUrl ? `${baseUrl}/services/oauth2/token` : '');
-const envName = String(process.env.ENVIRONMENT || process.env.ENV || 'ti').trim().toLowerCase();
-const IS_TRG = envName === 'trg';
-const IS_TI = envName === 'ti';
+const { createSalesforceScriptClient } = require('../support/utils/salesforce/scriptHttpClient.js');
+const { ensureQuoteApproved } = require('../support/utils/salesforce/ensureQuoteApproved.js');
+const {
+  UI_API_RECORDS,
+  CONVERT_LEAD_URL,
+  SOBJECTS_ACCOUNT,
+  SOBJECTS_CONTACT,
+  SOBJECTS_CONTRACT,
+  SOBJECTS_CONTENT_VERSION,
+  SOBJECTS_CONTENT_DOCUMENT_LINK,
+  QUERY_URL,
+  TOOLING_EXECUTE_ANONYMOUS,
+  SOBJECTS_OPPORTUNITY,
+  SOBJECTS_QUOTE,
+  IP_CREATE_QUOTE_MEMBERS,
+  IP_PRODUCTS_VALIDATION,
+  IP_VIABILITY,
+  IP_QUOTE_STATUS,
+  IP_VALIDATE_CREATE_ORDER,
+  IP_CREATE_ORDER_ON_QUOTE,
+  IP_FILL_ADDRESS_INFO,
+  IP_GET_QUOTE_ADDRESS_VIABILITY,
+  IP_IP_CONNECT_QUOTE_INSTALLATION_FEE,
+  IP_XOM_SUBMIT_ORDER,
+  IP_XOM_SUBMIT_ORDER_FALLBACK,
+  IP_GENERIC_INVOKE,
+  IP_CHECKOUT_ORDER_OM,
+  IP_MERGE_TECH_CONTACT,
+  CART_API_V2_BASE,
+  INVOKE_CPQ_URL,
+  IP_GET_TOKEN_VIABILIDADE,
+  SOBJECTS_ORDER,
+  SOBJECTS_ORDER_ITEM,
+  BRM_POLL_TIMEOUT_MS,
+  BRM_POLL_INTERVAL_MS,
+} = require('../support/utils/salesforce/sfRestPaths.js');
 
-/** TRG: fluxo de status da Quote (Reviewed antes de Approved) — alinhado a `gerar-pedido-vpn.js`. */
-const QUOTE_FLOW = {
-  trg: { needsReviewed: true, reviewedStatus: 'Reviewed', finalStatus: 'Approved' },
-  ti: { needsReviewed: false, reviewedStatus: null, finalStatus: 'Approved' },
-};
-const currentQuoteFlow = IS_TRG ? QUOTE_FLOW.trg : QUOTE_FLOW.ti;
-
-function getUser() {
-  const user = getUserFixture();
-  return user.salesforce || user.dev?.salesforce || user.trg?.salesforce || {};
-}
-
-async function getToken() {
-  const sf = getUser();
-  const grantType = sf.grant_type || 'client_credentials';
-  const baseUrl = (sf.tokenUrl || tokenUrl).replace(/\?.*$/, '');
-  const params = new URLSearchParams({
-    grant_type: grantType,
-    client_id: sf.client_id || '',
-    client_secret: sf.client_secret || '',
-  });
-  if (grantType === 'password') {
-    params.set('username', sf.username || '');
-    params.set('password', sf.password || '');
-  }
-  const useQueryParams = grantType === 'password';
-  const url = useQueryParams ? `${baseUrl}?${params.toString()}` : baseUrl;
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: sf.cookie || '' };
-  const reqBody = useQueryParams ? null : params.toString();
-  logCurl('POST', url, headers, reqBody);
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: useQueryParams ? '' : params.toString(),
-  });
-  const resText = await res.text();
-  let body = null;
-  try {
-    body = resText ? JSON.parse(resText) : null;
-  } catch (_) {
-    body = null;
-  }
-  logResponse('Token', res.status, body, resText);
-  if (!res.ok) throw new Error(`Token ${res.status}: ${resText}`);
-  return { accessToken: body.access_token, instanceUrl: body.instance_url };
-}
-
-async function api(instanceUrl, accessToken, method, path, body = null, cookie = '') {
-  const url = path.startsWith('http') ? path : `${instanceUrl}${path}`;
-  const opts = {
-    method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      ...(cookie ? { Cookie: cookie } : {}),
-    },
-  };
-  if (body != null && (method === 'POST' || method === 'PATCH')) opts.body = JSON.stringify(body);
-  const reqBody = opts.body ?? null;
-  logCurl(method, url, opts.headers, reqBody);
-  const res = await fetch(url, opts);
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (_) {}
-  const label = `${method} ${path}`;
-  logResponse(label, res.status, data, text);
-  return { status: res.status, data, text };
-}
-
-const UI_API_RECORDS = '/services/data/v62.0/ui-api/records';
-const CONVERT_LEAD_URL = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_LXD_CreateAccountsAndContactCon';
-const SOBJECTS_ACCOUNT = '/services/data/v62.0/sobjects/Account';
-const SOBJECTS_CONTACT = '/services/data/v62.0/sobjects/Contact';
-const SOBJECTS_CONTRACT = '/services/data/v62.0/sobjects/Contract';
-const SOBJECTS_CONTENT_VERSION = '/services/data/v62.0/sobjects/ContentVersion';
-const SOBJECTS_CONTENT_DOCUMENT_LINK = '/services/data/v62.0/sobjects/ContentDocumentLink';
-const QUERY_URL = '/services/data/v62.0/query';
-const TOOLING_EXECUTE_ANONYMOUS = '/services/data/v62.0/tooling/executeAnonymous';
-const SOBJECTS_OPPORTUNITY = '/services/data/v62.0/sobjects/Opportunity';
-const SOBJECTS_QUOTE = '/services/data/v62.0/sobjects/Quote';
-const IP_CREATE_QUOTE_MEMBERS = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_CreateQuoteMembers';
-const IP_PRODUCTS_VALIDATION = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_Seg_ProductsValidation';
-const IP_VIABILITY = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_ViabilityDetailsForQuote';
-const IP_QUOTE_STATUS = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_Seg_IPQuoteStatusUpdateMassive';
-const IP_VALIDATE_CREATE_ORDER = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_Seg_ValidateCreateOrder';
-const IP_CREATE_ORDER_ON_QUOTE = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_CreateOrderOnQuote';
-const IP_FILL_ADDRESS_INFO = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_FillAddressInfo';
-const IP_GET_QUOTE_ADDRESS_VIABILITY = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_SF_GetQuoteAddressViability';
-/** IP de submit ao OM (botão na Order: vlocity_cmt__XOMOnSubmitOrder). Override: IP_XOM_SUBMIT_ORDER. */
-const IP_XOM_SUBMIT_ORDER = process.env.IP_XOM_SUBMIT_ORDER || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/XOMOnSubmitOrder';
-/** Fallback se o org usar o IP com namespace no path. */
-const IP_XOM_SUBMIT_ORDER_FALLBACK = process.env.IP_XOM_SUBMIT_ORDER_FALLBACK || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/vlocity_cmt__XOMOnSubmitOrder';
-/** Industries: invocar Apex direto (Vtal_SF_OrderUtils.checkoutOrderOMBatch) — gera Orchestration Plan, Service Order, Designation, vincula SubOrder. */
-const IP_GENERIC_INVOKE = process.env.IP_GENERIC_INVOKE || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/GenericInvoke2NoCont';
-/** Fallback se org bloquear GenericInvoke2NoCont; antes usávamos IP checkoutOrderOMBatch. */
-const IP_CHECKOUT_ORDER_OM = process.env.IP_CHECKOUT_ORDER_OM || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/checkoutOrderOMBatch';
-/** Trace linha 197: UI chama antes de CreateOrderOnQuote. Opcional (USE_MERGE_TECH_CONTACT=1). */
-const IP_MERGE_TECH_CONTACT = process.env.IP_MERGE_TECH_CONTACT || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_Seg_MergeTechContacList';
-const INVOKE_CPQ_URL = process.env.INVOKE_CPQ_URL || '/services/apexrest/vlocity_cmt/v1/invoke/';
-/** Cart API v2 (Industries CPQ): reprice consolida runtime JSON no banco e gera Push Event Data, como o front. Doc: v2/cpq/carts; alguns orgs usam v2/carts — override CART_API_V2_BASE. */
-const CART_API_V2_BASE = process.env.CART_API_V2_BASE || '/services/apexrest/vlocity_cmt/v2/cpq/carts';
-const SOBJECTS_ORDER = '/services/data/v62.0/sobjects/Order';
-const SOBJECTS_ORDER_ITEM = '/services/data/v62.0/sobjects/OrderItem';
-
-const BRM_POLL_TIMEOUT_MS = 60000;
+const {
+  baseUrl,
+  tokenUrl,
+  envName,
+  IS_TRG,
+  IS_TI,
+  quoteFlow: currentQuoteFlow,
+  sf,
+  cookie: defaultCookie,
+  getToken,
+  api,
+  fail,
+} = createSalesforceScriptClient();
+const { runLeadToBrm } = require('../support/utils/ativacao/runLeadToBrm.js');
 const MAX_TRIES = 10;
 // Quote/Opportunity (ti sandbox) – user/collection
 const QUOTE_RECORD_TYPE_ID = process.env.QUOTE_RECORD_TYPE_ID || '012Hs000000l6VjIAI';
 const QUOTE_PRICEBOOK2_ID = process.env.QUOTE_PRICEBOOK2_ID || '01sHs000001nMM3IAM';
-const BRM_POLL_INTERVAL_MS = 2000;
 const PRODUCT_CODE_VPN = process.env.PRODUCT_CODE_VPN || 'CONNECTIVITY_VPN_MPLS';
 const PRODUCT_NAME_VPN = process.env.PRODUCT_NAME_VPN || 'VPN MPLS';
 const VALOR_MENSAL_VPN = process.env.VALOR_MENSAL_VPN || process.env.VALOR_MENSAL_LD || '800';
@@ -519,56 +449,6 @@ async function runCheckoutOrderOMBatch(apiCall, orderId, orderList = null) {
   return false;
 }
 
-function fail(msg, res) {
-  const err = new Error(msg);
-  err.response = res;
-  throw err;
-}
-
-async function ensureQuoteApproved(apiCall, quoteId, statusAprovado, proposalValidity) {
-  if (IS_TRG && currentQuoteFlow.needsReviewed) {
-    console.log('[E2E] 17d1. TRG: PATCH Quote Status → Reviewed (pré-aprovação)...');
-    const reviewedPatch = await apiCall('PATCH', `${SOBJECTS_QUOTE}/${quoteId}`, {
-      Status: currentQuoteFlow.reviewedStatus,
-      Vtal_Seg_ProposalValidityTerm__c: '1',
-    });
-    if (reviewedPatch.status !== 200 && reviewedPatch.status !== 204) {
-      fail('PATCH Quote Status Reviewed', reviewedPatch);
-    }
-
-    console.log('[E2E] 17d2. TRG: PATCH Quote Vtal_Seg_ProposalValidity__c...');
-    const validityPatch = await apiCall('PATCH', `${SOBJECTS_QUOTE}/${quoteId}`, {
-      Vtal_Seg_ProposalValidity__c: proposalValidity,
-    });
-    if (validityPatch.status !== 200 && validityPatch.status !== 204) {
-      console.log('   PATCH validity (não crítico):', validityPatch.status);
-    }
-  }
-
-  console.log('[E2E] 17d3. PATCH Quote Status →', statusAprovado, '(obrigatório antes de CreateOrderOnQuote)...');
-  const aprovadoPatch = await apiCall('PATCH', `${SOBJECTS_QUOTE}/${quoteId}`, { Status: statusAprovado });
-  if (aprovadoPatch.status === 200 || aprovadoPatch.status === 204) return;
-
-  const msg = [
-    aprovadoPatch?.data?.[0]?.message,
-    aprovadoPatch?.data?.message,
-    aprovadoPatch?.data?.error,
-    aprovadoPatch?.text,
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  if (/já possui uma cotação aprovada/i.test(msg)) {
-    const quoteGet = await apiCall('GET', `${SOBJECTS_QUOTE}/${quoteId}`);
-    if (quoteGet.status === 200 && (quoteGet.data?.Status || '') === 'Approved') {
-      console.log('   Quote já está Approved no TRG; continuando fluxo.');
-      return;
-    }
-  }
-
-  fail('PATCH Quote Status ' + statusAprovado + ' (cotação precisa estar Aprovado)', aprovadoPatch);
-}
-
 function logCurl(method, url, headers = {}, body = null) {
   const h = Object.entries(headers)
     .filter(([, v]) => v != null && v !== '')
@@ -591,122 +471,10 @@ function logResponse(label, status, data, text) {
 }
 
 async function runLeadFlow(instanceUrl, accessToken, cookie) {
-  const h = { baseUrl: instanceUrl, token: accessToken, cookie };
   const apiCall = (method, path, body) => api(instanceUrl, accessToken, method, path, body, cookie);
-
-  console.log('[E2E] 1. Criando Lead...');
-  const leadBase = buildLeadPayload();
-  const company = leadBase.fields.Company;
-  const createPayload = /cursor/i.test(company) ? buildLeadPayload({ Company: `e2e${Date.now()}`, vtal_LXD_FantasyName__c: `e2e${Date.now()}` }) : leadBase;
-  const createRes = await apiCall('POST', UI_API_RECORDS, createPayload);
-  if (createRes.status !== 200 && createRes.status !== 201) fail('Create Lead', createRes);
-  const leadBody = createRes.data;
-  const leadId = leadBody.id;
-  if (!leadId) fail('Lead sem id', createRes);
-
-  console.log('[E2E] 2. Patch Lead Status Contacted...');
-  const patchRes = await apiCall('PATCH', `${UI_API_RECORDS}/${leadId}`, { fields: { Status: 'Contacted' } });
-  if (patchRes.status !== 200) fail('Patch Lead', patchRes);
-  const leadAfterPatch = patchRes.data;
-
-  console.log('[E2E] 3. Converter Lead...');
-  const convertPayload = buildConvertLeadPayload(leadAfterPatch);
-  const convertRes = await apiCall('POST', CONVERT_LEAD_URL, convertPayload);
-  if (convertRes.status !== 200) fail('Convert Lead', convertRes);
-  const out = convertRes.data?.vtal_LXD_outputclass;
-  if (!out?.AccountOrganizationId || !out?.AccountBussinessId || !out?.AccountBillingId) {
-    fail('Conversão sem AccountIds: ' + JSON.stringify(convertRes.data), convertRes);
-  }
-
-  console.log('[E2E] 4. PATCH Organization...');
-  const orgGet = await apiCall('GET', `${SOBJECTS_ACCOUNT}/${out.AccountOrganizationId}`);
-  if (orgGet.status !== 200) fail('GET Org', orgGet);
-  const fantasyName = orgGet.data?.vtal_LXD_FantasyName__c || '';
-  await apiCall(
-    'PATCH',
-    `${SOBJECTS_ACCOUNT}/${out.AccountOrganizationId}`,
-    buildOrganizationPatchPayload(fantasyName, {
-      accountName: orgGet.data?.Name || '',
-      companyFromLead: getFieldValue(leadAfterPatch, 'Company') || '',
-    }),
-  );
-
-  console.log('[E2E] 5. PATCH Business...');
-  const businessGet = await apiCall('GET', `${SOBJECTS_ACCOUNT}/${out.AccountBussinessId}`);
-  if (businessGet.status !== 200) fail('GET Business', businessGet);
-  const businessBody = businessGet.data;
-  const accountName = getFieldValue(leadAfterPatch, 'Company') || businessBody?.Name || '';
-  const email = getFieldValue(leadAfterPatch, 'Email') || businessBody?.vlocity_cmt__BillingEmailAddress__c || '';
-  await apiCall('PATCH', `${SOBJECTS_ACCOUNT}/${out.AccountBussinessId}`, buildBusinessAccountPatchPayload({ accountName, email, environment: envName }));
-  console.log('[E2E] 6. PATCH Billing...');
-  const accountNumber = businessBody?.Account_Number__c || '';
-  const ufOfClient = businessBody?.vtal_LXD_UF_OfClient__c || 'SP';
-  await apiCall('PATCH', `${SOBJECTS_ACCOUNT}/${out.AccountBillingId}`, buildBillingAccountPatchPayload({ accountNumber, ufOfClient, environment: envName }));
-
-  console.log('[E2E] 7. Criando 2 Contatos...');
-  const principalRes = await apiCall('POST', SOBJECTS_CONTACT, buildContactPayload(out.AccountBussinessId, 'Principal'));
-  if (principalRes.status !== 201) fail('Contact Principal', principalRes);
-  const tecnicoRes = await apiCall('POST', SOBJECTS_CONTACT, buildContactPayload(out.AccountBussinessId, 'Technical'));
-  if (tecnicoRes.status !== 201) fail('Contact Técnico', tecnicoRes);
-  const contactTecnicoId = tecnicoRes.data?.id;
-  if (!contactTecnicoId) fail('Contact Técnico sem id', tecnicoRes);
-
-  console.log('[E2E] 8. Contract MSA + ContentVersion + Link + Activate...');
-  const contractRes = await apiCall('POST', SOBJECTS_CONTRACT, buildContractMSAPayload(out.AccountOrganizationId));
-  if (contractRes.status !== 201) fail('Contract', contractRes);
-  const contractId = contractRes.data?.id;
-  if (!contractId) fail('Contract sem id', contractRes);
-
-  const cvRes = await apiCall('POST', SOBJECTS_CONTENT_VERSION, buildContentVersionMSAPayload());
-  if (cvRes.status !== 201) fail('ContentVersion', cvRes);
-  const contentVersionId = cvRes.data?.id;
-  if (!contentVersionId) fail('ContentVersion sem id', cvRes);
-
-  const qDoc = `SELECT ContentDocumentId FROM ContentVersion WHERE Id='${contentVersionId}'`;
-  const qRes = await apiCall('GET', `${QUERY_URL}?q=${encodeURIComponent(qDoc)}`);
-  if (qRes.status !== 200 || !qRes.data?.records?.[0]?.ContentDocumentId) fail('Query ContentDocumentId', qRes);
-  const contentDocumentId = qRes.data.records[0].ContentDocumentId;
-
-  await apiCall('POST', SOBJECTS_CONTENT_DOCUMENT_LINK, {
-    ContentDocumentId: contentDocumentId,
-    LinkedEntityId: contractId,
-    ShareType: 'V',
-  });
-
-  await apiCall('PATCH', `${SOBJECTS_CONTRACT}/${contractId}`, buildContractActivatePayload());
-
-  console.log('[E2E] 9. getAccount (executeAnonymous) + poll BRM...');
-  const accountBillingId = out.AccountBillingId;
-  if (IS_TRG) {
-    console.log('[E2E] TRG: BRM activation/poll desativado. Pulando executeAnonymous/poll para AccountBillingId:', accountBillingId);
-  } else {
-    const apexBody = `try { Map<String,Object> r = Vtal_SF_IntegrationBillAccController.getAccount('${accountBillingId}'); System.debug(JSON.serialize(r)); } catch(Exception e) { System.debug(e.getMessage()); }`;
-    const execRes = await apiCall('GET', `${TOOLING_EXECUTE_ANONYMOUS}/?anonymousBody=${encodeURIComponent(apexBody)}`);
-    if (execRes.status !== 200 || !execRes.data?.success) fail('executeAnonymous getAccount', execRes);
-
-    const deadline = Date.now() + BRM_POLL_TIMEOUT_MS;
-    let billingBody;
-    while (Date.now() < deadline) {
-      const billingGet = await apiCall('GET', `${SOBJECTS_ACCOUNT}/${accountBillingId}`);
-      if (billingGet.status !== 200) fail('GET Billing', billingGet);
-      billingBody = billingGet.data;
-      if (billingBody?.vtal_LXD_BRMId__c) break;
-      await delay(BRM_POLL_INTERVAL_MS);
-    }
-    if (!billingBody?.vtal_LXD_BRMId__c) fail('BRM não preenchido no timeout', { status: 0, data: billingBody });
-
-    console.log('[E2E] Aguardando 45s para conta Billing/Business ficar ativa no BRM...');
-    await delay(45000);
-
-    console.log('[E2E] Lead + BRM OK. AccountBillingId:', accountBillingId);
-  }
-  return {
-    accountBillingId,
-    accountBussinessId: out.AccountBussinessId,
-    accountOrganizationId: out.AccountOrganizationId,
-    contactTecnicoId,
-  };
+  return runLeadToBrm(apiCall, fail, { logPrefix: '[E2E]' });
 }
+
 
 async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
   const apiCall = (method, path, body) => api(instanceUrl, accessToken, method, path, body, cookie);
@@ -914,15 +682,18 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
 
     const proposalValidity = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const statusAprovado = process.env.QUOTE_STATUS_APROVADO || currentQuoteFlow.finalStatus;
-    await ensureQuoteApproved(apiCall, quoteId, statusAprovado, proposalValidity);
-
-    if (IS_TI) {
-      console.log('[E2E] 17e. PATCH Quote (salvar cotação após aprovação)...');
-      const savePatch = await apiCall('PATCH', `${SOBJECTS_QUOTE}/${quoteId}`, { Vtal_Seg_ProposalValidity__c: proposalValidity });
-      if (savePatch.status !== 200 && savePatch.status !== 204) {
-        console.log('   PATCH save (não crítico):', savePatch.status);
-      }
-    }
+    await ensureQuoteApproved({
+      apiCall,
+      fail,
+      SOBJECTS_QUOTE,
+      quoteId,
+      opportunityId,
+      statusAprovado,
+      proposalValidity,
+      IS_TRG,
+      IS_TI,
+      quoteFlow: currentQuoteFlow,
+    });
 
     console.log('[E2E] 17f. Vtal_Seg_ValidateCreateOrder...');
     const validateRes = await apiCall('POST', IP_VALIDATE_CREATE_ORDER, { QuoteId: quoteId });
@@ -1225,109 +996,14 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
   };
 }
 
-/** Token: PEGA_BEARER_TOKEN, ou OAuth2 com client_id/secret (env sobrescreve user.json). */
-async function resolvePegaBearerToken() {
-  const filePega = getPegaFixture();
-  const direct = (process.env.PEGA_BEARER_TOKEN || '').trim();
-  if (direct) {
-    console.log(
-      `[PEGA] Passo 1/${PEGA_TOTAL_STEPS_VPN} — Bearer já definido (PEGA_BEARER_TOKEN). OAuth2 não será chamado.`,
-    );
-    return direct;
+/** PEGA (VPN) + OFS opcional + log painel — mesmo padrão do IP Connect config PEGA. */
+async function finalizeConfigPegaPedido(result) {
+  const pegaOpts = { flowVariant: 'vpn' };
+  const withOfs = process.env.INCLUDE_OFS_INSTALACAO === '1' || process.env.OFS_ENABLE === '1';
+  if (withOfs) {
+    return finalizePedidoWithOptionalPegaAndOfs(result, pegaOpts);
   }
-  const clientId = (process.env.PEGA_CLIENT_ID || filePega?.client_id || '').trim();
-  const clientSecret = (process.env.PEGA_CLIENT_SECRET || filePega?.client_secret || '').trim();
-  const tokenUrl = (process.env.PEGA_TOKEN_URL || filePega?.token_url || PEGA_ENV_DEFAULTS.token_url).trim();
-  const srcId =
-    (process.env.PEGA_CLIENT_ID && 'PEGA_CLIENT_ID') ||
-    (filePega?.client_id && 'user.json → pega.client_id') ||
-    '—';
-  if (!clientId || !clientSecret) return null;
-  console.log(
-    `[PEGA] Passo 1/${PEGA_TOTAL_STEPS_VPN} — OAuth2 client_credentials (Basic Auth) →`,
-    tokenUrl,
-    '| client_id:',
-    srcId,
-  );
-  return getPegaAccessToken({ tokenUrl, clientId, clientSecret });
-}
-
-/** PEGA: ordem de serviço = número do subpedido VPN (CRM), usado em obterdadosordem. Variante VPN (ConfiguracaoDeRede + payload validação). */
-async function runPegaAfterSuborderIfConfigured(subOrderOrderNumber) {
-  if (process.env.SKIP_PEGA === '1') {
-    console.log('[PEGA] SKIP_PEGA=1 — etapa PEGA omitida.');
-    return null;
-  }
-  const ordemOverride = (process.env.PEGA_ORDEM_SERVICO || '').trim();
-  const ordemServico = ordemOverride || subOrderOrderNumber;
-  if (!ordemServico) {
-    console.log('[PEGA] Sem ORDEMSERVICO (subpedido sem OrderNumber e PEGA_ORDEM_SERVICO vazio).');
-    return null;
-  }
-  let token;
-  try {
-    token = await resolvePegaBearerToken();
-  } catch (err) {
-    console.error('[PEGA] Falha ao obter access_token:', err.message);
-    throw err;
-  }
-  if (!token) {
-    console.log(
-      '[PEGA] Sem token: configure PEGA em support/fixtures/user.json (objeto "pega" com client_id, client_secret) ou env PEGA_CLIENT_ID/PEGA_CLIENT_SECRET / PEGA_BEARER_TOKEN. Ou SKIP_PEGA=1.',
-    );
-    return null;
-  }
-  const filePega = getPegaFixture();
-  const base = (process.env.PEGA_BASE_URL || filePega?.base_url || PEGA_ENV_DEFAULTS.base_url).replace(
-    /\/$/,
-    '',
-  );
-  const cookie = (process.env.PEGA_COOKIE || filePega?.cookie || '').trim();
-  console.log(
-    `[E2E] 21. PEGA (VPN) — passos 2–${PEGA_TOTAL_STEPS_VPN} (OAuth=1): ConfiguracaoDeRede → … → Validação técnica → Agendamento (se aplicável) | base:`,
-    base,
-    '| ORDEMSERVICO:',
-    ordemServico + (ordemOverride ? ' (override PEGA_ORDEM_SERVICO)' : ''),
-  );
-  const pegaResult = await runPegaDesignacaoEConfiguracao({
-    ordemServico,
-    baseUrl: base,
-    bearerToken: token,
-    cookie,
-    flowVariant: 'vpn',
-  });
-  console.log('\n*** PEGA (VPN: configuração de rede, designação, validação e agendamento) ***');
-  if (pegaResult.caseId) console.log('  PEGA:', pegaResult.caseId);
-  if (pegaResult.pegaOrdemServicoOs) console.log('  PEGA OS:', pegaResult.pegaOrdemServicoOs);
-  console.log('  ChaveCaseOrdem:', pegaResult.chaveCaseOrdem);
-  console.log('  pyStatusWork (após ConfigurarDados):', pegaResult.pyStatusWork || '—');
-  console.log('  pyStatusWork (após refresh):', pegaResult.pyStatusWorkAfterRefresh ?? '—');
-  console.log('  pyStatusWork (após ?viewType=form):', pegaResult.pyStatusWorkAfterValidacao || '—');
-  console.log('  HTTP refresh / viewType=form:', (pegaResult.validacaoTecnicaRefreshStatus ?? '—') + ' / ' + (pegaResult.validacaoTecnicaFormStatus ?? '—'));
-  if (pegaResult.validarExecucaoRefreshUrl) console.log('  URL refresh:', pegaResult.validarExecucaoRefreshUrl);
-  if (pegaResult.validarExecucaoFormUrl) console.log('  URL ?viewType=form:', pegaResult.validarExecucaoFormUrl);
-  console.log('  Views do caso (pyDetails / DadosPedidoOS):', pegaResult.caseViewRefreshSkipped === true ? 'omitidas' : 'executadas');
-  if (pegaResult.caseViewRefreshSkipped !== true && (pegaResult.caseViewPyDetailsStatus != null || pegaResult.caseViewDadosPedidoStatus != null)) {
-    console.log(
-      '  HTTP pyDetailsTabContent / DadosPedidoOSTab:',
-      (pegaResult.caseViewPyDetailsStatus ?? '—') + ' / ' + (pegaResult.caseViewDadosPedidoStatus ?? '—'),
-    );
-  }
-  console.log('  Agendamento omitido:', pegaResult.agendamentoSkipped === true ? 'sim' : 'não');
-  if (pegaResult.agendamentoSkipped !== true) {
-    console.log(
-      '  HTTP SelecaoDePeriodo / SelecaoDoSlot refresh / SelecaoDoSlot form:',
-      (pegaResult.agendamentoSelecaoPeriodoStatus ?? '—') +
-        ' / ' +
-        (pegaResult.agendamentoSelecaoSlotRefreshStatus ?? '—') +
-        ' / ' +
-        (pegaResult.agendamentoSelecaoSlotFormStatus ?? '—'),
-    );
-    if (pegaResult.agendamentoSelecaoPeriodoUrl) console.log('  URL SelecaoDePeriodo:', pegaResult.agendamentoSelecaoPeriodoUrl);
-    if (pegaResult.agendamentoSelecaoSlotRefreshUrl) console.log('  URL SelecaoDoSlot/refresh:', pegaResult.agendamentoSelecaoSlotRefreshUrl);
-    if (pegaResult.agendamentoSelecaoSlotFormUrl) console.log('  URL SelecaoDoSlot?viewType=form:', pegaResult.agendamentoSelecaoSlotFormUrl);
-  }
-  return pegaResult;
+  return finalizePedidoWithOptionalPega(result, pegaOpts);
 }
 
 const FULL_FLOW_MAX_RUNS = 3;
@@ -1423,7 +1099,6 @@ async function main() {
     console.error('Configure env (ENVIRONMENT=dev). Ver support/environment/env.json');
     process.exit(1);
   }
-  const sf = getUser();
   if (!sf.client_id || !sf.client_secret) {
     console.error('Credenciais em user.json (dev.salesforce)');
     process.exit(1);
@@ -1458,21 +1133,17 @@ async function main() {
     console.log('\n========== EXECUÇÃO', run, '/', FULL_FLOW_MAX_RUNS, '==========');
     console.log('Token...');
     const { accessToken, instanceUrl } = await getToken();
-    const cookie = sf.cookie || '';
+    const cookie = defaultCookie;
 
     try {
       if (readyQuote) {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
-          const pegaResult = await runPegaAfterSuborderIfConfigured(result.subOrderOrderNumber);
-          await finalizePedidoGerado(
-            mergePegaSingleLegIntoPedido(
-              mergeAccountIdsIntoPedidoResult(result, {
-                ...readyQuote,
-                accountBillingId: process.env.ACCOUNT_BILLING_ID?.trim() || readyQuote.accountBillingId,
-              }),
-              pegaResult,
-            ),
+          await finalizeConfigPegaPedido(
+            mergeAccountIdsIntoPedidoResult(result, {
+              ...readyQuote,
+              accountBillingId: process.env.ACCOUNT_BILLING_ID?.trim() || readyQuote.accountBillingId,
+            }),
           );
           process.exit(0);
         }
@@ -1491,10 +1162,7 @@ async function main() {
       }
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        const pegaResult = await runPegaAfterSuborderIfConfigured(result.subOrderOrderNumber);
-        await finalizePedidoGerado(
-          mergePegaSingleLegIntoPedido(mergeAccountIdsIntoPedidoResult(result, accountIds), pegaResult),
-        );
+        await finalizeConfigPegaPedido(mergeAccountIdsIntoPedidoResult(result, accountIds));
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

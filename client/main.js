@@ -130,6 +130,109 @@ function refreshMassTypesForEnvironment() {
     !!appConfig.user?.isPlatformAdmin,
     getSelectedEnvironment(),
   );
+  updateMassaProntaEnvBadge();
+}
+
+function clearMassaProntaFields() {
+  for (const id of ['accountOrganizationId', 'accountBusinessId', 'accountBillingId']) {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  }
+}
+
+function updateMassaProntaEnvBadge() {
+  const badge = document.getElementById('massa-pronta-env-badge');
+  if (badge) badge.textContent = getSelectedEnvironment().toUpperCase();
+}
+
+function isMassaProntaCustomOpen() {
+  const block = document.getElementById('massa-pronta-custom-fields');
+  return block && !block.hidden;
+}
+
+function setMassaProntaCustomOpen(open) {
+  const panel = document.getElementById('massa-pronta-panel');
+  const block = document.getElementById('massa-pronta-custom-fields');
+  const btn = document.getElementById('massa-pronta-edit-toggle');
+  if (!panel || !block) return;
+  block.hidden = !open;
+  panel.classList.toggle('massa-pronta-panel--editing', open);
+  if (btn) {
+    btn.textContent = open ? 'Ocultar personalização' : 'Personalizar contas (opcional)';
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+  if (!open) clearMassaProntaFields();
+  else block.querySelector('.mp-field__input')?.focus({ preventScroll: true });
+}
+
+function resolveMassaProntaTripleEnv(environment) {
+  const org = document.getElementById('accountOrganizationId')?.value?.trim() || '';
+  const business = document.getElementById('accountBusinessId')?.value?.trim() || '';
+  const billing = document.getElementById('accountBillingId')?.value?.trim() || '';
+  return { org, business, billing };
+}
+
+function resolveMassTypeIdFromLabel(label) {
+  const needle = String(label || '').trim();
+  if (!needle) return null;
+  for (const cat of appConfig.massCategories || []) {
+    for (const type of cat.types || []) {
+      if (type.label === needle) return type.id;
+    }
+  }
+  return null;
+}
+
+function buildExtraEnvFromJobResult(r, jobData) {
+  const ev = jobData?.envVars || {};
+  const org = r.accountOrganizationId || ev.ACCOUNT_ORGANIZATION_ID || '';
+  const business = r.accountBusinessId || ev.ACCOUNT_BUSINESS_ID || '';
+  const billing = r.accountBillingId || ev.ACCOUNT_BILLING_ID || '';
+  const extraEnv = {};
+  if (org && business && billing) {
+    extraEnv.START_FROM_QUOTE = ev.START_FROM_QUOTE || '1';
+    extraEnv.ACCOUNT_ORGANIZATION_ID = org;
+    extraEnv.ACCOUNT_BUSINESS_ID = business;
+    extraEnv.ACCOUNT_BILLING_ID = billing;
+  } else if (billing && !org && !business) {
+    extraEnv.ACCOUNT_BILLING_ID = billing;
+  }
+  return extraEnv;
+}
+
+async function rerunJobFromId(id) {
+  const msg = document.getElementById('form-message');
+  try {
+    const job = await api(`/jobs/${id}`);
+    const state = (job.state || job.status || '').toLowerCase();
+    if (state !== 'completed') {
+      showMessage(msg, 'Só é possível repetir jobs concluídos com sucesso.', 'error');
+      return;
+    }
+    const massType =
+      job.data?.massTypeId ||
+      job.massTypeId ||
+      resolveMassTypeIdFromLabel(job.data?.massTypeLabel || job.massType);
+    const environment = job.data?.environment || job.environment;
+    if (!massType || !environment) {
+      showMessage(msg, 'Não foi possível identificar o tipo de massa deste job.', 'error');
+      return;
+    }
+    const r = mergeJobResultFields(job);
+    const extraEnv = buildExtraEnvFromJobResult(r, job.data);
+    showMessage(msg, 'Enfileirando nova execução com os mesmos parâmetros…', 'pending');
+    const { jobs, message } = await api('/jobs', {
+      method: 'POST',
+      body: JSON.stringify({ environment, massType, quantity: 1, extraEnv }),
+    });
+    closeModal();
+    setLastRunSummary(message, jobs.length);
+    showMessage(msg, 'Nova execução enfileirada.', 'success');
+    loadJobs();
+    document.querySelector('.card-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    showMessage(msg, err.message || 'Erro ao repetir job.', 'error');
+  }
 }
 
 async function loadAppConfig() {
@@ -479,6 +582,10 @@ function renderJobCard(j, { showOwnerVt = false } = {}) {
     canCancel && (isWaiting || isActive)
       ? `<button type="button" class="btn btn-secondary job-cancel-btn" data-job-id="${escapeHtml(String(j.id))}" title="${isActive ? 'Interromper execução' : 'Remover da fila'}">Cancelar</button>`
       : '';
+  const rerunBtn =
+    status === 'completed'
+      ? `<button type="button" class="btn btn-secondary job-rerun-btn" data-job-id="${escapeHtml(String(j.id))}" title="Enfileirar novamente com os mesmos parâmetros">Gerar novamente</button>`
+      : '';
   return `
     <article class="job-item" data-job-id="${j.id}" role="button" tabindex="0">
       <span class="job-id">${escapeHtml(formatJobDisplayLabel(j, { showOwnerVt }))}</span>
@@ -502,7 +609,7 @@ function renderJobCard(j, { showOwnerVt = false } = {}) {
               ? `<span class="job-result">Conta BRM: ${escapeHtml(j.accountBillingId)}</span>`
               : '<span class="job-result job-result--muted">—</span>')
       }
-      <span class="job-actions">${cancelBtn}</span>
+      <span class="job-actions">${rerunBtn}${cancelBtn}</span>
     </article>
   `;
 }
@@ -809,6 +916,16 @@ async function openJobDetail(id) {
         <div class="detail-value">Em execução — o resultado aparecerá quando o fluxo terminar.</div>
       </div>
       ` : ''}
+      ${
+        (job.state || job.status || '').toLowerCase() === 'completed' && !showJobError(job, r)
+          ? `
+      <div class="detail-row detail-row--actions">
+        <button type="button" class="btn btn-primary job-rerun-btn" data-job-id="${escapeHtml(String(id))}">Gerar massa novamente</button>
+        <p class="detail-rerun-hint">Cria um <strong>novo job</strong> com o mesmo tipo, ambiente e contas desta execução.</p>
+      </div>
+      `
+          : ''
+      }
       <p class="card-hint" style="margin-top: 1rem;">
         Logs completos (stdout/stderr) ficam apenas no terminal da API ou do worker — não são exibidos aqui por desempenho e segurança.
       </p>
@@ -839,11 +956,9 @@ async function submitForm(e) {
 
   let extraEnv = {};
   if (selectedMeta.formVariant === 'massa-pronta-triple') {
-    const org = document.getElementById('accountOrganizationId')?.value?.trim();
-    const business = document.getElementById('accountBusinessId')?.value?.trim();
-    const billing = document.getElementById('accountBillingId')?.value?.trim();
+    const { org, business, billing } = resolveMassaProntaTripleEnv(environment);
     if (!org || !business || !billing) {
-      showMessage(msg, 'Preencha Organization, Business e Billing para este tipo de massa.', 'error');
+      showMessage(msg, 'Informe Organization, Business e Billing da massa pronta.', 'error');
       return;
     }
     extraEnv = {
@@ -892,6 +1007,13 @@ document.getElementById('jobs-filter-owner')?.addEventListener('change', () => {
   loadJobs({ fromUiRefresh: true });
 });
 document.getElementById('jobs-list')?.addEventListener('click', (e) => {
+  const rerunBtn = e.target.closest('.job-rerun-btn');
+  if (rerunBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    rerunJobFromId(rerunBtn.dataset.jobId);
+    return;
+  }
   const cancelBtn = e.target.closest('.job-cancel-btn');
   if (cancelBtn) {
     e.preventDefault();
@@ -911,6 +1033,22 @@ document.getElementById('jobs-list')?.addEventListener('click', (e) => {
 });
 document.getElementById('modal-close').addEventListener('click', closeModal);
 document.querySelector('.modal-backdrop').addEventListener('click', closeModal);
+document.getElementById('modal-body')?.addEventListener('click', (e) => {
+  const rerunBtn = e.target.closest('.job-rerun-btn');
+  if (rerunBtn) {
+    e.preventDefault();
+    rerunJobFromId(rerunBtn.dataset.jobId);
+  }
+});
+
+function setMassaProntaInputsActive(active) {
+  for (const id of ['accountOrganizationId', 'accountBusinessId', 'accountBillingId']) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    el.required = active;
+    el.disabled = !active;
+  }
+}
 
 function updateMassaProntaVisibility() {
   const meta = getSelectedMassTypeMeta();
@@ -920,18 +1058,18 @@ function updateMassaProntaVisibility() {
   const showTriple = meta?.formVariant === 'massa-pronta-triple';
   const showBrm = meta?.formVariant === 'brm-massa-pronta';
   block.hidden = !showTriple;
+  setMassaProntaInputsActive(showTriple);
   if (brmBlock) {
     brmBlock.hidden = !showBrm;
+  }
+  if (showTriple) {
+    updateMassaProntaEnvBadge();
   }
   const sidebar = document.querySelector('.form-layout__sidebar');
   if (showTriple || showBrm) {
     if (window.matchMedia('(max-width: 879px)').matches && sidebar) {
       sidebar.scrollIntoView({ behavior: 'auto', block: 'nearest' });
     }
-    const focusEl = showBrm
-      ? document.getElementById('accountBillingIdBrmOnly')
-      : document.getElementById('accountOrganizationId');
-    requestAnimationFrame(() => focusEl?.focus({ preventScroll: true }));
   }
 }
 

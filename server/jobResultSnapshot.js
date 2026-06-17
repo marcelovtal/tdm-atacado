@@ -4,28 +4,12 @@ import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
 const { resolvePedidoPanelStatus } = require('../support/utils/resolvePedidoPanelStatus.js');
+const {
+  PANEL_SNAPSHOT_KEYS,
+  parsePanelSnapshotFromText,
+} = require('../support/utils/panelSnapshot.js');
 
-const SNAPSHOT_KEYS = [
-  'orderId',
-  'orderNumber',
-  'orderStatus',
-  'accountOrganizationId',
-  'accountBusinessId',
-  'accountBillingId',
-  'contactTecnicoId',
-  'pegaCaseId',
-  'pegaCaseIdPontaA',
-  'pegaCaseIdPontaB',
-  'pegaCaseIdEVC',
-  'pegaOrdemServicoOs',
-  'pegaOrdemServicoOsPontaA',
-  'pegaOrdemServicoOsPontaB',
-  'pegaOrdemServicoOsEVC',
-  'subOrderOrderNumber',
-  'subOrderOrderNumberPontaA',
-  'subOrderOrderNumberPontaB',
-  'subOrderOrderNumberEVC',
-];
+const SNAPSHOT_KEYS = PANEL_SNAPSHOT_KEYS;
 
 export function buildJobResultSnapshot(result = {}) {
   if (!result || typeof result !== 'object') return null;
@@ -56,14 +40,15 @@ export function parseJobResultSnapshot(raw) {
   }
 }
 
-/** Mescla snapshot gravado + parse do stdout (legado). */
+/** Mescla snapshot gravado + parse do stdout (legado + FDL_PANEL_SNAPSHOT). */
 export function resolveJobFieldsFromExecutionRow(row, parseStdoutFn) {
   const fromJson = parseJobResultSnapshot(row?.result_json);
   const fromStdout =
     parseStdoutFn && (row?.stdout || row?.stderr)
       ? parseStdoutFn(`${row.stdout || ''}\n${row.stderr || ''}`)
       : {};
-  const merged = { ...fromStdout, ...fromJson };
+  const fromPanelLine = parsePanelSnapshotFromText(`${row?.stdout || ''}\n${row?.stderr || ''}`);
+  const merged = { ...fromStdout, ...fromJson, ...(fromPanelLine || {}) };
   const orderStatus = resolvePedidoPanelStatus({
     orderStatus: merged.orderStatus,
     subOrderStatus: merged.subOrderStatus,

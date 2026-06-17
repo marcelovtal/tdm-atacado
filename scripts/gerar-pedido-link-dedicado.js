@@ -39,7 +39,6 @@
  * Se o org não tiver o IP "XOMOnSubmitOrder" ativo, definir IP_XOM_SUBMIT_ORDER com o nome real do IP
  * (ex.: .../integrationprocedure/Vtal_SubmitOrderToOM) para o subpedido ir para "Em implantação".
  */
-const { loadEnv, getTokenUrl, getUserFixture } = require('../config/env.js');
 const { buildLeadPayload } = require('../support/utils/salesforce/leadPayload.js');
 const { buildConvertLeadPayload, getFieldValue } = require('../support/utils/salesforce/convertLeadPayload.js');
 const { buildOrganizationPatchPayload, resolveLxdFantasyName } = require('../support/utils/salesforce/organizationPatchPayload.js');
@@ -53,166 +52,61 @@ const { finalizePedidoLinkDedicadoWithOptionalPega } = require('../support/utils
 const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
 const { extractLinkDedicadoSubpedidos } = require('../support/utils/extractLinkDedicadoSubpedidos.js');
 
-const env = loadEnv();
-const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
-const tokenUrl = getTokenUrl(env) || (baseUrl ? `${baseUrl}/services/oauth2/token` : '');
-const envName = String(process.env.ENVIRONMENT || process.env.ENV || 'ti').trim().toLowerCase();
-const IS_TRG = envName === 'trg';
-const IS_TI = envName === 'ti';
+const { createSalesforceScriptClient } = require('../support/utils/salesforce/scriptHttpClient.js');
+const {
+  UI_API_RECORDS,
+  CONVERT_LEAD_URL,
+  SOBJECTS_ACCOUNT,
+  SOBJECTS_CONTACT,
+  SOBJECTS_CONTRACT,
+  SOBJECTS_CONTENT_VERSION,
+  SOBJECTS_CONTENT_DOCUMENT_LINK,
+  QUERY_URL,
+  TOOLING_EXECUTE_ANONYMOUS,
+  SOBJECTS_OPPORTUNITY,
+  SOBJECTS_QUOTE,
+  IP_CREATE_QUOTE_MEMBERS,
+  IP_PRODUCTS_VALIDATION,
+  IP_VIABILITY,
+  IP_QUOTE_STATUS,
+  IP_VALIDATE_CREATE_ORDER,
+  IP_CREATE_ORDER_ON_QUOTE,
+  IP_FILL_ADDRESS_INFO,
+  IP_GET_QUOTE_ADDRESS_VIABILITY,
+  IP_IP_CONNECT_QUOTE_INSTALLATION_FEE,
+  IP_XOM_SUBMIT_ORDER,
+  IP_XOM_SUBMIT_ORDER_FALLBACK,
+  IP_GENERIC_INVOKE,
+  IP_CHECKOUT_ORDER_OM,
+  IP_MERGE_TECH_CONTACT,
+  CART_API_V2_BASE,
+  INVOKE_CPQ_URL,
+  IP_GET_TOKEN_VIABILIDADE,
+  SOBJECTS_ORDER,
+  SOBJECTS_ORDER_ITEM,
+  BRM_POLL_TIMEOUT_MS,
+  BRM_POLL_INTERVAL_MS,
+} = require('../support/utils/salesforce/sfRestPaths.js');
 
-function getUser() {
-  const user = getUserFixture();
-  return user.salesforce || user.dev?.salesforce || user.trg?.salesforce || {};
-}
-
-async function getToken() {
-  const sf = getUser();
-  const grantType = sf.grant_type || 'client_credentials';
-  const baseUrl = (sf.tokenUrl || tokenUrl).replace(/\?.*$/, '');
-  const params = new URLSearchParams({
-    grant_type: grantType,
-    client_id: sf.client_id || '',
-    client_secret: sf.client_secret || '',
-  });
-  if (grantType === 'password') {
-    params.set('username', sf.username || '');
-    params.set('password', sf.password || '');
-  }
-  const useQueryParams = grantType === 'password';
-  const url = useQueryParams ? `${baseUrl}?${params.toString()}` : baseUrl;
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: sf.cookie || '' };
-  const reqBody = useQueryParams ? null : params.toString();
-  logCurl('POST', url, headers, reqBody);
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: useQueryParams ? '' : params.toString(),
-  });
-  const resText = await res.text();
-  let body = null;
-  try {
-    body = resText ? JSON.parse(resText) : null;
-  } catch (_) {
-    body = null;
-  }
-  logResponse('Token', res.status, body, resText);
-  if (!res.ok) throw new Error(`Token ${res.status}: ${resText}`);
-  return { accessToken: body.access_token, instanceUrl: body.instance_url };
-}
-
-async function api(instanceUrl, accessToken, method, path, body = null, cookie = '') {
-  const url = path.startsWith('http') ? path : `${instanceUrl}${path}`;
-  const opts = {
-    method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      ...(cookie ? { Cookie: cookie } : {}),
-    },
-  };
-  if (body != null && (method === 'POST' || method === 'PATCH')) opts.body = JSON.stringify(body);
-  const reqBody = opts.body ?? null;
-  logCurl(method, url, opts.headers, reqBody);
-  const res = await fetch(url, opts);
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (_) {}
-  const label = `${method} ${path}`;
-  logResponse(label, res.status, data, text);
-  return { status: res.status, data, text };
-}
-
-function safePreview(value, maxLen = 4000) {
-  if (value == null) return value;
-  const str = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-  return str.length > maxLen ? `${str.slice(0, maxLen)}\n... [truncado ${str.length - maxLen} chars]` : str;
-}
-
-function logStepTrace(label, requestBody, response, extra = null) {
-  console.log(`[TRACE] ${label} request:`, safePreview(requestBody));
-  if (extra != null) {
-    console.log(`[TRACE] ${label} extra:`, safePreview(extra));
-  }
-  console.log(`[TRACE] ${label} status:`, response?.status);
-  if (response?.data != null) {
-    console.log(`[TRACE] ${label} response(data):`, safePreview(response.data));
-  } else {
-    console.log(`[TRACE] ${label} response(text):`, safePreview(response?.text ?? ''));
-  }
-}
-
-function tryParseJson(value) {
-  if (typeof value !== 'string') return value;
-  try {
-    return JSON.parse(value);
-  } catch (_) {
-    return value;
-  }
-}
-
-function extractTokenDeep(value) {
-  const parsed = tryParseJson(value);
-  if (!parsed || typeof parsed !== 'object') return null;
-  if (typeof parsed.Token === 'string' && parsed.Token) return parsed.Token;
-  if (typeof parsed.token === 'string' && parsed.token) return parsed.token;
-  if (typeof parsed.access_token === 'string' && parsed.access_token) return parsed.access_token;
-  if (typeof parsed.accessToken === 'string' && parsed.accessToken) return parsed.accessToken;
-  for (const key of Object.keys(parsed)) {
-    const nested = parsed[key];
-    if (nested && typeof nested === 'object') {
-      const token = extractTokenDeep(nested);
-      if (token) return token;
-    } else if (typeof nested === 'string') {
-      const token = extractTokenDeep(nested);
-      if (token) return token;
-    }
-  }
-  return null;
-}
-
-const UI_API_RECORDS = '/services/data/v62.0/ui-api/records';
-const CONVERT_LEAD_URL = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_LXD_CreateAccountsAndContactCon';
-const SOBJECTS_ACCOUNT = '/services/data/v62.0/sobjects/Account';
-const SOBJECTS_CONTACT = '/services/data/v62.0/sobjects/Contact';
-const SOBJECTS_CONTRACT = '/services/data/v62.0/sobjects/Contract';
-const SOBJECTS_CONTENT_VERSION = '/services/data/v62.0/sobjects/ContentVersion';
-const SOBJECTS_CONTENT_DOCUMENT_LINK = '/services/data/v62.0/sobjects/ContentDocumentLink';
-const QUERY_URL = '/services/data/v62.0/query';
-const TOOLING_EXECUTE_ANONYMOUS = '/services/data/v62.0/tooling/executeAnonymous';
-const SOBJECTS_OPPORTUNITY = '/services/data/v62.0/sobjects/Opportunity';
-const SOBJECTS_QUOTE = '/services/data/v62.0/sobjects/Quote';
-const IP_CREATE_QUOTE_MEMBERS = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_CreateQuoteMembers';
-const IP_PRODUCTS_VALIDATION = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_Seg_ProductsValidation';
-const IP_VIABILITY = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_ViabilityDetailsForQuote';
-const IP_QUOTE_STATUS = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_Seg_IPQuoteStatusUpdateMassive';
-const IP_VALIDATE_CREATE_ORDER = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_Seg_ValidateCreateOrder';
-const IP_CREATE_ORDER_ON_QUOTE = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_CreateOrderOnQuote';
-const IP_FILL_ADDRESS_INFO = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_FillAddressInfo';
-const IP_GET_QUOTE_ADDRESS_VIABILITY = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_SF_GetQuoteAddressViability';
-const IP_GET_TOKEN_VIABILIDADE = 'Vtal_SF_GetTokenViabilidade';
-const IP_IP_CONNECT_QUOTE_INSTALLATION_FEE = '/services/apexrest/vlocity_cmt/v1/integrationprocedure/VtalCap_IPIpConnectQuoteInstallationFee';
-/** IP de submit ao OM (botão na Order: vlocity_cmt__XOMOnSubmitOrder). Override: IP_XOM_SUBMIT_ORDER. */
-const IP_XOM_SUBMIT_ORDER = process.env.IP_XOM_SUBMIT_ORDER || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/XOMOnSubmitOrder';
-/** Fallback se o org usar o IP com namespace no path. */
-const IP_XOM_SUBMIT_ORDER_FALLBACK = process.env.IP_XOM_SUBMIT_ORDER_FALLBACK || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/vlocity_cmt__XOMOnSubmitOrder';
-/** Industries: invocar Apex direto (Vtal_SF_OrderUtils.checkoutOrderOMBatch) — gera Orchestration Plan, Service Order, Designation, vincula SubOrder. */
-const IP_GENERIC_INVOKE = process.env.IP_GENERIC_INVOKE || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/GenericInvoke2NoCont';
-/** Fallback se org bloquear GenericInvoke2NoCont; antes usávamos IP checkoutOrderOMBatch. */
-const IP_CHECKOUT_ORDER_OM = process.env.IP_CHECKOUT_ORDER_OM || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/checkoutOrderOMBatch';
-/** Trace linha 197: UI chama antes de CreateOrderOnQuote. Opcional (USE_MERGE_TECH_CONTACT=1). */
-const IP_MERGE_TECH_CONTACT = process.env.IP_MERGE_TECH_CONTACT || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/Vtal_Seg_MergeTechContacList';
-const INVOKE_CPQ_URL = process.env.INVOKE_CPQ_URL || '/services/apexrest/vlocity_cmt/v1/invoke/';
-/** Cart API v2 (Industries CPQ): reprice consolida runtime JSON no banco e gera Push Event Data, como o front. Doc: v2/cpq/carts; alguns orgs usam v2/carts — override CART_API_V2_BASE. */
-const CART_API_V2_BASE = process.env.CART_API_V2_BASE || '/services/apexrest/vlocity_cmt/v2/cpq/carts';
-const SOBJECTS_ORDER = '/services/data/v62.0/sobjects/Order';
-const SOBJECTS_ORDER_ITEM = '/services/data/v62.0/sobjects/OrderItem';
-
-const BRM_POLL_TIMEOUT_MS = 60000;
+const {
+  baseUrl,
+  tokenUrl,
+  envName,
+  IS_TRG,
+  IS_TI,
+  quoteFlow: currentQuoteFlow,
+  sf,
+  cookie: defaultCookie,
+  getToken,
+  api,
+  fail,
+} = createSalesforceScriptClient();
+const { runLeadToBrm } = require('../support/utils/ativacao/runLeadToBrm.js');
+const { logStepTrace, tryParseJson, extractTokenDeep } = require('../support/utils/salesforce/ldTraceLogging.js');
 const MAX_TRIES = 10;
 // Quote/Opportunity (ti sandbox) – user/collection
 const QUOTE_RECORD_TYPE_ID = process.env.QUOTE_RECORD_TYPE_ID || '012Hs000000l6VjIAI';
 const QUOTE_PRICEBOOK2_ID = process.env.QUOTE_PRICEBOOK2_ID || '01sHs000001nMM3IAM';
-const BRM_POLL_INTERVAL_MS = 2000;
 const PRICEBOOK_ENTRY_ID = process.env.PRICEBOOK_ENTRY_ID || '01uU6000001jmRJIAY';
 const PRODUCT2_ID = process.env.PRODUCT2_ID || '01tU6000004z8nxIAA';
 /** Produto Link Dedicado (Lead → Link Dedicado → Pedido). Alinhado à massa pronta: catálogo costuma usar CONNECTIVITY_DEDICATED_LINK. */
@@ -1046,12 +940,6 @@ async function forceAllQuoteMembersViable(apiCall, quoteId) {
   return allSuccess;
 }
 
-function fail(msg, res) {
-  const err = new Error(msg);
-  err.response = res;
-  throw err;
-}
-
 async function ensureQuoteApproved(apiCall, quoteId, statusAprovado, proposalValidity) {
   if (IS_TRG) {
     console.log('[E2E] 34.1. TRG: PATCH Quote Status → Reviewed...');
@@ -1118,142 +1006,10 @@ function logResponse(label, status, data, text) {
 }
 
 async function runLeadFlow(instanceUrl, accessToken, cookie) {
-  const h = { baseUrl: instanceUrl, token: accessToken, cookie };
   const apiCall = (method, path, body) => api(instanceUrl, accessToken, method, path, body, cookie);
-
-  console.log('[E2E LD] Fluxo Lead → Link Dedicado → Pedido (produto:', PRODUCT_CODE_LD, '/', PRODUCT_NAME_LD, ')');
-  console.log('[E2E] 1. Criando Lead...');
-  const leadBase = buildLeadPayload();
-  const company = leadBase.fields.Company;
-  const createPayload = /cursor/i.test(company) ? buildLeadPayload({ Company: `e2e${Date.now()}`, vtal_LXD_FantasyName__c: `e2e${Date.now()}` }) : leadBase;
-  const createRes = await apiCall('POST', UI_API_RECORDS, createPayload);
-  if (createRes.status !== 200 && createRes.status !== 201) fail('Create Lead', createRes);
-  const leadBody = createRes.data;
-  const leadId = leadBody.id;
-  if (!leadId) fail('Lead sem id', createRes);
-
-  console.log('[E2E] 2. Patch Lead Status Contacted...');
-  const patchRes = await apiCall('PATCH', `${UI_API_RECORDS}/${leadId}`, { fields: { Status: 'Contacted' } });
-  if (patchRes.status !== 200) fail('Patch Lead', patchRes);
-  const leadAfterPatch = patchRes.data;
-
-  console.log('[E2E] 3. Converter Lead...');
-  const convertPayload = buildConvertLeadPayload(leadAfterPatch);
-  const convertRes = await apiCall('POST', CONVERT_LEAD_URL, convertPayload);
-  if (convertRes.status !== 200) fail('Convert Lead', convertRes);
-  const out = convertRes.data?.vtal_LXD_outputclass;
-  if (!out?.AccountOrganizationId || !out?.AccountBussinessId || !out?.AccountBillingId) {
-    fail('Conversão sem AccountIds: ' + JSON.stringify(convertRes.data), convertRes);
-  }
-
-  console.log('[E2E] 4. PATCH Organization...');
-  const orgGet = await apiCall('GET', `${SOBJECTS_ACCOUNT}/${out.AccountOrganizationId}`);
-  if (orgGet.status !== 200) fail('GET Org', orgGet);
-  const fantasyName = orgGet.data?.vtal_LXD_FantasyName__c || '';
-  const orgFantasyOpts = {
-    accountName: orgGet.data?.Name || '',
-    companyFromLead: getFieldValue(leadAfterPatch, 'Company') || '',
-    fallback: `e2e-${Date.now()}`,
-  };
-  await apiCall(
-    'PATCH',
-    `${SOBJECTS_ACCOUNT}/${out.AccountOrganizationId}`,
-    buildOrganizationPatchPayload(fantasyName, orgFantasyOpts),
-  );
-  const resolvedLxdFantasyForBilling = resolveLxdFantasyName(fantasyName, orgFantasyOpts);
-
-  console.log('[E2E] 5. PATCH Business...');
-  const businessGet = await apiCall('GET', `${SOBJECTS_ACCOUNT}/${out.AccountBussinessId}`);
-  if (businessGet.status !== 200) fail('GET Business', businessGet);
-  const businessBody = businessGet.data;
-  const accountName = getFieldValue(leadAfterPatch, 'Company') || businessBody?.Name || '';
-  const email = getFieldValue(leadAfterPatch, 'Email') || businessBody?.vlocity_cmt__BillingEmailAddress__c || '';
-  await apiCall('PATCH', `${SOBJECTS_ACCOUNT}/${out.AccountBussinessId}`, buildBusinessAccountPatchPayload({ accountName, email, environment: envName }));
-  console.log('[E2E] 6. PATCH Billing...');
-  const accountNumber = businessBody?.Account_Number__c || '';
-  const ufOfClient = businessBody?.vtal_LXD_UF_OfClient__c || 'SP';
-  await apiCall(
-    'PATCH',
-    `${SOBJECTS_ACCOUNT}/${out.AccountBillingId}`,
-    buildBillingAccountPatchPayload({
-      accountNumber,
-      ufOfClient,
-      environment: envName,
-      fantasyName: resolvedLxdFantasyForBilling,
-    }),
-  );
-
-  console.log('[E2E] 7. Criando 2 Contatos...');
-  const principalRes = await apiCall('POST', SOBJECTS_CONTACT, buildContactPayload(out.AccountBussinessId, 'Principal'));
-  if (principalRes.status !== 201) fail('Contact Principal', principalRes);
-  const tecnicoRes = await apiCall('POST', SOBJECTS_CONTACT, buildContactPayload(out.AccountBussinessId, 'Technical'));
-  if (tecnicoRes.status !== 201) fail('Contact Técnico', tecnicoRes);
-  const contactTecnicoId = tecnicoRes.data?.id;
-  if (!contactTecnicoId) fail('Contact Técnico sem id', tecnicoRes);
-
-  console.log('[E2E] 8. Contract MSA + ContentVersion + Link + Activate...');
-  const contractRes = await apiCall('POST', SOBJECTS_CONTRACT, buildContractMSAPayload(out.AccountOrganizationId));
-  if (contractRes.status !== 201) fail('Contract', contractRes);
-  const contractId = contractRes.data?.id;
-  if (!contractId) fail('Contract sem id', contractRes);
-
-  const cvRes = await apiCall('POST', SOBJECTS_CONTENT_VERSION, buildContentVersionMSAPayload());
-  if (cvRes.status !== 201) fail('ContentVersion', cvRes);
-  const contentVersionId = cvRes.data?.id;
-  if (!contentVersionId) fail('ContentVersion sem id', cvRes);
-
-  const qDoc = `SELECT ContentDocumentId FROM ContentVersion WHERE Id='${contentVersionId}'`;
-  const qRes = await apiCall('GET', `${QUERY_URL}?q=${encodeURIComponent(qDoc)}`);
-  if (qRes.status !== 200 || !qRes.data?.records?.[0]?.ContentDocumentId) fail('Query ContentDocumentId', qRes);
-  const contentDocumentId = qRes.data.records[0].ContentDocumentId;
-
-  await apiCall('POST', SOBJECTS_CONTENT_DOCUMENT_LINK, {
-    ContentDocumentId: contentDocumentId,
-    LinkedEntityId: contractId,
-    ShareType: 'V',
-  });
-
-  await apiCall('PATCH', `${SOBJECTS_CONTRACT}/${contractId}`, buildContractActivatePayload());
-
-  console.log('[E2E] 9. getAccount (executeAnonymous) + poll BRM...');
-  const accountBillingId = out.AccountBillingId;
-  if (IS_TRG) {
-    console.log('[E2E] TRG: BRM activation/poll desativado. Pulando executeAnonymous/poll para AccountBillingId:', accountBillingId);
-  } else {
-    const apexBody = `try { Map<String,Object> r = Vtal_SF_IntegrationBillAccController.getAccount('${accountBillingId}'); System.debug(JSON.serialize(r)); } catch(Exception e) { System.debug(e.getMessage()); }`;
-    const execRes = await apiCall('GET', `${TOOLING_EXECUTE_ANONYMOUS}/?anonymousBody=${encodeURIComponent(apexBody)}`);
-    if (execRes.status !== 200 || !execRes.data?.success) fail('executeAnonymous getAccount', execRes);
-
-    const deadline = Date.now() + BRM_POLL_TIMEOUT_MS;
-    let billingBody;
-    while (Date.now() < deadline) {
-      const billingGet = await apiCall('GET', `${SOBJECTS_ACCOUNT}/${accountBillingId}`);
-      if (billingGet.status !== 200) fail('GET Billing', billingGet);
-      billingBody = billingGet.data;
-      if (billingBody?.vtal_LXD_BRMId__c) break;
-      await delay(BRM_POLL_INTERVAL_MS);
-    }
-    if (!billingBody?.vtal_LXD_BRMId__c) {
-      console.error(
-        '[BRM] Falha (ambiente TI): vtal_LXD_BRMId__c não foi retornado na conta Billing após',
-        Math.round(BRM_POLL_TIMEOUT_MS / 1000),
-        's (poll). O serviço BRM pode estar indisponível ou a conta não foi integrada.'
-      );
-      fail('BRM não preenchido no timeout', { status: 0, data: billingBody });
-    }
-
-    console.log('[E2E] Aguardando 45s para conta Billing/Business ficar ativa no BRM...');
-    await delay(45000);
-
-    console.log('[E2E] Lead + BRM OK. AccountBillingId:', accountBillingId);
-  }
-  return {
-    accountBillingId,
-    accountBussinessId: out.AccountBussinessId,
-    accountOrganizationId: out.AccountOrganizationId,
-    contactTecnicoId,
-  };
+  return runLeadToBrm(apiCall, fail, { logPrefix: '[E2E]' });
 }
+
 
 async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
   const apiCall = (method, path, body) => api(instanceUrl, accessToken, method, path, body, cookie);
@@ -2237,7 +1993,6 @@ async function main() {
     console.error('Configure env (ENVIRONMENT=dev). Ver support/environment/env.json');
     process.exit(1);
   }
-  const sf = getUser();
   if (!sf.client_id || !sf.client_secret) {
     console.error('Credenciais em user.json (dev.salesforce)');
     process.exit(1);
@@ -2249,7 +2004,7 @@ async function main() {
     console.log('\n========== EXECUÇÃO', run, '/', FULL_FLOW_MAX_RUNS, '==========');
     console.log('Token...');
     const { accessToken, instanceUrl } = await getToken();
-    const cookie = sf.cookie || '';
+    const cookie = defaultCookie;
 
     try {
       const accountIds = await runLeadFlow(instanceUrl, accessToken, cookie);

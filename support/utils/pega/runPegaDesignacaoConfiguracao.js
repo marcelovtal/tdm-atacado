@@ -188,16 +188,116 @@ function isPegaConfigRede422SiblingLookupError(status, text) {
   );
 }
 
-function ldObterPontaBRetryEnv() {
+/** 409 if-match obsoleto: outro save alterou o assignment entre GET e PATCH ConfiguracaoDeRede. */
+function isPegaConfigRede409StaleError(status, text) {
+  if (status !== 409) return false;
+  const t = String(text || '');
+  return (
+    t.includes('Resource is stale') ||
+    t.includes('Error_Stale_Resource') ||
+    t.includes('versão obsoleta') ||
+    t.includes('recurso foi lido pela última vez')
+  );
+}
+
+/** 409 ação inválida / estado errado — comum quando EVC ou agendamento ainda não abriu no PEGA. */
+function isPegaInvalidAction409(status, text) {
+  if (status !== 409) return false;
+  const t = String(text || '');
+  return (
+    t.includes('Error_Invalid_Action') ||
+    t.includes('wrong state') ||
+    t.includes('estado errado') ||
+    t.includes('ação válida')
+  );
+}
+
+function isLdWaitingForEvc(item) {
+  const st = String(item?.pyStatusWork || item?.pyStatusWorkOld || '');
+  return st.includes('AguardarConfiguracaoEVC');
+}
+
+function isLdPontaAguardarConfiguracaoEvcReady(item) {
+  const st = String(item?.pyStatusWork || item?.pyStatusWorkOld || '');
+  return st.includes('AguardarConfiguracaoEVC');
+}
+
+/** EVC ainda no assignment "Aguardando Pontas" — ConfigurarEvc retorna 409 até as ATV liberarem. */
+function ldEvcAssignmentIsAguardandoPontas(item) {
+  if (!item) return true;
+  const ativ = String(item.CestoTrabalho?.Atividade || '');
+  if (/aguardando\s*pontas/i.test(ativ)) return true;
+  const ativView = String(item.AtividadeView || '');
+  if (/aguardando\s*pontas/i.test(ativView)) return true;
+  return false;
+}
+
+function isLdEvcConfigurarEvcReady(item) {
+  if (!item) return false;
+  if (!String(item.Workflowpega || '').includes('CONFIGURACAOEVC')) return false;
+  if (ldEvcAssignmentIsAguardandoPontas(item)) return false;
+  return true;
+}
+
+function isLdReadyForAgendamento(item) {
+  if (!item) return false;
+  if (isLdWaitingForEvc(item)) return false;
+  if (item.IsEmAgendamento === true) return true;
+  return String(item.Workflowpega || '').includes('AGENDAMENTO_FLOW');
+}
+
+function ldEvcPollEnv() {
   return {
     maxTries: Math.max(
-      15,
-      parseInt(String(process.env.PEGA_LD_OBTER_PONTA_B_MAX_TRIES || '30').trim(), 10) || 30,
+      5,
+      parseInt(String(process.env.PEGA_LD_EVC_POLL_MAX_TRIES || '24').trim(), 10) || 24,
     ),
     retryMs: Math.max(
       2000,
-      parseInt(String(process.env.PEGA_LD_OBTER_PONTA_B_RETRY_MS || '4000').trim(), 10) || 4000,
+      parseInt(String(process.env.PEGA_LD_EVC_POLL_RETRY_MS || '5000').trim(), 10) || 5000,
     ),
+  };
+}
+
+function ldAgendamentoPollEnv() {
+  return {
+    maxTries: Math.max(
+      5,
+      parseInt(String(process.env.PEGA_LD_AGENDAMENTO_POLL_MAX_TRIES || '24').trim(), 10) || 24,
+    ),
+    retryMs: Math.max(
+      2000,
+      parseInt(String(process.env.PEGA_LD_AGENDAMENTO_POLL_RETRY_MS || '5000').trim(), 10) || 5000,
+    ),
+  };
+}
+
+function ldLegDisplayLabel(ldLegRaw) {
+  const L = String(ldLegRaw || '').trim().toLowerCase();
+  if (L === 'pontaa') return 'Ponta A';
+  if (L === 'pontab') return 'Ponta B';
+  if (L === 'evc') return 'EVC';
+  return ldLegRaw || 'LD';
+}
+
+function isPegaConfigRedeRetriablePatchResult(result) {
+  return Boolean(result && !result.ok && (result.siblingLookup422 || result.stale409));
+}
+
+function ldObterPontaBRetryEnv() {
+  const maxTriesRaw =
+    process.env.PEGA_LD_OBTER_PONTA_A_MAX_TRIES ??
+    process.env.PEGA_LD_OBTER_PONTA_B_MAX_TRIES ??
+    process.env.PEGA_OBTER_DADOS_EMPTY_MAX_TRIES ??
+    '30';
+  const retryMsRaw =
+    process.env.PEGA_LD_OBTER_PONTA_A_RETRY_MS ??
+    process.env.PEGA_LD_OBTER_PONTA_B_RETRY_MS ??
+    process.env.PEGA_OBTER_DADOS_EMPTY_RETRY_MS ??
+    '4000';
+  return {
+    maxTries: Math.max(15, parseInt(String(maxTriesRaw).trim(), 10) || 30),
+    retryMs: Math.max(2000, parseInt(String(retryMsRaw).trim(), 10) || 4000),
   };
 }
 
@@ -231,6 +331,106 @@ async function waitForLdPontaBAtvReady(root, headersAuth, fetchImpl, ordemServic
     maxTriesOverride: maxTries,
     retryMsOverride: retryMs,
   });
+}
+
+/**
+ * Após validação A/B, as pontas ficam em Pending-AguardarConfiguracaoEVC; só então o EVC aceita ConfigurarEvc.
+ */
+async function waitForLdPontasAguardarConfiguracaoEvc(opts) {
+  const {
+    ordemServicoPontaA,
+    ordemServicoPontaB,
+    baseUrl,
+    bearerToken,
+    cookie = '',
+    fetchImpl = global.fetch,
+  } = opts;
+  const osA = String(ordemServicoPontaA || '').trim();
+  const osB = String(ordemServicoPontaB || '').trim();
+  if (!osA || !osB || !baseUrl || !bearerToken) {
+    throw new Error('waitForLdPontasAguardarConfiguracaoEvc: ordens A/B, baseUrl e bearerToken são obrigatórios');
+  }
+  const root = baseUrl.replace(/\/$/, '');
+  const headersAuth = {
+    Authorization: `Bearer ${bearerToken}`,
+    Accept: 'application/json',
+    ...(cookie ? { Cookie: cookie } : {}),
+  };
+  const poll = ldEvcPollEnv();
+  const legs = [
+    { os: osA, leg: 'pontaA', label: 'Ponta A' },
+    { os: osB, leg: 'pontaB', label: 'Ponta B' },
+  ];
+  console.log(
+    `[PEGA LD] Aguardando pontas em Pending-AguardarConfiguracaoEVC (até ${poll.maxTries}× ${poll.retryMs}ms)`,
+  );
+  for (let i = 1; i <= poll.maxTries; i++) {
+    let allReady = true;
+    for (const { os, leg, label } of legs) {
+      const q = `${root}/prweb/api/APIOrdemDeServico/v1/obterdadosordem?ORDEMSERVICO=${encodeURIComponent(os)}`;
+      logPegaCurl('GET', q, headersAuth, null);
+      const res = await fetchImpl(q, { method: 'GET', headers: headersAuth });
+      const text = await res.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (_) {
+        data = null;
+      }
+      logPegaResponse(`PEGA GET obterdadosordem (LD aguardar EVC ${label})`, res.status, data, text);
+      const parsed = parseObterDadosOrdemResponse(data, {
+        linkDedicado: true,
+        matchOrdemServico: os,
+        ldLeg: leg,
+      });
+      const ready = isLdPontaAguardarConfiguracaoEvcReady(parsed?.item);
+      if (!ready) {
+        allReady = false;
+        const st = parsed?.item?.pyStatusWork || '—';
+        console.log(`[PEGA LD] ${label} (${os}) ainda não em AguardarConfiguracaoEVC (pyStatusWork=${st})`);
+      }
+    }
+    if (allReady) {
+      console.log('[PEGA LD] Pontas A e B em Pending-AguardarConfiguracaoEVC — liberando ConfigurarEvc');
+      return;
+    }
+    if (i < poll.maxTries) await delay(poll.retryMs);
+  }
+  throw new Error(
+    'PEGA LD EVC: pontas A/B não chegaram a Pending-AguardarConfiguracaoEVC a tempo — aumente PEGA_LD_EVC_POLL_MAX_TRIES',
+  );
+}
+
+/** Poll obterdadosordem até o caso atingir o estado esperado (EVC CONFIGURACAOEVC, agendamento, etc.). */
+async function waitForLdObterUntilReady(getObterFn, parseOpts, isReadyFn, pollEnv, logTag) {
+  const { maxTries, retryMs } = pollEnv;
+  let last = null;
+  for (let i = 1; i <= maxTries; i++) {
+    last = await fetchObterDadosOrdemWithRetry(getObterFn, parseOpts, {
+      isLinkDedicated: true,
+      logTag: `${logTag} (${i}/${maxTries})`,
+      requireFull: true,
+      maxTriesOverride: 1,
+    });
+    if (
+      last.res.ok &&
+      last.parsed?.pyMemo &&
+      last.parsed?.chaveCaseOrdem &&
+      typeof isReadyFn === 'function' &&
+      isReadyFn(last.parsed.item, last.parsed)
+    ) {
+      return last;
+    }
+    if (i < maxTries) {
+      const st = last.parsed?.item?.pyStatusWork || '—';
+      const wf = last.parsed?.item?.Workflowpega || '—';
+      console.log(
+        `[PEGA LD]${logTag} ainda não pronto (pyStatusWork=${st}, Workflow=${String(wf).slice(0, 80)}) — aguardando ${retryMs}ms`,
+      );
+      await delay(retryMs);
+    }
+  }
+  return last;
 }
 
 async function patchCaseViewsForChave(root, headersJson, fetchImpl, chaveCaseOrdem, viewName, pyMemo) {
@@ -362,10 +562,18 @@ async function runPegaDesignacaoEConfiguracao(opts) {
 
   // Passo 2
   logPegaStep('GET APIOrdemDeServico/obterdadosordem', `ORDEMSERVICO=${String(ordemServico).trim()}`);
+  const ldInitialRetry =
+    isLinkDedicatedFlow(flowVariant) && ldLegRaw
+      ? {
+          maxTriesOverride: ldObterPontaBRetryEnv().maxTries,
+          retryMsOverride: ldObterPontaBRetryEnv().retryMs,
+        }
+      : {};
   const first = await fetchObterDadosOrdemWithRetry(getObterDadosOrdem, parseObterOpts, {
     isLinkDedicated: isLinkDedicatedFlow(flowVariant),
     logTag: '(inicial)',
     requireFull: true,
+    ...ldInitialRetry,
   });
   if (!first.res.ok) {
     throw new Error(`PEGA obterdadosordem: HTTP ${first.res.status} — ${first.text?.slice(0, 500)}`);
@@ -441,27 +649,58 @@ async function runPegaDesignacaoEConfiguracao(opts) {
   const pathDesignar = buildAssignmentPath(parsed1.chaveCaseOrdem, 'DesignarFacilidadeDados');
   const pathConfig = buildAssignmentPath(parsed1.chaveCaseOrdem, 'ConfigurarDados');
 
-  // Passo 3
+  // Passo 3 — retry em 409 stale (pyMemo obsoleto entre GET e PATCH)
   logPegaStep('PATCH assignment DesignarFacilidadeDados', 'if-match = pyMemo');
   const bodyDesignar = buildDesignarFacilidadeDadosBody({
     includeEnderecamentoIp: !isLinkDedicatedFlow(flowVariant),
   });
   const urlDesignar = `${root}${pathDesignar}`;
-  const hdrDesignar = { ...headersJson, 'if-match': parsed1.pyMemo };
-  logPegaCurl('PATCH', urlDesignar, hdrDesignar, JSON.stringify(bodyDesignar));
-  const resDesignar = await fetchImpl(urlDesignar, {
-    method: 'PATCH',
-    headers: hdrDesignar,
-    body: JSON.stringify(bodyDesignar),
-  });
-  const textDesignar = await resDesignar.text();
-  let dataDesignar = null;
-  try {
-    dataDesignar = textDesignar ? JSON.parse(textDesignar) : null;
-  } catch (_) {}
-  logPegaResponse(`PEGA PATCH .../DesignarFacilidadeDados`, resDesignar.status, dataDesignar, textDesignar);
-  if (!resDesignar.ok) {
+  const designarMax = Math.max(
+    1,
+    parseInt(String(process.env.PEGA_DESIGNAR_FACILIDADE_409_MAX_RETRIES || '8').trim(), 10) || 8,
+  );
+  let resDesignar = null;
+  let textDesignar = '';
+  let pyMemoDesignar = parsed1.pyMemo;
+  for (let round = 0; round < designarMax; round++) {
+    if (round > 0) {
+      console.log(
+        `[PEGA] DesignarFacilidadeDados — nova tentativa ${round + 1}/${designarMax} (GET pyMemo fresco)`,
+      );
+      const again = await fetchObterDadosOrdemWithRetry(getObterDadosOrdem, parseObterOpts, {
+        isLinkDedicated: isLinkDedicatedFlow(flowVariant),
+        logTag: '(pós-Designar 409 stale)',
+        expectedChaveCaseOrdem: parsed1.chaveCaseOrdem,
+      });
+      if (!again.res.ok || !again.parsed?.pyMemo) {
+        throw new Error(`PEGA obterdadosordem (DesignarFacilidadeDados retry): HTTP ${again.res?.status}`);
+      }
+      pyMemoDesignar = again.parsed.pyMemo;
+      parsed1 = { ...parsed1, pyMemo: pyMemoDesignar, item: again.parsed.item };
+    }
+    const hdrDesignar = { ...headersJson, 'if-match': pyMemoDesignar };
+    logPegaCurl('PATCH', urlDesignar, hdrDesignar, JSON.stringify(bodyDesignar));
+    resDesignar = await fetchImpl(urlDesignar, {
+      method: 'PATCH',
+      headers: hdrDesignar,
+      body: JSON.stringify(bodyDesignar),
+    });
+    textDesignar = await resDesignar.text();
+    let dataDesignar = null;
+    try {
+      dataDesignar = textDesignar ? JSON.parse(textDesignar) : null;
+    } catch (_) {}
+    logPegaResponse(`PEGA PATCH .../DesignarFacilidadeDados`, resDesignar.status, dataDesignar, textDesignar);
+    if (resDesignar.ok) break;
+    if (isPegaConfigRede409StaleError(resDesignar.status, textDesignar) && round < designarMax - 1) {
+      console.log('[PEGA] DesignarFacilidadeDados 409 stale — aguardando novo pyMemo...');
+      await delay(1500);
+      continue;
+    }
     throw new Error(`PEGA DesignarFacilidadeDados: HTTP ${resDesignar.status} — ${textDesignar?.slice(0, 800)}`);
+  }
+  if (!resDesignar?.ok) {
+    throw new Error(`PEGA DesignarFacilidadeDados falhou após ${designarMax} tentativa(s)`);
   }
 
   // Passo 4
@@ -537,7 +776,12 @@ async function runPegaDesignacaoEConfiguracao(opts) {
       const hdrCfg = { ...headersJson, 'if-match': pyMemo };
       let lastRes = null;
       let lastText = '';
-      const okShape = (extra) => ({ assignmentMissing: false, siblingLookup422: false, ...extra });
+      const okShape = (extra) => ({
+        assignmentMissing: false,
+        siblingLookup422: false,
+        stale409: false,
+        ...extra,
+      });
       for (const p of pathsCfg) {
         const url = `${root}${p}`;
         logPegaCurl('PATCH', url, hdrCfg, JSON.stringify(bodyCfg));
@@ -564,6 +808,9 @@ async function runPegaDesignacaoEConfiguracao(opts) {
         }
         if (isPegaConfigRede422SiblingLookupError(lastRes.status, lastText)) {
           return okShape({ ok: false, status: lastRes.status, siblingLookup422: true });
+        }
+        if (isPegaConfigRede409StaleError(lastRes.status, lastText)) {
+          return okShape({ ok: false, status: lastRes.status, stale409: true });
         }
         throw new Error(`PEGA LD ConfiguracaoDeRede (${logLabel}): HTTP ${lastRes.status} — ${lastText?.slice(0, 800)}`);
       }
@@ -612,25 +859,28 @@ async function runPegaDesignacaoEConfiguracao(opts) {
     let tryA = await patchConfigRedeTwoRoutes(parsed1.chaveCaseOrdem, parsed3.pyMemo, 'LD Ponta A');
     for (
       let sib = 0;
-      !tryA.ok && tryA.siblingLookup422 && sib < maxSiblingRounds - 1;
+      isPegaConfigRedeRetriablePatchResult(tryA) && sib < maxSiblingRounds - 1;
       sib++
     ) {
+      const retryReason = tryA.stale409
+        ? '409 versão obsoleta (if-match)'
+        : '422 D_AtvSavable / ATV irmão';
       console.log(
-        `[PEGA LD] ConfigRede 422 (D_AtvSavable / ATV irmão) — aguardando ${siblingRetryMs}ms e GET fresco Ponta A (tentativa ${sib + 2}/${maxSiblingRounds})`,
+        `[PEGA LD] ConfigRede ${retryReason} — aguardando ${siblingRetryMs}ms e GET fresco Ponta A (tentativa ${sib + 2}/${maxSiblingRounds})`,
       );
       if (siblingRetryMs > 0) {
         await delay(siblingRetryMs);
       }
       const refreshA = await fetchObterDadosOrdemWithRetry(getObterDadosOrdem, parseObterOpts, {
         isLinkDedicated: true,
-        logTag: '(LD ConfigRede retry irmão ATV)',
+        logTag: '(LD ConfigRede retry Ponta A)',
         expectedChaveCaseOrdem: parsed1.chaveCaseOrdem,
       });
       if (!refreshA.res.ok) {
-        throw new Error(`PEGA obterdadosordem (ConfigRede retry irmão): HTTP ${refreshA.res.status}`);
+        throw new Error(`PEGA obterdadosordem (ConfigRede retry Ponta A): HTTP ${refreshA.res.status}`);
       }
       if (!refreshA.parsed?.pyMemo) {
-        throw new Error('PEGA: pyMemo ausente no GET após 422 D_AtvSavable (Ponta A)');
+        throw new Error('PEGA: pyMemo ausente no GET após retry ConfigRede (Ponta A)');
       }
       parsed3 = refreshA.parsed;
       tryA = await patchConfigRedeTwoRoutes(
@@ -643,10 +893,12 @@ async function runPegaDesignacaoEConfiguracao(opts) {
     if (tryA.ok) {
       configRedeStatus = tryA.status;
       configRedeLeg = 'pontaA';
-    } else if ((tryA.assignmentMissing || tryA.siblingLookup422) && fallbackOsRaw) {
-      const reason = tryA.siblingLookup422
-        ? 'irmão ATV ainda indisponível em D_AtvSavable na Ponta A após retentativas'
-        : 'assignment não encontrado no ATV da Ponta A';
+    } else if ((tryA.assignmentMissing || isPegaConfigRedeRetriablePatchResult(tryA)) && fallbackOsRaw) {
+      const reason = tryA.stale409
+        ? 'if-match obsoleto (409) na Ponta A após retentativas'
+        : tryA.siblingLookup422
+          ? 'irmão ATV ainda indisponível em D_AtvSavable na Ponta A após retentativas'
+          : 'assignment não encontrado no ATV da Ponta A';
       console.log(
         `[PEGA LD] ConfigRede: ${reason} — tentando Ponta B (ORDEMSERVICO=${fallbackOsRaw})`,
       );
@@ -686,25 +938,28 @@ async function runPegaDesignacaoEConfiguracao(opts) {
       let tryB = await patchConfigRedeTwoRoutes(parsedB.chaveCaseOrdem, parsedB.pyMemo, 'LD Ponta B');
       for (
         let sibB = 0;
-        !tryB.ok && tryB.siblingLookup422 && sibB < maxSiblingRounds - 1;
+        isPegaConfigRedeRetriablePatchResult(tryB) && sibB < maxSiblingRounds - 1;
         sibB++
       ) {
+        const retryReasonB = tryB.stale409
+          ? '409 versão obsoleta (if-match)'
+          : '422 D_AtvSavable';
         console.log(
-          `[PEGA LD] ConfigRede Ponta B 422 (D_AtvSavable) — aguardando ${siblingRetryMs}ms e GET fresco B (${sibB + 2}/${maxSiblingRounds})`,
+          `[PEGA LD] ConfigRede Ponta B ${retryReasonB} — aguardando ${siblingRetryMs}ms e GET fresco B (${sibB + 2}/${maxSiblingRounds})`,
         );
         if (siblingRetryMs > 0) {
           await delay(siblingRetryMs);
         }
         const refreshB = await fetchObterDadosOrdemWithRetry(getObterFallbackB, parseOptsB, {
           isLinkDedicated: true,
-          logTag: '(LD ConfigRede retry irmão ATV Ponta B)',
+          logTag: '(LD ConfigRede retry Ponta B)',
           requireFull: true,
         });
         if (!refreshB.res.ok) {
           throw new Error(`PEGA obterdadosordem (ConfigRede retry B): HTTP ${refreshB.res.status}`);
         }
         if (!refreshB.parsed?.pyMemo || !refreshB.parsed?.chaveCaseOrdem) {
-          throw new Error('PEGA: pyMemo/ChaveCaseOrdem ausentes no GET após 422 (Ponta B)');
+          throw new Error('PEGA: pyMemo/ChaveCaseOrdem ausentes no GET após retry ConfigRede (Ponta B)');
         }
         tryB = await patchConfigRedeTwoRoutes(
           refreshB.parsed.chaveCaseOrdem,
@@ -716,6 +971,11 @@ async function runPegaDesignacaoEConfiguracao(opts) {
         if (tryB.assignmentMissing) {
           throw new Error(
             'PEGA LD ConfiguracaoDeRede: assignment CONFIGURACAODEREDE não encontrado nem no ATV da Ponta A nem no da Ponta B',
+          );
+        }
+        if (tryB.stale409) {
+          throw new Error(
+            'PEGA LD ConfiguracaoDeRede: if-match obsoleto (409) na Ponta B após retentativas — aumente PEGA_LD_CONFIG_REDE_SIBLING_MAX_ROUNDS / PEGA_LD_CONFIG_REDE_SIBLING_RETRY_MS',
           );
         }
         if (tryB.siblingLookup422) {
@@ -730,6 +990,10 @@ async function runPegaDesignacaoEConfiguracao(opts) {
     } else if (tryA.assignmentMissing && !fallbackOsRaw) {
       throw new Error(
         'PEGA LD ConfiguracaoDeRede: assignment não encontrado na Ponta A; informe ordem da Ponta B no fluxo LD (fallback)',
+      );
+    } else if (tryA.stale409 && !fallbackOsRaw) {
+      throw new Error(
+        'PEGA LD ConfiguracaoDeRede: if-match obsoleto (409) na Ponta A após retentativas; aumente PEGA_LD_CONFIG_REDE_SIBLING_MAX_ROUNDS / PEGA_LD_CONFIG_REDE_SIBLING_RETRY_MS',
       );
     } else if (tryA.siblingLookup422 && !fallbackOsRaw) {
       throw new Error(
@@ -1296,18 +1560,13 @@ async function runPegaLinkDedicadoPontaDesignarConfigurarOnly(opts) {
   console.log(
     `[PEGA LD] Designar + Configurar (${ldLegRaw}) — obterdadosordem=${String(ordemServico).trim()} (sem GET após Configurar, conforme doc)`,
   );
-  const ldNorm = String(ldLegRaw).replace(/\s+/g, '').toLowerCase();
-  const isPontaBDesignar = ldNorm === 'pontab';
+  const ldObterRetry = ldObterPontaBRetryEnv();
   const first = await fetchObterDadosOrdemWithRetry(getObter, parseOpts, {
     isLinkDedicated: true,
     logTag: `(LD ${ldLegRaw} inicial)`,
     requireFull: true,
-    ...(isPontaBDesignar
-      ? {
-          maxTriesOverride: ldObterPontaBRetryEnv().maxTries,
-          retryMsOverride: ldObterPontaBRetryEnv().retryMs,
-        }
-      : {}),
+    maxTriesOverride: ldObterRetry.maxTries,
+    retryMsOverride: ldObterRetry.retryMs,
   });
   if (!first.res.ok) {
     throw new Error(`PEGA LD: obterdadosordem HTTP ${first.res.status} — ${first.text?.slice(0, 500)}`);
@@ -1619,46 +1878,93 @@ async function runPegaLinkDedicadoConfigurarEvc(opts) {
     return { res, text, data };
   }
 
-  console.log('[PEGA LD] EVC — GET + ConfigurarEvc (obterdadosordem=' + String(ordemServico).trim() + ')');
-  const first = await fetchObterDadosOrdemWithRetry(getObter, parseOpts, {
-    isLinkDedicated: true,
-    logTag: '(LD EVC)',
-    requireFull: true,
-  });
-  if (!first.res.ok) {
-    throw new Error(`PEGA LD EVC: obterdadosordem HTTP ${first.res.status}`);
+  const evcPoll = ldEvcPollEnv();
+  console.log(
+    `[PEGA LD] EVC — aguardando CONFIGURACAOEVC_FLOW (obterdadosordem=${String(ordemServico).trim()}, até ${evcPoll.maxTries}× ${evcPoll.retryMs}ms)`,
+  );
+  let ready = await waitForLdObterUntilReady(
+    getObter,
+    parseOpts,
+    (item) => isLdEvcConfigurarEvcReady(item),
+    evcPoll,
+    ' EVC CONFIGURACAOEVC',
+  );
+  if (!ready?.res?.ok || !ready.parsed?.chaveCaseOrdem || !ready.parsed?.pyMemo) {
+    throw new Error('PEGA LD EVC: obterdadosordem não retornou pyMemo/ChaveCaseOrdem após poll');
   }
-  const parsed = first.parsed;
-  if (!parsed?.chaveCaseOrdem || !parsed.pyMemo) {
-    throw new Error('PEGA LD EVC: pyMemo/ChaveCaseOrdem ausentes');
+  if (!isLdEvcConfigurarEvcReady(ready.parsed.item)) {
+    throw new Error(
+      `PEGA LD EVC: caso não entrou em CONFIGURACAOEVC (pyStatusWork=${ready.parsed.item?.pyStatusWork || '—'}, Workflow=${ready.parsed.item?.Workflowpega || '—'})`,
+    );
   }
 
+  let parsed = ready.parsed;
   const bodyEvc = buildConfigurarEvcBody();
-  const pathsEvc = buildConfigurarEvcPaths(parsed.chaveCaseOrdem);
-  const hdrEvc = { ...headersJson, 'if-match': parsed.pyMemo };
   let resEvc = null;
   let textEvc = '';
   let lastSt = 0;
-  for (const p of pathsEvc) {
-    const url = `${root}${p}`;
-    logPegaCurl('PATCH', url, hdrEvc, JSON.stringify(bodyEvc));
-    resEvc = await fetchImpl(url, { method: 'PATCH', headers: hdrEvc, body: JSON.stringify(bodyEvc) });
-    textEvc = await resEvc.text();
-    lastSt = resEvc.status;
-    let dataEvc = null;
-    try {
-      dataEvc = textEvc ? JSON.parse(textEvc) : null;
-    } catch (_) {}
-    logPegaResponse(`PEGA LD PATCH .../ConfigurarEvc`, resEvc.status, dataEvc, textEvc);
-    if (resEvc.ok) break;
-    if (resEvc.status === 404 && pathsEvc.indexOf(p) === 0) {
-      console.log('[PEGA LD EVC]   ↳ 404 na rota API pública — tentando fulfillment...');
-      continue;
+
+  for (let round = 0; round < evcPoll.maxTries; round++) {
+    console.log(`[PEGA LD] EVC ConfigurarEvc — tentativa ${round + 1}/${evcPoll.maxTries} (GET pyMemo fresco)`);
+    const fresh = await fetchObterDadosOrdemWithRetry(getObter, parseOpts, {
+      isLinkDedicated: true,
+      logTag: round === 0 ? '(LD EVC pré-ConfigurarEvc)' : '(LD EVC pós-409)',
+      expectedChaveCaseOrdem: parsed.chaveCaseOrdem,
+      requireFull: true,
+    });
+    if (!fresh.res.ok || !fresh.parsed?.pyMemo || !fresh.parsed?.chaveCaseOrdem) {
+      throw new Error(`PEGA LD EVC: obterdadosordem HTTP ${fresh.res?.status}`);
     }
-    throw new Error(`PEGA LD ConfigurarEvc: HTTP ${resEvc.status} — ${textEvc?.slice(0, 800)}`);
+    parsed = fresh.parsed;
+
+    if (!isLdEvcConfigurarEvcReady(parsed.item)) {
+      const wf = String(parsed.item?.Workflowpega || '').slice(0, 80);
+      const ativ = parsed.item?.CestoTrabalho?.Atividade || parsed.item?.AtividadeView || '—';
+      console.log(
+        `[PEGA LD] EVC ainda não aceita ConfigurarEvc (Atividade=${ativ}, Workflow=${wf}) — aguardando ${evcPoll.retryMs}ms`,
+      );
+      if (round < evcPoll.maxTries - 1) {
+        await delay(evcPoll.retryMs);
+        continue;
+      }
+      throw new Error(
+        `PEGA LD EVC: ConfigurarEvc não liberado (Atividade=${ativ}, Workflow=${parsed.item?.Workflowpega || '—'})`,
+      );
+    }
+
+    const pathsEvc = buildConfigurarEvcPaths(parsed.chaveCaseOrdem);
+    const hdrEvc = { ...headersJson, 'if-match': parsed.pyMemo };
+    for (const p of pathsEvc) {
+      const url = `${root}${p}`;
+      logPegaCurl('PATCH', url, hdrEvc, JSON.stringify(bodyEvc));
+      resEvc = await fetchImpl(url, { method: 'PATCH', headers: hdrEvc, body: JSON.stringify(bodyEvc) });
+      textEvc = await resEvc.text();
+      lastSt = resEvc.status;
+      let dataEvc = null;
+      try {
+        dataEvc = textEvc ? JSON.parse(textEvc) : null;
+      } catch (_) {}
+      logPegaResponse(`PEGA LD PATCH .../ConfigurarEvc`, resEvc.status, dataEvc, textEvc);
+      if (resEvc.ok) break;
+      if (resEvc.status === 404 && pathsEvc.indexOf(p) === 0) {
+        console.log('[PEGA LD EVC]   ↳ 404 na rota API pública — tentando fulfillment...');
+        continue;
+      }
+      const retriable409 =
+        round < evcPoll.maxTries - 1 &&
+        (isPegaInvalidAction409(resEvc.status, textEvc) ||
+          isPegaConfigRede409StaleError(resEvc.status, textEvc));
+      if (retriable409) {
+        console.log('[PEGA LD EVC] ConfigurarEvc 409 (estado/pyMemo) — aguardando próximo ciclo...');
+        break;
+      }
+      throw new Error(`PEGA LD ConfigurarEvc: HTTP ${resEvc.status} — ${textEvc?.slice(0, 800)}`);
+    }
+    if (resEvc?.ok) break;
+    if (round < evcPoll.maxTries - 1) await delay(evcPoll.retryMs);
   }
   if (!resEvc?.ok) {
-    throw new Error(`PEGA LD ConfigurarEvc falhou: HTTP ${lastSt}`);
+    throw new Error(`PEGA LD ConfigurarEvc falhou após ${evcPoll.maxTries} tentativa(s): HTTP ${lastSt}`);
   }
 
   const postCfg = await fetchObterDadosOrdemWithRetry(getObter, parseOpts, {
@@ -1767,21 +2073,45 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
     return { skipped: true };
   }
 
-  console.log(`[PEGA LD ${ldLegRaw}] GET obterdadosordem — ORDEMSERVICO=` + String(ordemServico).trim());
+  const legLabel = ldLegDisplayLabel(ldLegRaw);
+  console.log(`[PEGA LD ${legLabel}] GET obterdadosordem — ORDEMSERVICO=` + String(ordemServico).trim());
   const first = await fetchObterDadosOrdemWithRetry(getObterDadosOrdemB, parseOpts, {
     isLinkDedicated: true,
     logTag: `[LD ${ldLegRaw} agendamento inicial]`,
     requireFull: true,
   });
   if (!first.res.ok) {
-    throw new Error(`PEGA LD Ponta B obterdadosordem: HTTP ${first.res.status} — ${first.text?.slice(0, 500)}`);
+    throw new Error(`PEGA LD ${legLabel} obterdadosordem: HTTP ${first.res.status} — ${first.text?.slice(0, 500)}`);
   }
-  const parsed = first.parsed;
+  let parsed = first.parsed;
   if (!parsed?.pyMemo || !parsed.chaveCaseOrdem) {
-    throw new Error('PEGA LD Ponta B: pyMemo ou chaveCaseOrdem ausente no obterdadosordem');
+    throw new Error(`PEGA LD ${legLabel}: pyMemo ou chaveCaseOrdem ausente no obterdadosordem`);
   }
-  const chaveCaseOrdem = parsed.chaveCaseOrdem;
-  console.log('[PEGA LD Ponta B] Caso (pzInsKey):', chaveCaseOrdem);
+
+  if (!isLdReadyForAgendamento(parsed.item)) {
+    const agPoll = ldAgendamentoPollEnv();
+    console.log(
+      `[PEGA LD ${legLabel}] Aguardando agendamento (EVC/sincronização) — até ${agPoll.maxTries}× ${agPoll.retryMs}ms`,
+    );
+    const readyAg = await waitForLdObterUntilReady(
+      getObterDadosOrdemB,
+      parseOpts,
+      (item) => isLdReadyForAgendamento(item),
+      agPoll,
+      ` ${legLabel} agendamento`,
+    );
+    if (readyAg?.res?.ok && readyAg.parsed?.pyMemo && readyAg.parsed?.chaveCaseOrdem) {
+      parsed = readyAg.parsed;
+    }
+    if (!isLdReadyForAgendamento(parsed.item)) {
+      throw new Error(
+        `PEGA LD ${legLabel} agendamento: caso ainda não liberado (pyStatusWork=${parsed.item?.pyStatusWork || '—'}, Workflow=${parsed.item?.Workflowpega || '—'}) — configure EVC ou aumente PEGA_LD_AGENDAMENTO_POLL_MAX_TRIES`,
+      );
+    }
+  }
+
+  let chaveCaseOrdem = parsed.chaveCaseOrdem;
+  console.log(`[PEGA LD ${legLabel}] Caso (pzInsKey):`, chaveCaseOrdem);
 
   const periodoOpts = { ...(agendamentoPeriodo || {}) };
   const di = (process.env.PEGA_AGENDAMENTO_DATA_INICIO || '').trim();
@@ -1790,7 +2120,7 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
   if (df) periodoOpts.dataFim = df;
   const bodyPeriodo = buildSelecaoDePeriodoBody({ periodo: periodoOpts });
 
-  console.log('[PEGA LD Ponta B] PATCH SelecaoDePeriodo?viewType=form');
+  console.log(`[PEGA LD ${legLabel}] PATCH SelecaoDePeriodo?viewType=form`);
   const hdrPeriodo = { ...headersJson, 'if-match': parsed.pyMemo };
   const pathsPeriodo = buildAgendamentoActionPaths(chaveCaseOrdem, 'SelecaoDePeriodo?viewType=form');
   let resPer = null;
@@ -1807,18 +2137,18 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
     try {
       dataPer = textPer ? JSON.parse(textPer) : null;
     } catch (_) {}
-    logPegaResponse(`PEGA LD Ponta B .../SelecaoDePeriodo?viewType=form`, resPer.status, dataPer, textPer);
+    logPegaResponse(`PEGA LD ${legLabel} .../SelecaoDePeriodo?viewType=form`, resPer.status, dataPer, textPer);
     if (resPer.ok) {
       urlPer = url;
       break;
     }
     if (resPer.status === 404 && pathsPeriodo.indexOf(p) === 0) {
-      console.log('[PEGA LD Ponta B]   ↳ 404 — tentando API pública...');
+      console.log(`[PEGA LD ${legLabel}]   ↳ 404 — tentando API pública...`);
       continue;
     }
-    throw new Error(`PEGA LD Ponta B SelecaoDePeriodo: HTTP ${resPer.status} — ${textPer?.slice(0, 800)}`);
+    throw new Error(`PEGA LD ${legLabel} SelecaoDePeriodo: HTTP ${resPer.status} — ${textPer?.slice(0, 800)}`);
   }
-  if (!resPer?.ok) throw new Error(`PEGA LD Ponta B SelecaoDePeriodo falhou: HTTP ${lastPer}`);
+  if (!resPer?.ok) throw new Error(`PEGA LD ${legLabel} SelecaoDePeriodo falhou: HTTP ${lastPer}`);
 
   const skipCaseViews =
     skipCaseViewRefreshOpt === true || String(process.env.SKIP_PEGA_CASE_VIEW_REFRESH || '').trim() === '1';
@@ -2043,6 +2373,17 @@ async function runPegaLinkDedicadoDuasPontas(opts) {
   }
 
   const bearerA = await bearerParaPerna('Ponta A');
+  const rawDelayA = process.env.PEGA_LD_DELAY_BEFORE_PONTA_A_MS;
+  const delayBeforePontaAMs =
+    rawDelayA !== undefined && String(rawDelayA).trim() !== ''
+      ? Math.max(0, parseInt(String(rawDelayA).trim(), 10) || 0)
+      : 5000;
+  if (delayBeforePontaAMs > 0) {
+    console.log(
+      `[PEGA LD] Pausa ${delayBeforePontaAMs}ms antes da Ponta A (propagação CRM→PEGA). Defina PEGA_LD_DELAY_BEFORE_PONTA_A_MS=0 para desligar.`,
+    );
+    await delay(delayBeforePontaAMs);
+  }
   console.log(
     '[PEGA LD] 1) Ponta A — até ConfiguracaoDeRede (obterdadosordem=' + String(ordemServicoPontaA).trim() + ')',
   );
@@ -2097,19 +2438,32 @@ async function runPegaLinkDedicadoDuasPontas(opts) {
   const evcOrd = ordemServicoEVC != null ? String(ordemServicoEVC).trim() : '';
   const skipEvc = String(process.env.PEGA_SKIP_LD_EVC || '').trim() === '1';
   if (evcOrd && !skipEvc) {
-    console.log('[PEGA LD] 5) EVC — ConfigurarEvc (obterdadosordem=' + evcOrd + ')');
-    try {
-      evc = await runPegaLinkDedicadoConfigurarEvc({
-        ...rest,
-        bearerToken: await bearerParaPerna('EVC'),
-        ordemServico: evcOrd,
-      });
-    } catch (err) {
-      if (String(process.env.PEGA_LD_EVC_STRICT || '').trim() === '1') {
-        throw err;
-      }
-      console.warn('[PEGA LD] EVC: ignorado (PEGA_LD_EVC_STRICT≠1):', err.message);
+    const rawDelayEvc = process.env.PEGA_LD_DELAY_BEFORE_EVC_MS;
+    const delayBeforeEvcMs =
+      rawDelayEvc !== undefined && String(rawDelayEvc).trim() !== ''
+        ? Math.max(0, parseInt(String(rawDelayEvc).trim(), 10) || 0)
+        : 5000;
+    if (delayBeforeEvcMs > 0) {
+      console.log(
+        `[PEGA LD] Pausa ${delayBeforeEvcMs}ms antes do EVC (sincronização pós-validação A/B). Defina PEGA_LD_DELAY_BEFORE_EVC_MS=0 para desligar.`,
+      );
+      await delay(delayBeforeEvcMs);
     }
+    const bearerEvc = await bearerParaPerna('EVC');
+    await waitForLdPontasAguardarConfiguracaoEvc({
+      ordemServicoPontaA,
+      ordemServicoPontaB,
+      baseUrl: rest.baseUrl,
+      bearerToken: bearerEvc,
+      cookie: rest.cookie,
+      fetchImpl: rest.fetchImpl,
+    });
+    console.log('[PEGA LD] 5) EVC — ConfigurarEvc (obterdadosordem=' + evcOrd + ')');
+    evc = await runPegaLinkDedicadoConfigurarEvc({
+      ...rest,
+      bearerToken: bearerEvc,
+      ordemServico: evcOrd,
+    });
   }
 
   console.log('[PEGA LD] 6) Agendamento — Ponta A');

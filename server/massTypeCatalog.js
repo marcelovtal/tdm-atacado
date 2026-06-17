@@ -24,7 +24,7 @@ const UI_BY_ID = {
   },
   'massa-pronta-opp-pedido-pega-ofs': {
     cardClass: 'choice-card--massa-pronta-pega-ofs',
-    subtitle: 'Massa pronta + PEGA + instalação OFS via API (até conclusão em campo)',
+    subtitle: 'Massa pronta + PEGA + instalação OFS (UI dispatcher — até conclusão em campo)',
     formVariant: 'massa-pronta-triple',
   },
   'lead-link-dedicado-pedido': {
@@ -42,6 +42,11 @@ const UI_BY_ID = {
     subtitle: 'Mesmo fluxo Salesforce + PEGA nas duas pontas (designação Ponta A; agendamento Ponta B)',
     formVariant: 'massa-pronta-triple',
   },
+  'massa-pronta-opp-pedido-link-dedicado-pega-ofs': {
+    cardClass: 'choice-card--massa-pronta-link-dedicado-pega-ofs',
+    subtitle: 'Massa pronta + PEGA LD + OFS nas Pontas A e B (UI dispatcher — sequencial)',
+    formVariant: 'massa-pronta-triple',
+  },
   'lead-vpn-pedido': {
     cardClass: 'choice-card--vpn',
     subtitle: 'Fluxo completo até criação do pedido(VPN)',
@@ -55,6 +60,11 @@ const UI_BY_ID = {
   'massa-pronta-opp-pedido-vpn-pega': {
     cardClass: 'choice-card--massa-pronta-vpn-pega',
     subtitle: 'Mesmo fluxo VPN + Configuração de rede PEGA e etapas até agendamento',
+    formVariant: 'massa-pronta-triple',
+  },
+  'massa-pronta-opp-pedido-vpn-pega-ofs': {
+    cardClass: 'choice-card--massa-pronta-vpn-pega-ofs',
+    subtitle: 'Massa pronta + PEGA VPN + instalação OFS (UI dispatcher — até conclusão em campo)',
     formVariant: 'massa-pronta-triple',
   },
   'conta-ativacao-brm': {
@@ -84,18 +94,24 @@ export const MASS_CATEGORIES = [
   {
     id: 'link-dedicado',
     title: 'Link Dedicado',
-    hint: 'gerar-pedido-link-dedicado.js · gerar-pedido-massa-pronta-link-dedicado.js · gerar-pedido-massa-pronta-link-dedicado-config-pega.js',
+    hint: 'gerar-pedido-link-dedicado.js · gerar-pedido-massa-pronta-link-dedicado.js · gerar-pedido-massa-pronta-link-dedicado-config-pega.js · gerar-pedido-massa-pronta-link-dedicado-config-pega-ofs.js',
     typeIds: [
       'lead-link-dedicado-pedido',
       'massa-pronta-opp-pedido-link-dedicado',
       'massa-pronta-opp-pedido-link-dedicado-pega',
+      'massa-pronta-opp-pedido-link-dedicado-pega-ofs',
     ],
   },
   {
     id: 'vpn',
     title: 'VPN',
-    hint: 'gerar-pedido-vpn.js · gerar-pedido-massa-pronta-vpn.js · gerar-pedido-massa-pronta-vpn-connect-config-pega.js',
-    typeIds: ['lead-vpn-pedido', 'massa-pronta-opp-pedido-vpn', 'massa-pronta-opp-pedido-vpn-pega'],
+    hint: 'gerar-pedido-vpn.js · gerar-pedido-massa-pronta-vpn.js · gerar-pedido-massa-pronta-vpn-connect-config-pega.js · gerar-pedido-massa-pronta-vpn-connect-config-pega-ofs.js',
+    typeIds: [
+      'lead-vpn-pedido',
+      'massa-pronta-opp-pedido-vpn',
+      'massa-pronta-opp-pedido-vpn-pega',
+      'massa-pronta-opp-pedido-vpn-pega-ofs',
+    ],
   },
   {
     id: 'brm',

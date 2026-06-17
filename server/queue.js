@@ -1,5 +1,6 @@
 import { Queue } from 'bullmq';
 import { config, MASS_TYPES } from './config.js';
+import { resolveMassEnvVars } from './massEnvDefaults.js';
 import { normalizeVt } from './auth/vt.js';
 import { createRedisClient } from './redisConnection.js';
 import { createMemoryQueue } from './memoryQueue.js';
@@ -71,7 +72,7 @@ export function getJobDataSchema(massTypeId, environment, quantity = 1, extraEnv
     massTypeLabel: massConfig.label,
     script: massConfig.script,
     environment: environment || 'ti',
-    envVars: { ...massConfig.envVars, ...extraEnv },
+    envVars: { ...resolveMassEnvVars(massTypeId, environment), ...massConfig.envVars, ...extraEnv },
     createdByVt: createdByVt ? normalizeVt(createdByVt) || null : null,
   };
 }

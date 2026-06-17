@@ -67,7 +67,8 @@
               </div>
 
               <aside class="form-layout__sidebar" aria-label="Parâmetros da geração">
-                <p class="form-layout__sidebar-hint">Ambiente, quantidade e dados extras ficam sempre visíveis ao lado da lista (em telas largas).</p>
+                <p class="form-layout__sidebar-hint">Ambiente, quantidade e contas (quando aplicável) ficam sempre visíveis ao lado da lista.</p>
+                <div class="field-row">
                 <div class="field field--sm">
                   <label for="environment">Ambiente</label>
                   <select id="environment" name="environment" required>
@@ -83,30 +84,30 @@
                     <option value="5">5</option>
                   </select>
                 </div>
+                </div>
                 <div class="field field--sm" id="massa-pronta-fields" hidden>
-                  <label>Dados da conta (massa pronta)</label>
-                  <div class="field-group field-group--sm">
-                    <input
-                      type="text"
-                      id="accountOrganizationId"
-                      name="accountOrganizationId"
-                      placeholder="Organization Id (ex: 001HZ00000iv5PyYAI)"
-                      autocomplete="off"
-                    />
-                    <input
-                      type="text"
-                      id="accountBusinessId"
-                      name="accountBusinessId"
-                      placeholder="Business Id (ex: 001HZ00000iv5PzYAI)"
-                      autocomplete="off"
-                    />
-                    <input
-                      type="text"
-                      id="accountBillingId"
-                      name="accountBillingId"
-                      placeholder="Billing Id (ex: 001HZ00000iv5Q0YAI)"
-                      autocomplete="off"
-                    />
+                  <div class="massa-pronta-panel massa-pronta-panel--editing" id="massa-pronta-panel">
+                    <div class="massa-pronta-panel__head">
+                      <div class="massa-pronta-panel__intro">
+                        <p class="massa-pronta-panel__title">Contas da massa pronta</p>
+                        <p class="massa-pronta-panel__hint">Informe os três Ids do ambiente selecionado (Organization, Business e Billing).</p>
+                      </div>
+                      <span class="massa-pronta-panel__env" id="massa-pronta-env-badge" title="Ambiente selecionado">TRG</span>
+                    </div>
+                    <div id="massa-pronta-custom-fields" class="massa-pronta-panel__grid">
+                      <label class="mp-field">
+                        <span class="mp-field__label">Organization</span>
+                        <input type="text" id="accountOrganizationId" name="accountOrganizationId" class="mp-field__input" placeholder="001…" autocomplete="off" />
+                      </label>
+                      <label class="mp-field">
+                        <span class="mp-field__label">Business</span>
+                        <input type="text" id="accountBusinessId" name="accountBusinessId" class="mp-field__input" placeholder="001…" autocomplete="off" />
+                      </label>
+                      <label class="mp-field">
+                        <span class="mp-field__label">Billing</span>
+                        <input type="text" id="accountBillingId" name="accountBillingId" class="mp-field__input" placeholder="001…" autocomplete="off" />
+                      </label>
+                    </div>
                   </div>
                 </div>
                 <div class="field field--sm" id="brm-massa-pronta-fields" hidden>
@@ -149,10 +150,22 @@
             Concluídos recentes mantêm pedido, PEGA e contas enquanto a sessão da fila estiver ativa; o <strong>Histórico</strong> persiste no banco.
           </p>
           <div id="jobs-history-filters" class="jobs-history-filters" hidden>
-            <label class="jobs-filter-label" for="jobs-filter-owner">Filtrar por usuário</label>
-            <select id="jobs-filter-owner" class="jobs-filter-select">
-              <option value="">Todos os usuários</option>
-            </select>
+            <div class="jobs-history-filters__inner">
+              <span class="jobs-history-filters__icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </span>
+              <div class="jobs-history-filters__control">
+                <label class="jobs-filter-label" for="jobs-filter-owner">Filtrar por usuário</label>
+                <select id="jobs-filter-owner" class="jobs-filter-select">
+                  <option value="">Todos os usuários</option>
+                </select>
+              </div>
+            </div>
           </div>
           <div id="jobs-list" class="jobs-list">
             <p class="empty">Carregando…</p>

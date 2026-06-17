@@ -133,6 +133,8 @@ function pickLinkDedicadoItem(rows, matchOrdemServico, leg = '') {
       (String(i?.OrdemServico?.Ordem?.OrdemServico ?? '').trim() === t ||
         String(i?.EVC?.OrdemPontaA ?? '').trim() === t ||
         String(i?.ContratoCrmView ?? '').trim() === t);
+    const atvReady = rows.find((i) => ordMatchesAtv(i) && i.pyMemo);
+    if (atvReady) return atvReady;
     const atvForOrd = rows.find(ordMatchesAtv);
     if (atvForOrd) return atvForOrd;
 

@@ -71,36 +71,71 @@ function pickBestActivity(activities, ordem) {
   return matches.sort((a, b) => rank(a.status) - rank(b.status))[0];
 }
 
+function clampDateWindow(dateFrom, dateTo, maxDays = 31) {
+  const from = new Date(`${dateFrom}T12:00:00`);
+  const to = new Date(`${dateTo}T12:00:00`);
+  const spanMs = to.getTime() - from.getTime();
+  const maxMs = Math.max(1, maxDays) * 24 * 60 * 60 * 1000;
+  if (spanMs <= maxMs) return { dateFrom, dateTo };
+  const clampedTo = new Date(from.getTime() + maxMs);
+  return { dateFrom, dateTo: clampedTo.toISOString().slice(0, 10) };
+}
+
+function resolveSearchResources(options = {}, cfg = {}, resourceId = '') {
+  const fromEnv = (process.env.OFS_SEARCH_RESOURCES || '').trim();
+  if (fromEnv) {
+    return fromEnv.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+  if (Array.isArray(options.searchResources) && options.searchResources.length) {
+    return options.searchResources;
+  }
+  const list = ['vtal'];
+  const rid = (resourceId || cfg?.resource_id || '').trim();
+  if (rid && !list.includes(rid)) list.push(rid);
+  return list;
+}
+
 async function findActivityByNumeroOrdem(client, numeroOrdem, options = {}) {
   const ordem = padOrdem(numeroOrdem);
   const today = options.today || todayIsoInTimeZone();
-  const dateFrom = options.dateFrom || addDaysIso(today, -14);
-  const dateTo = options.dateTo || addDaysIso(today, 45);
+  const maxDays = Math.max(
+    7,
+    parseInt(String(process.env.OFS_SEARCH_MAX_DAYS || options.maxSearchDays || '31').trim(), 10) || 31,
+  );
+  const rawFrom = options.dateFrom || addDaysIso(today, -14);
+  const rawTo = options.dateTo || addDaysIso(today, 45);
+  const { dateFrom, dateTo } = clampDateWindow(rawFrom, rawTo, maxDays);
+  const resourcesList = resolveSearchResources(options, options.config, options.resourceId);
   const queries = [
     `apptNumber=='${ordem}'`,
     `XA_NUMERO_OS_CRM=='${ordem}'`,
     `apptNumber=='${String(numeroOrdem).trim()}'`,
   ];
 
-  for (const q of queries) {
-    const params = new URLSearchParams({
-      dateFrom,
-      dateTo,
-      q,
-      limit: '20',
-    });
-    const res = await client.get(`${CORE}/activities?${params.toString()}`);
-    if (!res.ok) continue;
-    const list = normalizeActivitiesList(res.data);
-    const hit = pickBestActivity(list, ordem);
-    if (hit) return hit;
+  for (const resources of resourcesList) {
+    for (const q of queries) {
+      const params = new URLSearchParams({
+        resources,
+        dateFrom,
+        dateTo,
+        q,
+        limit: '20',
+      });
+      const res = await client.get(`${CORE}/activities?${params.toString()}`);
+      if (!res.ok) continue;
+      const list = normalizeActivitiesList(res.data);
+      const hit = pickBestActivity(list, ordem);
+      if (hit) return hit;
+    }
   }
 
-  const broadParams = new URLSearchParams({ dateFrom, dateTo, limit: '200' });
-  const broad = await client.get(`${CORE}/activities?${broadParams.toString()}`);
-  if (broad.ok) {
+  for (const resources of resourcesList) {
+    const broadParams = new URLSearchParams({ resources, dateFrom, dateTo, limit: '200' });
+    const broad = await client.get(`${CORE}/activities?${broadParams.toString()}`);
+    if (!broad.ok) continue;
     const list = normalizeActivitiesList(broad.data);
-    return pickBestActivity(list, ordem);
+    const hit = pickBestActivity(list, ordem);
+    if (hit) return hit;
   }
   return null;
 }
@@ -115,7 +150,12 @@ async function pollActivityByNumeroOrdem(client, numeroOrdem, options = {}) {
     parseInt(String(process.env.OFS_ACTIVITY_POLL_MS || options.retryMs || '10000').trim(), 10) || 10000,
   );
   for (let i = 1; i <= maxTries; i += 1) {
-    const activity = await findActivityByNumeroOrdem(client, numeroOrdem, options);
+    const activity = await findActivityByNumeroOrdem(client, numeroOrdem, {
+      ...options,
+      today: options.today,
+      config: options.config,
+      resourceId: options.resourceId,
+    });
     if (activity) {
       console.log(`[OFS] atividade encontrada (tentativa ${i}/${maxTries}): id=${activity.activityId} status=${activity.status}`);
       return activity;
@@ -130,7 +170,15 @@ async function pollActivityByNumeroOrdem(client, numeroOrdem, options = {}) {
 
 async function getActivityById(client, activityId) {
   const res = await client.get(`${CORE}/activities/${activityId}`);
-  if (!res.ok) throw new Error(`OFS GET activity ${activityId}: HTTP ${res.status} ${String(res.text).slice(0, 200)}`);
+  if (!res.ok) {
+    const hint =
+      res.status === 404
+        ? ' — atividade inexistente ou usuário REST sem escopo (ordens Link Dedicado/SEREDE podem exigir OFS_ACTIVITY_ID da UI e/ou outras credenciais)'
+        : '';
+    throw new Error(
+      `OFS GET activity ${activityId}: HTTP ${res.status}${hint} ${String(res.text).slice(0, 200)}`,
+    );
+  }
   return res.data;
 }
 
@@ -268,12 +316,26 @@ async function runOfsInstalacaoCompleta(options = {}) {
   }
 
   const today = todayIsoInTimeZone();
-  console.log(`[OFS] instalação IP Connect | ordem=${numeroOrdem} | técnico=${resourceId} | data=${today}`);
+  const targetDate = (process.env.OFS_TARGET_DATE || options.targetDate || '').trim() || today;
+  console.log(
+    `[OFS] instalação via API | ordem=${numeroOrdem} | técnico=${resourceId} | dataAlvo=${targetDate}`,
+  );
 
-  let activity = await pollActivityByNumeroOrdem(client, numeroOrdem, { today });
+  const activityIdEnv = (process.env.OFS_ACTIVITY_ID || options.activityId || '').trim();
+  let activity;
+  if (activityIdEnv) {
+    console.log(`[OFS] OFS_ACTIVITY_ID=${activityIdEnv} — pulando busca por apptNumber`);
+    activity = await getActivityById(client, activityIdEnv);
+  } else {
+    activity = await pollActivityByNumeroOrdem(client, numeroOrdem, {
+      today,
+      config: cfg,
+      resourceId,
+    });
+  }
   if (!activity?.activityId) {
     throw new Error(
-      `OFS: atividade não encontrada para ordem ${numeroOrdem} após polling (PEGA pode ainda estar propagando para o OFS).`,
+      `OFS: atividade não encontrada para ordem ${numeroOrdem} (REST qa@ pode não enxergar bucket SEREDE/LD — informe OFS_ACTIVITY_ID da UI ou credencial com escopo).`,
     );
   }
 
@@ -292,19 +354,17 @@ async function runOfsInstalacaoCompleta(options = {}) {
     };
   }
 
-  await activateResourceRoute(client, resourceId, today);
+  await activateResourceRoute(client, resourceId, targetDate);
 
   activity = await getActivityById(client, activityId);
   status = String(activity.status || '').toLowerCase();
-  const activityDate = activity.date || today;
+  const activityDate = activity.date || targetDate;
 
-  if (activityDate < today || activityDate !== today) {
-    await rescheduleActivityToday(client, activityId, resourceId, today);
-    await moveActivityToResource(client, activityId, resourceId, today);
-  } else if (String(activity.resourceId || '') !== resourceId) {
-    await moveActivityToResource(client, activityId, resourceId, activityDate);
+  if (activityDate !== targetDate || String(activity.resourceId || '') !== resourceId) {
+    await rescheduleActivityToday(client, activityId, resourceId, targetDate);
+    await moveActivityToResource(client, activityId, resourceId, targetDate);
   } else {
-    console.log('[OFS] atividade já atribuída ao técnico na data corrente');
+    console.log('[OFS] atividade já atribuída ao técnico na data alvo');
   }
 
   activity = await getActivityById(client, activityId);
@@ -349,4 +409,6 @@ module.exports = {
   findActivityByNumeroOrdem,
   pollActivityByNumeroOrdem,
   padOrdem,
+  todayIsoInTimeZone,
+  nowDateTimeInTimeZone,
 };

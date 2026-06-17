@@ -2,7 +2,7 @@ import mysql from 'mysql2/promise';
 import { config } from '../config.js';
 import { toMysqlDatetimeParam } from './datetime.js';
 import {
-  JOBS_PANEL_HISTORY_COLUMNS,
+  buildJobsPanelHistoryColumnsMysql,
   normalizeJobsPanelHistoryOptions,
   buildUserExecutionSeqSelectMysql,
 } from './jobsPanelHistory.js';
@@ -180,7 +180,7 @@ export async function listJobExecutionsForJobsPanelMysql(options = {}) {
   return all(
     `
       SELECT * FROM (
-        SELECT ${JOBS_PANEL_HISTORY_COLUMNS},
+        SELECT ${buildJobsPanelHistoryColumnsMysql()},
           ${buildUserExecutionSeqSelectMysql()}
         FROM job_executions
         WHERE executed_at >= DATE_SUB(NOW(), INTERVAL ${days} DAY)

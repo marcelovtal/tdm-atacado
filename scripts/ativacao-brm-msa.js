@@ -8,98 +8,37 @@
  * MSA_PDF_POLL_MS, MSA_REQUIRE_PDF=1, USE_LEGACY_MSA_ATTACHMENT=1 (sem Omni).
  */
 const { randomUUID } = require('crypto');
-const { loadEnv, getTokenUrl, getUserFixture } = require('../config/env.js');
 const { runLeadToContactsStep7 } = require('../support/utils/ativacaoBrmRunLeadToContacts.js');
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 
-const env = loadEnv();
-const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
-const tokenUrl = getTokenUrl(env) || (baseUrl ? `${baseUrl}/services/oauth2/token` : '');
+const { createSalesforceScriptClient } = require('../support/utils/salesforce/scriptHttpClient.js');
+const {
+  SOBJECTS_ACCOUNT,
+  SOBJECTS_CONTRACT,
+  SOBJECTS_CONTENT_VERSION,
+  SOBJECTS_CONTENT_DOCUMENT_LINK,
+  QUERY_URL,
+  TOOLING_EXECUTE_ANONYMOUS,
+  IP_GENERIC_INVOKE,
+  BRM_POLL_TIMEOUT_MS,
+  BRM_POLL_INTERVAL_MS,
+} = require('../support/utils/salesforce/sfRestPaths.js');
 
-function getUser() {
-  const user = getUserFixture();
-  return user.salesforce || user.dev?.salesforce || user.trg?.salesforce || {};
-}
-
-async function getToken() {
-  const sf = getUser();
-  const grantType = sf.grant_type || 'client_credentials';
-  const baseUrl = (sf.tokenUrl || tokenUrl).replace(/\?.*$/, '');
-  const params = new URLSearchParams({
-    grant_type: grantType,
-    client_id: sf.client_id || '',
-    client_secret: sf.client_secret || '',
-  });
-  if (grantType === 'password') {
-    params.set('username', sf.username || '');
-    params.set('password', sf.password || '');
-  }
-  const useQueryParams = grantType === 'password';
-  const url = useQueryParams ? `${baseUrl}?${params.toString()}` : baseUrl;
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: sf.cookie || '' };
-  const reqBody = useQueryParams ? null : params.toString();
-  logCurl('POST', url, headers, reqBody);
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: useQueryParams ? '' : params.toString(),
-  });
-  const resText = await res.text();
-  let body = null;
-  try {
-    body = resText ? JSON.parse(resText) : null;
-  } catch (_) {
-    body = null;
-  }
-  logResponse('Token', res.status, body, resText);
-  if (!res.ok) throw new Error(`Token ${res.status}: ${resText}`);
-  return { accessToken: body.access_token, instanceUrl: body.instance_url };
-}
-
-async function api(instanceUrl, accessToken, method, path, body = null, cookie = '') {
-  const url = path.startsWith('http') ? path : `${instanceUrl}${path}`;
-  const opts = {
-    method,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      ...(cookie ? { Cookie: cookie } : {}),
-    },
-  };
-  if (body != null && (method === 'POST' || method === 'PATCH')) opts.body = JSON.stringify(body);
-  const reqBody = opts.body ?? null;
-  logCurl(method, url, opts.headers, reqBody);
-  const res = await fetch(url, opts);
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (_) {}
-  const label = `${method} ${path}`;
-  logResponse(label, res.status, data, text);
-  return { status: res.status, data, text };
-}
-
-const SOBJECTS_ACCOUNT = '/services/data/v62.0/sobjects/Account';
-const SOBJECTS_CONTRACT = '/services/data/v62.0/sobjects/Contract';
-const SOBJECTS_CONTENT_VERSION = '/services/data/v62.0/sobjects/ContentVersion';
-const SOBJECTS_CONTENT_DOCUMENT_LINK = '/services/data/v62.0/sobjects/ContentDocumentLink';
-const QUERY_URL = '/services/data/v62.0/query';
-const TOOLING_EXECUTE_ANONYMOUS = '/services/data/v62.0/tooling/executeAnonymous';
-/** Mesmo endpoint usado nos fluxos CPQ (gerar-pedido-*). */
-const IP_GENERIC_INVOKE =
-  process.env.IP_GENERIC_INVOKE || '/services/apexrest/vlocity_cmt/v1/integrationprocedure/GenericInvoke2NoCont';
+const {
+  baseUrl,
+  tokenUrl,
+  envName,
+  IS_TRG,
+  sf,
+  cookie: defaultCookie,
+  getToken,
+  api,
+  fail,
+} = createSalesforceScriptClient();
 /** OmniScript Vtal_OS_MSAToPDF — Id do processo (ajuste por org se necessário). */
 const OMNI_PROCESS_ID_MSA = process.env.OMNI_PROCESS_ID_MSA || '0jNHZ000000GWIT2A4';
-
-const BRM_POLL_TIMEOUT_MS = 60000;
-const BRM_POLL_INTERVAL_MS = 2000;
-
-function fail(msg, res) {
-  const err = new Error(msg);
-  err.response = res;
-  throw err;
-}
 
 /** Id Salesforce em 15 caracteres (DRParams do DRE costuma usar 15). */
 function toContractId15(id) {
@@ -422,7 +361,7 @@ async function runLeadUntilBRM(instanceUrl, accessToken, cookie) {
   const activateRes = await apiCall('PATCH', `${SOBJECTS_CONTRACT}/${contractId}`, buildContractActivatePayload());
   if (activateRes.status !== 200 && activateRes.status !== 204) fail('PATCH Contract Activate', activateRes);
 
-  const sfUser = getUser();
+  const sfUser = sf;
 
   if (process.env.USE_LEGACY_MSA_ATTACHMENT === '1') {
     console.log('[ATIVACAO] 8c. Modo USE_LEGACY_MSA_ATTACHMENT=1: anexo já aplicado em 8a; Omni PDF não será chamado.');
@@ -517,7 +456,7 @@ async function main() {
     console.error('Configure env (ENVIRONMENT=dev). Ver support/environment/env.json');
     process.exit(1);
   }
-  const sf = getUser();
+  sf;
   if (!sf.client_id || !sf.client_secret) {
     console.error('Credenciais em user.json (dev.salesforce)');
     process.exit(1);

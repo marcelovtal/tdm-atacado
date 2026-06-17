@@ -16,7 +16,7 @@ import {
 } from './database/mysqlStore.js';
 import { SQLITE_EXECUTED_AT_DT, toSqliteDatetimeParam } from './database/datetime.js';
 import {
-  JOBS_PANEL_HISTORY_COLUMNS,
+  buildJobsPanelHistoryColumnsSqlite,
   normalizeJobsPanelHistoryOptions,
   buildUserExecutionSeqSelectSqlite,
 } from './database/jobsPanelHistory.js';
@@ -224,7 +224,7 @@ export async function listJobExecutionsForJobsPanel(options = {}) {
   return all(
     `
       SELECT * FROM (
-        SELECT ${JOBS_PANEL_HISTORY_COLUMNS},
+        SELECT ${buildJobsPanelHistoryColumnsSqlite()},
           ${buildUserExecutionSeqSelectSqlite(SQLITE_EXECUTED_AT_DT)}
         FROM job_executions
         WHERE ${SQLITE_EXECUTED_AT_DT} >= datetime('now', '-${days} days')

@@ -25,6 +25,15 @@ export const JOBS_PANEL_HISTORY_COLUMNS = `
   user_code, status, duration_ms, error_message, result_json
 `.trim();
 
+/** Últimos ~16KB do log — suficiente para FDL_PANEL_SNAPSHOT e *** PEDIDO GERADO ***. */
+export function buildJobsPanelHistoryColumnsSqlite() {
+  return `${JOBS_PANEL_HISTORY_COLUMNS}, substr(COALESCE(stdout, '') || char(10) || COALESCE(stderr, ''), -16384) AS stdout`;
+}
+
+export function buildJobsPanelHistoryColumnsMysql() {
+  return `${JOBS_PANEL_HISTORY_COLUMNS}, RIGHT(CONCAT(IFNULL(stdout, ''), CHAR(10), IFNULL(stderr, '')), 16384) AS stdout`;
+}
+
 /** Aceita só 7 ou 30 dias (usuário normal vs admin). */
 export function normalizeJobsPanelHistoryOptions({ userCode = null, days = 7, limit = 500 } = {}) {
   return {

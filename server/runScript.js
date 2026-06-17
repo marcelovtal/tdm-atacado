@@ -8,6 +8,7 @@ import { sanitizeJobErrorMessage } from './jobError.js';
 
 const require = createRequire(import.meta.url);
 const { resolvePedidoPanelStatus } = require('../support/utils/resolvePedidoPanelStatus.js');
+const { parsePanelSnapshotFromText } = require('../support/utils/panelSnapshot.js');
 
 function parseLabeledField(text, label) {
   const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -21,16 +22,95 @@ function parseOfsInstalacaoConcluida(text) {
   return /^sim$/i.test(m[1].trim());
 }
 
+const PEGA_CASE_ID_RE = '(?:A|ATV|PNT|EVC)-\\d+';
+
+/** Linhas `[PEGA] Ponta A: OS-… | Caso: ATV-…` emitidas por enrichPedidoComPegaOrdem. */
+function parsePegaEnrichLegFields(text) {
+  const out = {};
+  const legs = [
+    { label: 'Ponta A', osKey: 'pegaOrdemServicoOsPontaA', caseKey: 'pegaCaseIdPontaA' },
+    { label: 'Ponta B', osKey: 'pegaOrdemServicoOsPontaB', caseKey: 'pegaCaseIdPontaB' },
+    { label: 'EVC', osKey: 'pegaOrdemServicoOsEVC', caseKey: 'pegaCaseIdEVC' },
+  ];
+  for (const { label, osKey, caseKey } of legs) {
+    const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = text.match(
+      new RegExp(
+        `\\[PEGA\\]\\s+${esc}:\\s*(?:(OS-\\d+)(?:\\s*\\|\\s*Caso:\\s*(${PEGA_CASE_ID_RE}))?|(?:[^|\\n]*\\|\\s*)?Caso:\\s*(${PEGA_CASE_ID_RE}))`,
+        'i',
+      ),
+    );
+    if (!m) continue;
+    const os = m[1] ? m[1].trim().toUpperCase() : null;
+    const caseId = (m[2] || m[3] || '').trim() || null;
+    if (os) out[osKey] = os;
+    if (caseId) out[caseKey] = caseId;
+  }
+  return out;
+}
+
+/** Bloco `*** PEGA Link Dedicado ***` — `Ponta A caseId:` antes do `logPedidoGerado`. */
+function parsePegaLdConsoleLegFields(text) {
+  const out = {};
+  const legs = [
+    { label: 'Ponta A', caseKey: 'pegaCaseIdPontaA', osKey: 'pegaOrdemServicoOsPontaA' },
+    { label: 'Ponta B', caseKey: 'pegaCaseIdPontaB', osKey: 'pegaOrdemServicoOsPontaB' },
+    { label: 'EVC', caseKey: 'pegaCaseIdEVC', osKey: 'pegaOrdemServicoOsEVC' },
+  ];
+  for (const { label, caseKey, osKey } of legs) {
+    const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const caseM = text.match(new RegExp(`${esc} caseId:\\s*(${PEGA_CASE_ID_RE})`, 'i'));
+    if (caseM) out[caseKey] = caseM[1].trim();
+    const osM = text.match(new RegExp(`${esc} OS:\\s*(OS-\\d+)`, 'i'));
+    if (osM) out[osKey] = osM[1].trim().toUpperCase();
+  }
+  return out;
+}
+
 /** Parse stdout/stderr do script — reutilizado na fila e no histórico do banco. */
 export function parseScriptStdout(text) {
-  const pegaOrdemServicoOsPontaA = parseLabeledField(text, 'PEGA OS Ponta A');
-  const pegaOrdemServicoOsPontaB = parseLabeledField(text, 'PEGA OS Ponta B');
-  const pegaOrdemServicoOsEVC = parseLabeledField(text, 'PEGA OS EVC');
+  const enrichLegs = parsePegaEnrichLegFields(text);
+  const ldConsoleLegs = parsePegaLdConsoleLegFields(text);
+  const panelSnapshot = parsePanelSnapshotFromText(text) || {};
+  const pegaOrdemServicoOsPontaA =
+    panelSnapshot.pegaOrdemServicoOsPontaA ||
+    parseLabeledField(text, 'PEGA OS Ponta A') ||
+    ldConsoleLegs.pegaOrdemServicoOsPontaA ||
+    enrichLegs.pegaOrdemServicoOsPontaA ||
+    null;
+  const pegaOrdemServicoOsPontaB =
+    panelSnapshot.pegaOrdemServicoOsPontaB ||
+    parseLabeledField(text, 'PEGA OS Ponta B') ||
+    ldConsoleLegs.pegaOrdemServicoOsPontaB ||
+    enrichLegs.pegaOrdemServicoOsPontaB ||
+    null;
+  const pegaOrdemServicoOsEVC =
+    panelSnapshot.pegaOrdemServicoOsEVC ||
+    parseLabeledField(text, 'PEGA OS EVC') ||
+    ldConsoleLegs.pegaOrdemServicoOsEVC ||
+    enrichLegs.pegaOrdemServicoOsEVC ||
+    null;
   const pegaCaseIdPontaA =
-    parseLabeledField(text, 'PEGA Caso Ponta A') || parseLabeledField(text, 'Ponta A caseId');
+    panelSnapshot.pegaCaseIdPontaA ||
+    parseLabeledField(text, 'PEGA Caso Ponta A') ||
+    parseLabeledField(text, 'Ponta A caseId') ||
+    ldConsoleLegs.pegaCaseIdPontaA ||
+    enrichLegs.pegaCaseIdPontaA ||
+    null;
   const pegaCaseIdPontaB =
-    parseLabeledField(text, 'PEGA Caso Ponta B') || parseLabeledField(text, 'Ponta B caseId');
-  const pegaCaseIdEVC = parseLabeledField(text, 'PEGA Caso EVC') || parseLabeledField(text, 'EVC caseId');
+    panelSnapshot.pegaCaseIdPontaB ||
+    parseLabeledField(text, 'PEGA Caso Ponta B') ||
+    parseLabeledField(text, 'Ponta B caseId') ||
+    ldConsoleLegs.pegaCaseIdPontaB ||
+    enrichLegs.pegaCaseIdPontaB ||
+    null;
+  const pegaCaseIdEVC =
+    panelSnapshot.pegaCaseIdEVC ||
+    parseLabeledField(text, 'PEGA Caso EVC') ||
+    parseLabeledField(text, 'EVC caseId') ||
+    ldConsoleLegs.pegaCaseIdEVC ||
+    enrichLegs.pegaCaseIdEVC ||
+    null;
   const pegaOrdemServicoOs =
     parsePegaOrdemServicoOs(text) ||
     pegaOrdemServicoOsEVC ||
@@ -42,17 +122,17 @@ export function parseScriptStdout(text) {
   const rawOrderStatus = parseOrderStatus(text);
 
   return {
-    orderId: parseOrderId(text),
-    orderNumber: parseOrderNumber(text),
+    orderId: panelSnapshot.orderId || parseOrderId(text),
+    orderNumber: panelSnapshot.orderNumber || parseOrderNumber(text),
     orderStatus: resolvePedidoPanelStatus({
       orderStatus: rawOrderStatus,
       subOrderEmImplantacao,
     }),
     subOrderEmImplantacao,
-    accountBillingId: parseAccountBillingId(text),
-    accountBusinessId: parseAccountBusinessId(text),
-    accountOrganizationId: parseAccountOrganizationId(text),
-    contactTecnicoId: parseContactTecnicoId(text),
+    accountBillingId: panelSnapshot.accountBillingId || parseAccountBillingId(text),
+    accountBusinessId: panelSnapshot.accountBusinessId || parseAccountBusinessId(text),
+    accountOrganizationId: panelSnapshot.accountOrganizationId || parseAccountOrganizationId(text),
+    contactTecnicoId: panelSnapshot.contactTecnicoId || parseContactTecnicoId(text),
     pegaCaseId: parsePegaCaseId(text) || pegaCaseIdPontaA || pegaCaseIdEVC || pegaCaseIdPontaB || null,
     pegaCaseIdPontaA,
     pegaCaseIdPontaB,
@@ -62,9 +142,15 @@ export function parseScriptStdout(text) {
     pegaOrdemServicoOsPontaA,
     pegaOrdemServicoOsPontaB,
     pegaOrdemServicoOsEVC,
-    subOrderOrderNumberPontaA: parseLabeledField(text, 'SubpedidoOrderNumber Ponta A'),
-    subOrderOrderNumberPontaB: parseLabeledField(text, 'SubpedidoOrderNumber Ponta B'),
-    subOrderOrderNumberEVC: parseLabeledField(text, 'SubpedidoOrderNumber EVC'),
+    subOrderOrderNumberPontaA:
+      panelSnapshot.subOrderOrderNumberPontaA ||
+      parseLabeledField(text, 'SubpedidoOrderNumber Ponta A'),
+    subOrderOrderNumberPontaB:
+      panelSnapshot.subOrderOrderNumberPontaB ||
+      parseLabeledField(text, 'SubpedidoOrderNumber Ponta B'),
+    subOrderOrderNumberEVC:
+      panelSnapshot.subOrderOrderNumberEVC ||
+      parseLabeledField(text, 'SubpedidoOrderNumber EVC'),
     ofsActivityId: parseLabeledField(text, 'OFS ActivityId'),
     ofsActivityStatus: parseLabeledField(text, 'OFS Status'),
     ofsInstalacaoConcluida: parseOfsInstalacaoConcluida(text),
@@ -252,8 +338,6 @@ function parseContactTecnicoId(text) {
   const m = text.match(/ContactTecnicoId:\s*([A-Za-z0-9]{15,18})/);
   return m ? m[1].trim() : null;
 }
-
-const PEGA_CASE_ID_RE = '(?:A|ATV|PNT|EVC)-\\d+';
 
 /** Linhas emitidas pelo script PEGA (stdout pode vir prefixado com `[SCRIPT …] `). */
 function parsePegaCaseId(text) {

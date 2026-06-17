@@ -2,25 +2,25 @@
   "types": {
     "lead-pedido": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
     "lead-vpn-pedido": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
     "lead-link-dedicado-pedido": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
@@ -32,7 +32,7 @@
     },
     "massa-pronta-opp-pedido-pega": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
@@ -44,11 +44,17 @@
     },
     "massa-pronta-opp-pedido-vpn": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido-vpn-pega": {
+      "environments": {
+        "ti": true,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-vpn-pega-ofs": {
       "environments": {
         "ti": false,
         "trg": true
@@ -56,11 +62,17 @@
     },
     "massa-pronta-opp-pedido-link-dedicado": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido-link-dedicado-pega": {
+      "environments": {
+        "ti": true,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-link-dedicado-pega-ofs": {
       "environments": {
         "ti": false,
         "trg": true
@@ -80,7 +92,7 @@
     },
     "conta-ativacao-brm-massa-pronta": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     }

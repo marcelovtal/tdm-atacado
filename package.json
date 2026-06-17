@@ -22,6 +22,7 @@
     "db:clear-all": "cross-env APP_PROFILE=qa node scripts/clear-all-tables.mjs"
   },
   "dependencies": {
+    "@faker-js/faker": "9.0.0",
     "bullmq": "5.34.0",
     "cors": "2.8.5",
     "dotenv": "16.4.5",
@@ -29,12 +30,12 @@
     "ioredis": "5.4.1",
     "ldapjs": "^3.0.7",
     "mysql2": "^3.22.4",
-    "@faker-js/faker": "9.0.0"
+    "playwright": "^1.58.0"
   },
   "devDependencies": {
-    "sqlite3": "6.0.1",
     "concurrently": "9.1.0",
     "cross-env": "7.0.3",
+    "sqlite3": "6.0.1",
     "vite": "6.4.1"
   }
 }

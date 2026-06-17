@@ -49,14 +49,21 @@ async function enrichPedidoComPegaOrdem(result = {}) {
       return out;
     }
 
-    // Casos ATV/EVC/PNT já capturados no fluxo PEGA — evita 24×5s na EVC quando OS ainda não existe no TRG.
-    const shortPoll = hasLinkDedicadoCaseIds(out);
-    const maxTries = shortPoll ? 3 : linkDedicadoFetchOptions('evc').maxTries;
-    if (shortPoll) {
-      console.log('[PEGA] Link Dedicado — casos PEGA já conhecidos; consulta OSS rápida (3 tentativas por perna).');
-    } else {
-      console.log('[PEGA] Link Dedicado — consultando ordem OSS nas pernas A, B e EVC...');
+    // Casos ATV/EVC já vêm do fluxo PEGA (designar → validação → EVC → agendamento).
+    // No TRG, obterdadosordem LD não expõe CaseOrdemServico OS-* — poll extra só gera falso alarme no log.
+    const fetchLdOss = String(process.env.PEGA_LD_FETCH_OSS || '').trim() === '1';
+    if (hasLinkDedicadoCaseIds(out) && !fetchLdOss) {
+      console.log(
+        '[PEGA] Link Dedicado — casos ATV/EVC já capturados no fluxo PEGA; consulta OSS omitida (defina PEGA_LD_FETCH_OSS=1 para forçar poll).',
+      );
+      if (!out.pegaCaseId) {
+        out.pegaCaseId = out.pegaCaseIdPontaA || out.pegaCaseIdEVC || out.pegaCaseIdPontaB || null;
+      }
+      return out;
     }
+
+    console.log('[PEGA] Link Dedicado — consultando ordem OSS nas pernas A, B e EVC...');
+    const maxTries = linkDedicadoFetchOptions('evc').maxTries;
 
     const legs = [
       { crm: out.subOrderOrderNumberPontaA, ldLeg: 'pontaA', osKey: 'pegaOrdemServicoOsPontaA', caseKey: 'pegaCaseIdPontaA', label: 'Ponta A' },

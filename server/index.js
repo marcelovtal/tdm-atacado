@@ -6,8 +6,9 @@ import { fileURLToPath } from 'url';
 import express from 'express';
 import cors from 'cors';
 import { initQueue, getJobDataSchema } from './queue.js';
-import { config, ENVIRONMENTS } from './config.js';
+import { config, ENVIRONMENTS, MASS_TYPES } from './config.js';
 import { findMassTypeConfig, listMassTypesGrouped } from './massTypeCatalog.js';
+import { getMassaProntaDefaultsForApi, validateMassaProntaJob } from './massEnvDefaults.js';
 import {
   initMassTypeSettings,
   isMassTypeActive,
@@ -103,6 +104,7 @@ function formatHistoryJobRow(row) {
   return {
     id: `hist-${row.id}`,
     displayNumber: Number.isFinite(displayNumber) ? displayNumber : null,
+    massTypeId: resolveMassTypeIdByLabel(row.mass_type_label),
     massType: row.mass_type_label || 'Histórico',
     environment: row.environment,
     status: row.status || 'completed',
@@ -266,6 +268,7 @@ app.get('/api/config', requireAuth, (req, res) => {
     environments: ENVIRONMENTS.map((id) => ({ id, label: id.toUpperCase() })),
     massCategories: categories,
     massTypes: listMassTypeSettings(),
+    massaProntaDefaults: getMassaProntaDefaultsForApi(),
     quantities: [1, 3, 5],
     user: req.user
       ? {
@@ -312,6 +315,11 @@ app.post('/api/jobs', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Quantidade inválida. Use: 1, 3 ou 5' });
     }
     const qty = parsedQty;
+
+    const massaProntaError = validateMassaProntaJob(massType, environment, extraEnv);
+    if (massaProntaError) {
+      return res.status(400).json({ error: massaProntaError });
+    }
 
     const data = getJobDataSchema(massType, environment, qty, extraEnv, req.user?.vt);
     const jobs = [];
@@ -632,10 +640,18 @@ if (fs.existsSync(clientDistDir)) {
   app.use(express.static(clientDistDir));
 }
 
+function resolveMassTypeIdByLabel(label) {
+  const needle = String(label || '').trim();
+  if (!needle) return null;
+  const found = MASS_TYPES.find((m) => m.label === needle);
+  return found?.id ?? null;
+}
+
 function formatJob(job) {
   const state = job.getState?.() ? undefined : (job.state || 'unknown');
   return {
     id: job.id,
+    massTypeId: job.data?.massTypeId ?? null,
     massType: job.data?.massTypeLabel,
     environment: job.data?.environment,
     status: state || job.getState?.() || 'unknown',

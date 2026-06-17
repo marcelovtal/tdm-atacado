@@ -96,13 +96,30 @@ async function runPegaLinkDedicadoIfConfigured(
     throw err;
   }
 
+  const pontaACase =
+    pegaResult.pontaA?.agendamento?.caseId ||
+    pegaResult.pontaA?.validacao?.caseId ||
+    pegaResult.pontaA?.caseId ||
+    null;
+  const pontaBCase =
+    pegaResult.pontaB?.agendamento?.caseId ||
+    pegaResult.pontaB?.validacao?.caseId ||
+    pegaResult.pontaB?.caseId ||
+    null;
+  const evcCase = pegaResult.evc?.caseId || null;
+
   console.log(
-    '\n*** PEGA Link Dedicado (A+ConfigRede → B Designar/Config → Validação A/B → EVC ConfigurarEvc → Agend. A → Agend. B) ***',
+    '\n*** PEGA Link Dedicado concluído (7 etapas: A+ConfigRede → B Designar/Config → Validação A/B → EVC → Agend. A/B) ***',
   );
-  if (pegaResult.pontaA?.caseId) console.log('  Ponta A caseId:', pegaResult.pontaA.caseId);
-  if (pegaResult.pontaA?.pegaOrdemServicoOs) console.log('  Ponta A OS:', pegaResult.pontaA.pegaOrdemServicoOs);
-  if (pegaResult.pontaB?.pegaOrdemServicoOs) console.log('  Ponta B OS:', pegaResult.pontaB.pegaOrdemServicoOs);
-  if (pegaResult.evc?.caseId) console.log('  EVC caseId:', pegaResult.evc.caseId);
+  if (pontaACase) console.log('  Ponta A caseId:', pontaACase);
+  if (pontaBCase) console.log('  Ponta B caseId:', pontaBCase);
+  if (evcCase) console.log('  EVC caseId:', evcCase);
+  if (pegaResult.pontaA?.pegaOrdemServicoOs || pegaResult.pontaA?.agendamento?.pegaOrdemServicoOs) {
+    console.log('  Ponta A OS:', pegaResult.pontaA.pegaOrdemServicoOs || pegaResult.pontaA.agendamento?.pegaOrdemServicoOs);
+  }
+  if (pegaResult.pontaB?.pegaOrdemServicoOs || pegaResult.pontaB?.agendamento?.pegaOrdemServicoOs) {
+    console.log('  Ponta B OS:', pegaResult.pontaB.pegaOrdemServicoOs || pegaResult.pontaB.agendamento?.pegaOrdemServicoOs);
+  }
   if (pegaResult.evc?.pegaOrdemServicoOs) console.log('  EVC OS:', pegaResult.evc.pegaOrdemServicoOs);
 
   return pegaResult;

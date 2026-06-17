@@ -134,7 +134,6 @@ export const MASS_TYPES = [
     script: 'gerar-pedido-massa-pronta-ip-connect-config-pega-ofs.js',
     envVars: {
       INCLUDE_OFS_INSTALACAO: '1',
-      OFS_RESOURCE_ID: 'TEC_TESTE_01',
     },
   },
   { id: 'massa-pronta-opp-pedido-vpn', label: 'VPN (massa pronta)', script: 'gerar-pedido-massa-pronta-vpn.js', envVars: {} },
@@ -144,12 +143,28 @@ export const MASS_TYPES = [
     script: 'gerar-pedido-massa-pronta-vpn-connect-config-pega.js',
     envVars: {},
   },
+  {
+    id: 'massa-pronta-opp-pedido-vpn-pega-ofs',
+    label: 'VPN Massa Completa até Ativação',
+    script: 'gerar-pedido-massa-pronta-vpn-connect-config-pega-ofs.js',
+    envVars: {
+      INCLUDE_OFS_INSTALACAO: '1',
+    },
+  },
   { id: 'massa-pronta-opp-pedido-link-dedicado', label: 'Link Dedicado (massa pronta)', script: 'gerar-pedido-massa-pronta-link-dedicado.js', envVars: {} },
   {
     id: 'massa-pronta-opp-pedido-link-dedicado-pega',
     label: 'Link Dedicado (massa pronta + Config PEGA)',
     script: 'gerar-pedido-massa-pronta-link-dedicado-config-pega.js',
     envVars: {},
+  },
+  {
+    id: 'massa-pronta-opp-pedido-link-dedicado-pega-ofs',
+    label: 'LD Massa Completa até Ativação',
+    script: 'gerar-pedido-massa-pronta-link-dedicado-config-pega-ofs.js',
+    envVars: {
+      INCLUDE_OFS_INSTALACAO: '1',
+    },
   },
   { id: 'conta-ativacao-brm', label: 'Conta Até Ativação BRM', script: 'ativacao-brm.js', envVars: {} },
   { id: 'conta-ativacao-brm-msa', label: 'Conta Até Ativação BRM (MSA)', script: 'ativacao-brm-msa.js', envVars: {} },

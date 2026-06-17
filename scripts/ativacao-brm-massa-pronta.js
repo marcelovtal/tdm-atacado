@@ -12,110 +12,32 @@
  *
  * Fluxo com Lead + MSA + BRM: `ativacao-brm.js` ou `ativacao-brm-msa.js`.
  */
-const { loadEnv, getTokenUrl, getUserFixture } = require('../config/env.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 
-const env = loadEnv();
-const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
-const tokenUrl = getTokenUrl(env) || (baseUrl ? `${baseUrl}/services/oauth2/token` : '');
-const envName = process.env.ENVIRONMENT || process.env.ENV || 'ti';
-const IS_TRG = String(envName).trim().toLowerCase() === 'trg';
+const { createSalesforceScriptClient } = require('../support/utils/salesforce/scriptHttpClient.js');
+const {
+  SOBJECTS_ACCOUNT,
+  SOBJECTS_CONTRACT,
+  SOBJECTS_CONTENT_VERSION,
+  SOBJECTS_CONTENT_DOCUMENT_LINK,
+  QUERY_URL,
+  TOOLING_EXECUTE_ANONYMOUS,
+  IP_GENERIC_INVOKE,
+  BRM_POLL_TIMEOUT_MS,
+  BRM_POLL_INTERVAL_MS,
+} = require('../support/utils/salesforce/sfRestPaths.js');
 
-function getUser() {
-  const user = getUserFixture();
-  return user.salesforce || user.dev?.salesforce || user.trg?.salesforce || {};
-}
-
-async function getToken() {
-  const sf = getUser();
-  const grantType = sf.grant_type || 'client_credentials';
-  const baseTokenUrl = (sf.tokenUrl || tokenUrl).replace(/\?.*$/, '');
-  const params = new URLSearchParams({
-    grant_type: grantType,
-    client_id: sf.client_id || '',
-    client_secret: sf.client_secret || '',
-  });
-  if (grantType === 'password') {
-    params.set('username', sf.username || '');
-    params.set('password', sf.password || '');
-  }
-  const useQueryParams = grantType === 'password';
-  const url = useQueryParams ? `${baseTokenUrl}?${params.toString()}` : baseTokenUrl;
-  const headers = { 'Content-Type': 'application/x-www-form-urlencoded', Cookie: sf.cookie || '' };
-  const reqBody = useQueryParams ? '' : params.toString();
-  logCurl('POST', url, headers, reqBody || null);
-  const res = await fetch(url, {
-    method: 'POST',
-    headers,
-    body: reqBody,
-  });
-  const resText = await res.text();
-  let body;
-  try {
-    body = resText ? JSON.parse(resText) : null;
-  } catch (_) {
-    body = null;
-  }
-  logResponse('Token', res.status, body, resText);
-  if (!res.ok) throw new Error(`Token ${res.status}: ${resText}`);
-  return { accessToken: body.access_token, instanceUrl: body.instance_url };
-}
-
-async function api(instanceUrl, accessToken, method, path, body = null, cookie = '') {
-  const url = path.startsWith('http') ? path : `${instanceUrl}${path}`;
-  const headers = {
-    Authorization: `Bearer ${accessToken}`,
-    'Content-Type': 'application/json',
-    ...(cookie ? { Cookie: cookie } : {}),
-  };
-  const reqBody = body != null && (method === 'POST' || method === 'PATCH') ? JSON.stringify(body) : null;
-  const label = `${method} ${path}`;
-  logCurl(method, url, headers, reqBody);
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: reqBody,
-  });
-  const text = await res.text();
-  let data = null;
-  try { data = text ? JSON.parse(text) : null; } catch (_) {}
-  logResponse(label, res.status, data, text);
-  return { status: res.status, data, text };
-}
-
-const SOBJECTS_ACCOUNT = '/services/data/v62.0/sobjects/Account';
-const TOOLING_EXECUTE_ANONYMOUS = '/services/data/v62.0/tooling/executeAnonymous';
-
-const BRM_POLL_TIMEOUT_MS = parseInt(process.env.BRM_POLL_TIMEOUT_MS || '60000', 10);
-const BRM_POLL_INTERVAL_MS = parseInt(process.env.BRM_POLL_INTERVAL_MS || '2000', 10);
-
-function fail(msg, res) {
-  const err = new Error(msg);
-  err.response = res;
-  throw err;
-}
-
-function logCurl(method, url, headers = {}, body = null) {
-  const h = Object.entries(headers)
-    .filter(([, v]) => v != null && v !== '')
-    .map(([k, v]) => `  -H '${k}: ${String(v).replace(/'/g, "'\\''")}'`)
-    .join(' \\\n');
-  const bodyPart =
-    (method === 'POST' || method === 'PATCH') && body != null
-      ? ` \\\n  --data-raw '${String(body).slice(0, 2000).replace(/'/g, "'\\''")}${String(body).length > 2000 ? '...' : ''}'`
-      : '';
-  console.log(`[CURL] ${method} ${url}`);
-  console.log(`curl '${url}' \\\n  -X ${method}${h ? ' \\\n' + h : ''}${bodyPart}`);
-}
-
-function logResponse(label, status, data, text) {
-  console.log(`[RESPONSE] ${label} status: ${status}`);
-  const payload = data != null ? JSON.stringify(data, null, 2) : (text || '');
-  const maxLen = 4000;
-  const out = payload.length > maxLen ? payload.slice(0, maxLen) + '\n... [truncado ' + (payload.length - maxLen) + ' chars]' : payload;
-  if (out) console.log(`[RESPONSE] ${label} body:\n${out}`);
-}
-
+const {
+  baseUrl,
+  tokenUrl,
+  envName,
+  IS_TRG,
+  sf,
+  cookie: defaultCookie,
+  getToken,
+  api,
+  fail,
+} = createSalesforceScriptClient();
 function getBillingIdFromEnv() {
   const id = process.env.ACCOUNT_BILLING_ID?.trim();
   return id || null;
@@ -169,7 +91,6 @@ async function main() {
     console.error('Configure env (ENVIRONMENT=dev). Ver support/environment/env.json');
     process.exit(1);
   }
-  const sf = getUser();
   if (!sf.client_id || !sf.client_secret) {
     console.error('Credenciais em user.json (dev.salesforce)');
     process.exit(1);
@@ -187,7 +108,7 @@ async function main() {
   console.log('Token...');
   try {
     const { accessToken, instanceUrl } = await getToken();
-    const cookie = sf.cookie || '';
+    const cookie = defaultCookie;
     const result = await runBillingBrmOnly(instanceUrl, accessToken, cookie, accountBillingId);
     console.log('\n*** BILLING ATIVADA NO BRM ***');
     console.log('  AccountBillingId:', result.accountBillingId);

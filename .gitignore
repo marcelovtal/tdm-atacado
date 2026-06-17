@@ -10,4 +10,11 @@ client/dist/
 # Credenciais e dados locais (não versionar)
 support/fixtures/user.json
 server/data/*.sqlite
+.auth/
+
+# OFS — scripts/HTML de debug local (não versionar)
+scripts/_debug-*
+scripts/_grep-*
+scripts/_probe-*
+scripts/_ofs-*.html
 

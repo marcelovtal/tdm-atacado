@@ -77,6 +77,19 @@ function mergeOfsCredentials(fileOfs, envName) {
     username,
     password,
     resource_id: resourceId,
+    ui_username: pickFirst(
+      envTrim('OFS_UI_USERNAME'),
+      file.ui_username,
+      '',
+    ),
+    ui_password: pickFirst(
+      envTrim('OFS_UI_PASSWORD'),
+      file.ui_password,
+      '',
+    ),
+    tech_pid: pickFirst(envTrim('OFS_TECH_PID'), file.tech_pid, '881'),
+    tech_search: pickFirst(envTrim('OFS_TECH_SEARCH'), file.tech_search, 'geraldo'),
+    bucket_pid: pickFirst(envTrim('OFS_BUCKET_PID'), file.bucket_pid, '3457'),
   };
 }
 
