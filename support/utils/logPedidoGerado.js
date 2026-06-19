@@ -18,6 +18,9 @@ function logPedidoGerado(result = {}) {
   if (result.orderId) console.log('  OrderId:', result.orderId);
   if (result.orderNumber) console.log('  OrderNumber:', result.orderNumber);
   if (result.orderStatus) console.log('  Status:', result.orderStatus);
+  if (result.subOrderStatus && result.subOrderStatus !== result.orderStatus) {
+    console.log('  SubOrderStatus:', result.subOrderStatus);
+  }
   if (result.subOrderEmImplantacao != null) {
     console.log(
       '  Subpedido "Em implantação":',
@@ -76,6 +79,9 @@ function logPedidoGerado(result = {}) {
   }
   if (result.ofsInstalacaoConcluida != null) {
     console.log('  OFS Instalação concluída:', result.ofsInstalacaoConcluida ? 'sim' : 'não');
+  }
+  if (result.orderStatusPollFailed) {
+    console.log('  ERRO status ordem:', result.orderStatusPollError || 'status não atualizado no Salesforce');
   }
 
   const panelSnapshot = buildPanelSnapshotPayload(result);

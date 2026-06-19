@@ -4,13 +4,16 @@ const {
   runOfsLinkDedicadoAfterPegaIfConfigured,
   mergeOfsLinkDedicadoIntoPedido,
 } = require('./ofs/runOfsAfterPegaIfConfigured.js');
+const { pollSubOrderStatusAfterOfs } = require('./salesforce/pollSubOrderStatusAfterOfs.js');
 
-/** Finaliza pedido Link Dedicado: mesma fase PEGA do fluxo sem OFS + instalação OFS (Ponta A → Ponta B). */
+/** Finaliza pedido Link Dedicado: PEGA + OFS (Ponta A → Ponta B) + poll status SF + log painel. */
 async function finalizePedidoLinkDedicadoWithOptionalPegaAndOfs(result = {}) {
   const mergedAfterPega = await runLinkDedicadoPegaPhase(result);
   console.log('[E2E] PEGA Link Dedicado encerrado — iniciando OFS (Ponta A → Ponta B)…');
   const ofsResult = await runOfsLinkDedicadoAfterPegaIfConfigured(mergedAfterPega);
-  return finalizePedidoGerado(mergeOfsLinkDedicadoIntoPedido(mergedAfterPega, ofsResult));
+  let merged = mergeOfsLinkDedicadoIntoPedido(mergedAfterPega, ofsResult);
+  merged = await pollSubOrderStatusAfterOfs(merged);
+  return finalizePedidoGerado(merged);
 }
 
 module.exports = { finalizePedidoLinkDedicadoWithOptionalPegaAndOfs };

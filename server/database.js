@@ -20,6 +20,8 @@ import {
   normalizeJobsPanelHistoryOptions,
   buildUserExecutionSeqSelectSqlite,
 } from './database/jobsPanelHistory.js';
+import { LEGACY_USER_ERROR_WHERE } from './dashboardUserErrorSql.js';
+import { verifyJobExecutionsSchema } from './database/jobExecutionsSchema.js';
 
 const useMysql = config.database.driver === 'mysql';
 
@@ -98,6 +100,17 @@ async function initSqliteDatabase() {
   await run(`CREATE INDEX IF NOT EXISTS idx_job_executions_executed_at ON job_executions(executed_at DESC)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_job_executions_order_number ON job_executions(order_number)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_job_executions_job_id ON job_executions(job_id)`);
+
+  const schemaCheck = await verifyJobExecutionsSchema({
+    driver: 'sqlite',
+    getColumns: async () => {
+      const rows = await all('PRAGMA table_info(job_executions)');
+      return rows.map((r) => r.name);
+    },
+  });
+  if (schemaCheck.ok) {
+    console.log('[DB] job_executions: schema SQLite OK (status aceita user_error sem ALTER)');
+  }
 }
 
 export async function initDatabase() {
@@ -353,7 +366,6 @@ async function getDashboardAggregatesSqlite(userCode = null) {
       WHERE 1=1 ${clause}
       GROUP BY label
       ORDER BY count DESC
-      LIMIT 12
     `,
     params
   );
@@ -385,6 +397,16 @@ async function getDashboardAggregatesSqlite(userCode = null) {
     params
   );
 
+  const legacyUserErrorRow = await get(
+    `
+      SELECT COUNT(*) AS legacyUserErrors
+      FROM job_executions
+      WHERE status = 'failed' ${clause}
+        AND ${LEGACY_USER_ERROR_WHERE}
+    `,
+    params
+  );
+
   const statusCounts = {};
   for (const row of statusRows) {
     statusCounts[row.status] = Number(row.count) || 0;
@@ -399,6 +421,7 @@ async function getDashboardAggregatesSqlite(userCode = null) {
     topUsers,
     statusCounts,
     criticalFailures: Number(criticalRow?.criticalFailures) || 0,
+    legacyUserErrors: Number(legacyUserErrorRow?.legacyUserErrors) || 0,
   };
 }
 

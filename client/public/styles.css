@@ -415,6 +415,27 @@ body {
   color: var(--text);
 }
 
+.dashboard-result-kpi__value--warning {
+  color: #f59e0b;
+}
+
+.dashboard-result-kpi__value[data-health='boa'] {
+  color: #22c55e;
+}
+
+.dashboard-result-kpi__value[data-health='atenção'] {
+  color: #f59e0b;
+}
+
+.dashboard-result-kpi__value[data-health='crítica'] {
+  color: #ef4444;
+}
+
+.dashboard-chart-card__hint {
+  margin: 0 0 0.5rem;
+  font-size: 0.8rem;
+}
+
 @media (max-width: 980px) {
   .dashboard-charts {
     grid-template-columns: 1fr;
@@ -1507,6 +1528,15 @@ body {
 .job-status.failed {
   background: rgba(239, 68, 68, 0.2);
   color: var(--error);
+}
+
+.job-status.user_error {
+  background: rgba(245, 158, 11, 0.2);
+  color: #f59e0b;
+}
+
+.job-result--user-error {
+  color: #f59e0b;
 }
 
 .job-status.cancelled {

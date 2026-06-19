@@ -2,7 +2,9 @@ import { toQueueReturnPayload } from './jobReturnPayload.js';
 
 export function jobStatusFromResult(result) {
   if (result?.cancelled) return 'cancelled';
-  return result?.success ? 'completed' : 'failed';
+  if (result?.success) return 'completed';
+  if (result?.userError) return 'user_error';
+  return 'failed';
 }
 
 export function buildJobReturnPayload(result, dbSave) {
@@ -18,9 +20,12 @@ export function buildJobReturnPayload(result, dbSave) {
     stdout: result.stdout,
     stderr: result.stderr,
     error: cancelled ? null : result.error,
+    userError: result.userError === true,
+    userErrorCode: result.userErrorCode ?? null,
     orderId: result.orderId,
     orderNumber: result.orderNumber,
     orderStatus: result.orderStatus,
+    subOrderStatus: result.subOrderStatus,
     accountBillingId: result.accountBillingId,
     accountBusinessId: result.accountBusinessId,
     accountOrganizationId: result.accountOrganizationId,
@@ -37,6 +42,8 @@ export function buildJobReturnPayload(result, dbSave) {
     subOrderOrderNumberPontaA: result.subOrderOrderNumberPontaA,
     subOrderOrderNumberPontaB: result.subOrderOrderNumberPontaB,
     subOrderOrderNumberEVC: result.subOrderOrderNumberEVC,
+    orderStatusPollFailed: result.orderStatusPollFailed === true,
+    orderStatusPollError: result.orderStatusPollError ?? null,
     scriptSuccess: cancelled ? false : !scriptFailed,
     dbSaveError: dbSave.error ?? null,
   });

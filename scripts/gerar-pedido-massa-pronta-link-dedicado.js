@@ -36,6 +36,13 @@ const { patchMassaProntaAccounts } = require('../support/utils/salesforce/patchM
 const { patchLinkDedicadoMasterOrder } = require('../support/utils/salesforce/patchLinkDedicadoMasterOrder.js');
 const { resolveTechnicalContactForBusiness } = require('../support/utils/salesforce/resolveTechnicalContactForBusiness.js');
 const { refreshLinkDedicadoSubpedidosForPega } = require('../support/utils/refreshLinkDedicadoSubpedidosForPega.js');
+const {
+  isIpConnectCpeEnabled,
+  resolveCpeProduct2Id,
+  resolveCpeOptionsFromEnv,
+  attachCpeToFcIpConnectChild,
+  fetchCpePriceFromIp,
+} = require('../support/utils/salesforce/ipConnectCpePayload.js');
 
 const { createSalesforceScriptClient } = require('../support/utils/salesforce/scriptHttpClient.js');
 const {
@@ -810,6 +817,16 @@ function buildLdValidationMap(quoteLineItems, valorMensal = VALOR_MENSAL_LD, val
     : '';
 }
 
+/** Ponta A ou B para CPE (preferência Ponta A). */
+function pickLdPontaQliForCpe(quoteLineItems) {
+  const items = Array.isArray(quoteLineItems) ? quoteLineItems : [];
+  const pontaA = items.find((item) => item?.Vtal_Seg_PointType__c === 'Ponta A');
+  if (pontaA?.Id) return { qli: pontaA, pointLabel: 'Ponta A' };
+  const pontaB = items.find((item) => item?.Vtal_Seg_PointType__c === 'Ponta B');
+  if (pontaB?.Id) return { qli: pontaB, pointLabel: 'Ponta B' };
+  return null;
+}
+
 function buildProductsValidationBodyLd(quoteId, quoteLineItems, fn = 'advance', valorMensal = VALOR_MENSAL_LD, valorInstalacao = VALOR_INSTALACAO_LD, productCodeResolved = null) {
   const pc = productCodeResolved || PRODUCT_CODE_LD;
   const FC_LDQuoteInstallationAddress = buildLdValidationMap(quoteLineItems, valorMensal, valorInstalacao, pc);
@@ -1213,6 +1230,9 @@ await apiCall('POST', IP_PRODUCTS_VALIDATION, {
 // ----------------------------------
 //  PASSO 19: ProductsValidation SAVE
 console.log('[E2E] 19. ProductsValidation SAVE...');
+if (isIpConnectCpeEnabled()) {
+  console.log('   (CPE será registrado no passo 25 — save/advance sem child CPE)');
+}
 await apiCall(
   'POST',
   IP_PRODUCTS_VALIDATION,
@@ -1313,45 +1333,86 @@ const pontaBQLI = qliManual.records.find(item => item.Vtal_Seg_PointType__c === 
 if (!evcQLI || !pontaAQLI || !pontaBQLI) {
   console.log(' Não foi possível encontrar todos os QLI para atualização manual');
 } else {
-  // Montar o payload de ProductsValidation com os atributos manuais
+  const ldMensal = asNumeroString(VALOR_MENSAL_LD, VALOR_MENSAL_LD);
+  const ldInstalacao = asNumeroString(VALOR_INSTALACAO_LD, VALOR_INSTALACAO_LD);
+  const FC_LDQuoteInstallationAddress = {
+    [evcQLI.Id]: {
+      ATT_PROTECAO: '1+0',
+      Id: evcQLI.Id,
+      NomeRede: 'AUTOMACAO',
+      PrazoInstalacao: 'Até 30 dias',
+      accessType: 'VLAN-Based',
+      networkStandard: 'E-LINE',
+      speedType: 'Simétrico',
+      tipoProtecao: '1+0',
+      transportType: 'Link Dedicado',
+      svlan: '250',
+      cvlan: '240',
+    },
+    [pontaAQLI.Id]: {
+      Id: pontaAQLI.Id,
+      Roteador: 'Não se Aplica',
+      TecnologiaAcesso: 'Ponto a ponto',
+      TipoInterface: '1G BASE-T',
+      Mensalidade: ldMensal,
+      MensalidadeLPU: ldMensal,
+      ModalidadeTaxa: 'CobrancaTotal',
+      TaxaInstalacao: ldInstalacao,
+      TaxaInstalacaoLPU: ldInstalacao,
+    },
+    [pontaBQLI.Id]: {
+      Id: pontaBQLI.Id,
+      Roteador: 'Não se Aplica',
+      TecnologiaAcesso: 'Ponto a ponto',
+      TipoInterface: '1G BASE-T',
+    },
+  };
+
+  if (isIpConnectCpeEnabled()) {
+    const pontaForCpe = pickLdPontaQliForCpe(qliManual.records);
+    if (!pontaForCpe) {
+      fail('CPE LD: nenhuma Ponta A/B encontrada nos QuoteLineItems (passo 25)', { status: 0 });
+    }
+    const cpeProduct2Id = resolveCpeProduct2Id();
+    let cpeOptions = resolveCpeOptionsFromEnv({
+      product2Id: cpeProduct2Id,
+      pontaLabel: pontaForCpe.pointLabel,
+    });
+    console.log(
+      '[E2E] 25a. CPE porte',
+      cpeOptions.porte,
+      'em',
+      pontaForCpe.pointLabel,
+      '— Product2:',
+      cpeProduct2Id || '(não definido)',
+      '| Vtal_Seg_GetPriceCPE...',
+    );
+    const cpePrice = await fetchCpePriceFromIp(apiCall, cpeOptions.porte, cpeProduct2Id);
+    if (cpePrice) {
+      cpeOptions = { ...cpeOptions, ...cpePrice };
+      console.log('   CPE preços:', cpePrice);
+    } else {
+      console.log('   CPE preços: defaults (trace UI TRG)');
+    }
+    attachCpeToFcIpConnectChild(FC_LDQuoteInstallationAddress, pontaForCpe.qli.Id, cpeOptions);
+    console.log('   CPE child anexado em', `${pontaForCpe.qli.Id}.Child.CPE`, '| Ponta:', pontaForCpe.pointLabel);
+  }
+
   const manualUpdatePayload = {
     quoteId: quoteId,
     function: 'advance',
     IncludeAntiDDOSAndIpAdcional: '',
-    FC_LDQuoteInstallationAddress: {
-      [evcQLI.Id]: {
-        ATT_PROTECAO: '1+0',
-        Id: evcQLI.Id,
-        NomeRede: 'AUTOMACAO',
-        PrazoInstalacao: 'Até 30 dias',
-        accessType: 'VLAN-Based',
-        networkStandard: 'E-LINE',
-        speedType: 'Simétrico',
-        tipoProtecao: '1+0',
-        transportType: 'Link Dedicado',
-        svlan: '250',  // ← VALOR FIXO PARA TESTE
-        cvlan: '240'   // ← VALOR FIXO PARA TESTE
-      },
-      [pontaAQLI.Id]: {
-        Id: pontaAQLI.Id,
-        Roteador: 'Não se Aplica',
-        TecnologiaAcesso: 'Ponto a ponto',
-        TipoInterface: '1G BASE-T'
-      },
-      [pontaBQLI.Id]: {
-        Id: pontaBQLI.Id,
-        Roteador: 'Não se Aplica',
-        TecnologiaAcesso: 'Ponto a ponto',
-        TipoInterface: '1G BASE-T'
-      }
-    },
+    FC_LDQuoteInstallationAddress,
     FCVpnMplsChild: '',
     FCIPConnectChild: '',
-    CustomLWC1: ''
+    CustomLWC1: '',
   };
 
-  await apiCall('POST', IP_PRODUCTS_VALIDATION, manualUpdatePayload);
-  console.log('    Atributos manuais atualizados');
+  const manualRes = await apiCall('POST', IP_PRODUCTS_VALIDATION, manualUpdatePayload);
+  if (manualRes.status !== 200 && manualRes.status !== 201) {
+    fail('ProductsValidation(advance manual + CPE LD)', manualRes);
+  }
+  console.log('    Atributos manuais atualizados', isIpConnectCpeEnabled() ? '(com CPE)' : '');
 }
 
 
@@ -2071,12 +2132,18 @@ function getAccountIdsFromEnv() {
   };
 }
 
-/** Busca contato técnico na Business (cria se necessário). */
-async function resolveContactFromBusiness(instanceUrl, accessToken, cookie, accountBussinessId) {
+/** Busca contato técnico na Business (Organization/Billing como fallback; cria na Business se necessário). */
+async function resolveContactFromBusiness(instanceUrl, accessToken, cookie, accountIdsOrBusinessId) {
   const apiCall = (method, path, body) => api(instanceUrl, accessToken, method, path, body, cookie);
+  const isObject = accountIdsOrBusinessId && typeof accountIdsOrBusinessId === 'object';
+  const accountBussinessId = isObject ? accountIdsOrBusinessId.accountBussinessId : accountIdsOrBusinessId;
+  const fallbackAccountIds = isObject
+    ? [accountIdsOrBusinessId.accountOrganizationId, accountIdsOrBusinessId.accountBillingId]
+    : [];
   return resolveTechnicalContactForBusiness(apiCall, accountBussinessId, {
     queryUrl: QUERY_URL,
     sobjectsContactPath: SOBJECTS_CONTACT,
+    fallbackAccountIds,
   });
 }
 
@@ -2242,10 +2309,12 @@ async function main() {
       }
       let accountIds = skipLead || (await runLeadFlow(instanceUrl, accessToken, cookie));
       if (accountIds && accountIds.contactTecnicoId == null && accountIds.accountBussinessId) {
-        console.log('[E2E] Resolvendo contato técnico na conta Business...');
-        accountIds.contactTecnicoId = await resolveContactFromBusiness(instanceUrl, accessToken, cookie, accountIds.accountBussinessId);
+        console.log('[E2E] Resolvendo contato técnico (Business → Organization → Billing)...');
+        accountIds.contactTecnicoId = await resolveContactFromBusiness(instanceUrl, accessToken, cookie, accountIds);
         if (!accountIds.contactTecnicoId) {
-          console.error('[E2E] Nenhum contato técnico encontrado/criado na conta Business. Informe CONTACT_TECNICO_ID no env.');
+          console.error(
+            '[E2E] Nenhum contato técnico encontrado/criado. Informe CONTACT_TECNICO_ID no env ou use massa com contatos (fluxo Lead/BRM).',
+          );
           process.exit(1);
         }
       } else if (accountIds?.accountBussinessId && accountIds?.contactTecnicoId) {
@@ -2253,6 +2322,8 @@ async function main() {
         const techId = await resolveTechnicalContactForBusiness(apiCallForContact, accountIds.accountBussinessId, {
           queryUrl: QUERY_URL,
           sobjectsContactPath: SOBJECTS_CONTACT,
+          fallbackAccountIds: [accountIds.accountOrganizationId, accountIds.accountBillingId],
+          skipCreate: true,
         });
         if (techId) accountIds.contactTecnicoId = techId;
       }

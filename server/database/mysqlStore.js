@@ -6,6 +6,8 @@ import {
   normalizeJobsPanelHistoryOptions,
   buildUserExecutionSeqSelectMysql,
 } from './jobsPanelHistory.js';
+import { LEGACY_USER_ERROR_WHERE } from '../dashboardUserErrorSql.js';
+import { verifyJobExecutionsSchema } from './jobExecutionsSchema.js';
 
 let pool = null;
 
@@ -59,6 +61,7 @@ const CREATE_TABLE = `
     error_message TEXT NULL,
     stdout LONGTEXT NULL,
     stderr LONGTEXT NULL,
+    result_json LONGTEXT NULL,
     INDEX idx_job_executions_executed_at (executed_at DESC),
     INDEX idx_job_executions_order_number (order_number),
     INDEX idx_job_executions_job_id (job_id)
@@ -110,6 +113,20 @@ export async function initMysqlDatabase() {
     );
   } catch (_) {
     /* tabela nova ou colunas recém-criadas */
+  }
+
+  const schemaCheck = await verifyJobExecutionsSchema({
+    driver: 'mysql',
+    getColumns: async () => {
+      const rows = await all(
+        `SELECT COLUMN_NAME AS name FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'job_executions'`,
+      );
+      return rows.map((r) => r.name);
+    },
+  });
+  if (schemaCheck.ok) {
+    console.log('[DB] job_executions: schema MySQL OK (status aceita user_error sem ALTER)');
   }
 }
 
@@ -340,7 +357,8 @@ function userFilter(userCode) {
 export async function getDashboardAggregatesMysql(userCode = null) {
   const { clause, params } = userFilter(userCode);
 
-  const [totalRow, avgRow, byDay, byMassType, topUsers, statusRows, criticalRow] = await Promise.all([
+  const [totalRow, avgRow, byDay, byMassType, topUsers, statusRows, criticalRow, legacyUserErrorRow] =
+    await Promise.all([
     getRow(`SELECT COUNT(*) AS total FROM job_executions WHERE 1=1 ${clause}`, params),
     getRow(
       `
@@ -371,7 +389,6 @@ export async function getDashboardAggregatesMysql(userCode = null) {
         WHERE 1=1 ${clause}
         GROUP BY label
         ORDER BY count DESC
-        LIMIT 12
       `,
       params
     ),
@@ -404,6 +421,15 @@ export async function getDashboardAggregatesMysql(userCode = null) {
       `,
       params
     ),
+    getRow(
+      `
+        SELECT COUNT(*) AS legacyUserErrors
+        FROM job_executions
+        WHERE status = 'failed' ${clause}
+          AND ${LEGACY_USER_ERROR_WHERE}
+      `,
+      params
+    ),
   ]);
 
   const statusCounts = {};
@@ -420,5 +446,6 @@ export async function getDashboardAggregatesMysql(userCode = null) {
     topUsers,
     statusCounts,
     criticalFailures: Number(criticalRow?.criticalFailures) || 0,
+    legacyUserErrors: Number(legacyUserErrorRow?.legacyUserErrors) || 0,
   };
 }

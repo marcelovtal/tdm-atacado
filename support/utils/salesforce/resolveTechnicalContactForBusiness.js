@@ -1,31 +1,64 @@
 const { buildContactPayload } = require('./contactPayload.js');
 
+async function queryContactId(apiCall, queryUrl, accountId, technicalOnly = false) {
+  const typeFilter = technicalOnly ? " AND vlocity_cmt__Type__c = 'Technical'" : '';
+  const soql = `SELECT Id FROM Contact WHERE AccountId = '${accountId}' AND IsDeleted = false${typeFilter} ORDER BY CreatedDate DESC LIMIT 1`;
+  const res = await apiCall('GET', `${queryUrl}?q=${encodeURIComponent(soql)}`);
+  if (res.status === 200 && res.data?.records?.length) {
+    return res.data.records[0].Id;
+  }
+  return null;
+}
+
 /**
- * Resolve contato técnico (vlocity_cmt__Type__c = Technical) na Business.
- * Cria um se não existir — necessário para Vtal_Contact__c no Order (TRG).
+ * Resolve contato técnico (vlocity_cmt__Type__c = Technical) para massa pronta.
+ * Busca na Business e, opcionalmente, Organization/Billing (fallbackAccountIds).
+ * Cria na Business só se não achar em nenhuma conta — necessário em TRG (Vtal_Contact__c no Order).
  */
 async function resolveTechnicalContactForBusiness(apiCall, accountBussinessId, options = {}) {
   if (!accountBussinessId || !apiCall) return null;
 
   const queryUrl = options.queryUrl || '/services/data/v62.0/query';
   const sobjectsContact = options.sobjectsContactPath || '/services/data/v62.0/sobjects/Contact';
+  const accountIds = [
+    accountBussinessId,
+    ...(Array.isArray(options.fallbackAccountIds) ? options.fallbackAccountIds : []),
+  ]
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
+  const uniqueAccountIds = [...new Set(accountIds)];
 
-  const techQuery = `SELECT Id FROM Contact WHERE AccountId = '${accountBussinessId}' AND IsDeleted = false AND vlocity_cmt__Type__c = 'Technical' ORDER BY CreatedDate DESC LIMIT 1`;
-  const techRes = await apiCall('GET', `${queryUrl}?q=${encodeURIComponent(techQuery)}`);
-  if (techRes.status === 200 && techRes.data?.records?.length) {
-    return techRes.data.records[0].Id;
+  for (const accId of uniqueAccountIds) {
+    const techId = await queryContactId(apiCall, queryUrl, accId, true);
+    if (techId) {
+      if (accId !== accountBussinessId) {
+        console.log(`[E2E] Contato técnico encontrado na conta ${accId} (fallback).`);
+      }
+      return techId;
+    }
   }
 
-  console.log('[E2E] Contato técnico ausente na Business — criando (vlocity_cmt__Type__c=Technical)...');
+  for (const accId of uniqueAccountIds) {
+    const anyId = await queryContactId(apiCall, queryUrl, accId, false);
+    if (anyId) {
+      console.log(
+        `[E2E] Contato (sem Type=Technical) na conta ${accId}${accId !== accountBussinessId ? ' — fallback' : ''}.`,
+      );
+      return anyId;
+    }
+  }
+
+  if (options.skipCreate === true) return null;
+
+  console.log('[E2E] Nenhum contato nas contas da massa — tentando criar Technical na Business...');
   const createRes = await apiCall('POST', sobjectsContact, buildContactPayload(accountBussinessId, 'Technical'));
   if (createRes.status === 201 && createRes.data?.id) {
     return createRes.data.id;
   }
 
-  const anyQuery = `SELECT Id FROM Contact WHERE AccountId = '${accountBussinessId}' AND IsDeleted = false ORDER BY CreatedDate DESC LIMIT 1`;
-  const anyRes = await apiCall('GET', `${queryUrl}?q=${encodeURIComponent(anyQuery)}`);
-  if (anyRes.status === 200 && anyRes.data?.records?.length) {
-    return anyRes.data.records[0].Id;
+  const errMsg = createRes.data?.[0]?.message || createRes.data?.message || createRes.text?.slice(0, 200);
+  if (errMsg) {
+    console.warn('[E2E] CREATE Contact na Business falhou:', createRes.status, errMsg);
   }
   return null;
 }

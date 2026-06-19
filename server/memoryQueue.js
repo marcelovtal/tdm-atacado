@@ -20,6 +20,9 @@ function createMemoryJob(id, name, data) {
     progress: 0,
     state: 'waiting',
     getState: () => Promise.resolve(job.state),
+    updateProgress: async (p) => {
+      job.progress = p;
+    },
   };
   return job;
 }

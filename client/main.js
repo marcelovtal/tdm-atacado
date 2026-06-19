@@ -285,6 +285,25 @@ let cachedJobsForList = [];
 let cachedJobsMeta = { scope: 'user', historyDays: 7, showOwnerVt: false, showHistoryPanel: false };
 /** Páginas 1-based por seção (`current` = na fila, `history` = banco). */
 const jobsListPages = { current: 1, history: 1 };
+let jobDetailPollTimer = null;
+let jobsAutoRefreshTimer = null;
+const JOB_LIVE_POLL_MS = 10_000;
+const ORDER_STATUS_POLL_DEFAULT_ERROR =
+  'O status da ordem não foi alterado para "Concluída" no Salesforce dentro do tempo esperado.';
+
+const ORDER_STATUS_DISPLAY = {
+  Activated: 'Concluída',
+  'In Implementation': 'Em implantação',
+  Draft: 'Rascunho',
+};
+
+function formatOrderStatusDisplay(status) {
+  if (status == null || status === '') return status;
+  const raw = String(status).trim();
+  if (ORDER_STATUS_DISPLAY[raw]) return ORDER_STATUS_DISPLAY[raw];
+  const key = Object.keys(ORDER_STATUS_DISPLAY).find((k) => k.toLowerCase() === raw.toLowerCase());
+  return key ? ORDER_STATUS_DISPLAY[key] : raw;
+}
 
 function paginateSlice(items, page, pageSize) {
   const total = items.length;
@@ -411,7 +430,13 @@ function formatJobListLinkDedicadoSubpedidos(j) {
 }
 
 function formatJobListResultSummary(j) {
+  if (j.orderStatusPollFailed) {
+    const err = j.orderStatusPollError || ORDER_STATUS_POLL_DEFAULT_ERROR;
+    const short = err.length > 72 ? `${err.slice(0, 72)}…` : err;
+    return `Erro: ${short}`;
+  }
   const orderPart = j.orderNumber ? `Pedido: ${j.orderNumber}` : null;
+  const statusPart = j.orderStatus ? `Status: ${formatOrderStatusDisplay(j.orderStatus)}` : null;
   const pegaSummary = formatJobListPegaSummary(j);
   const ldSubpedidos = !pegaSummary ? formatJobListLinkDedicadoSubpedidos(j) : null;
   const subpedidoPart =
@@ -421,12 +446,12 @@ function formatJobListResultSummary(j) {
         ? `Subpedidos: ${ldSubpedidos}`
         : null;
 
-  if (orderPart && pegaSummary) return `${orderPart} · PEGA: ${pegaSummary}`;
-  if (orderPart && subpedidoPart) return `${orderPart} · ${subpedidoPart}`;
-  if (orderPart) return orderPart;
-  if (pegaSummary) return `PEGA: ${pegaSummary}`;
-  if (subpedidoPart) return subpedidoPart;
-  return null;
+  const parts = [];
+  if (orderPart) parts.push(orderPart);
+  if (statusPart) parts.push(statusPart);
+  if (pegaSummary) parts.push(`PEGA: ${pegaSummary}`);
+  else if (subpedidoPart) parts.push(subpedidoPart);
+  return parts.length ? parts.join(' · ') : null;
 }
 
 function formatJobListPegaSummary(j) {
@@ -514,6 +539,16 @@ function renderJobPegaDetailLines(r) {
   return '';
 }
 
+function jobExecutedAtMs(j) {
+  const raw = j?.finishedOn ?? j?.executedAt ?? j?.timestamp ?? 0;
+  const ms = typeof raw === 'number' ? raw : Date.parse(raw);
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function sortJobsByExecutionDate(jobs) {
+  jobs.sort((a, b) => jobExecutedAtMs(b) - jobExecutedAtMs(a));
+}
+
 function formatJobCardTime(j, showOwnerVt = false) {
   const ts = j.finishedOn || j.timestamp;
   const isHistory = String(j.id).startsWith('hist-');
@@ -597,12 +632,13 @@ function renderJobCard(j, { showOwnerVt = false } = {}) {
         (() => {
           const resultSummary = formatJobListResultSummary(j);
           if (resultSummary) {
-            return `<span class="job-result">${escapeHtml(resultSummary)}</span>`;
+            const errClass = j.orderStatusPollFailed ? ' job-result--error' : '';
+            return `<span class="job-result${errClass}">${escapeHtml(resultSummary)}</span>`;
           }
           return null;
         })() ||
-        (j.status === 'failed' && j.error
-            ? `<span class="job-result job-result--error">${escapeHtml(j.error.length > 72 ? `${j.error.slice(0, 72)}…` : j.error)}</span>`
+        ((j.status === 'failed' || j.status === 'user_error') && j.error
+            ? `<span class="job-result job-result--error${j.status === 'user_error' ? ' job-result--user-error' : ''}">${escapeHtml(j.error.length > 72 ? `${j.error.slice(0, 72)}…` : j.error)}</span>`
             : j.status === 'cancelled'
               ? `<span class="job-result job-result--muted">Cancelado</span>`
               : j.accountBillingId
@@ -649,19 +685,17 @@ function renderJobsList(jobs, meta = cachedJobsMeta) {
         merged.push(j);
       }
     }
-    merged.sort((a, b) => (b.finishedOn || b.timestamp || 0) - (a.finishedOn || a.timestamp || 0));
+    merged.sort((a, b) => jobExecutedAtMs(b) - jobExecutedAtMs(a));
     recentDone = merged;
   }
 
   const historyForPanel = showHistoryPanel ? [...historyJobs] : [];
-  if (showHistoryPanel && cardOpts.showOwnerVt && historyForPanel.length > 1) {
-    historyForPanel.sort((a, b) => {
-      const vt = String(a.ownerVt || '').localeCompare(String(b.ownerVt || ''), 'pt-BR', {
-        sensitivity: 'base',
-      });
-      if (vt !== 0) return vt;
-      return (b.displayNumber || 0) - (a.displayNumber || 0);
-    });
+  if (showHistoryPanel && historyForPanel.length > 1) {
+    if (!meta?.ownerFilter) {
+      sortJobsByExecutionDate(historyForPanel);
+    } else {
+      historyForPanel.sort((a, b) => (b.displayNumber || 0) - (a.displayNumber || 0));
+    }
   }
   const histMeta = paginateSlice(historyForPanel, jobsListPages.history, JOBS_PAGE_SIZE);
   jobsListPages.history = histMeta.page;
@@ -738,6 +772,7 @@ function statusLabel(s) {
     active: 'Executando',
     completed: 'Sucesso',
     failed: 'Falha',
+    user_error: 'Erro do usuário',
     cancelled: 'Cancelado',
   };
   return map[s?.toLowerCase()] || s || '—';
@@ -753,7 +788,19 @@ function escapeHtml(s) {
 /** Erro só após o job terminar em falha — nunca durante execução ou na fila. */
 function showJobError(job, result) {
   const state = (job.state || '').toLowerCase();
-  return state === 'failed' && !!(result?.error || job.failedReason);
+  return (state === 'failed' || state === 'user_error') && !!(result?.error || job.failedReason);
+}
+
+function hasOrderStatusPollFailed(job, result) {
+  const failed = !!(result?.orderStatusPollFailed ?? job.orderStatusPollFailed);
+  if (!failed) return false;
+  const status = formatOrderStatusDisplay(result?.orderStatus ?? job.orderStatus);
+  if (status === 'Concluída') return false;
+  return true;
+}
+
+function orderStatusPollErrorText(job, result) {
+  return result?.orderStatusPollError ?? job.orderStatusPollError ?? ORDER_STATUS_POLL_DEFAULT_ERROR;
 }
 
 function jobErrorText(job, result) {
@@ -783,6 +830,7 @@ async function loadJobs({ fromUiRefresh = false } = {}) {
     const { jobs, meta } = await api(`/jobs${qs}`);
     renderOwnerFilter(meta);
     renderJobsList(jobs, meta);
+    scheduleJobsAutoRefresh(jobs);
     ok = true;
   } catch (e) {
     list.innerHTML = `<p class="empty error">Erro ao carregar: ${escapeHtml(e.message)}</p>`;
@@ -840,38 +888,85 @@ function mergeJobResultFields(job) {
     subOrderOrderNumberPontaA: r.subOrderOrderNumberPontaA ?? job.subOrderOrderNumberPontaA ?? null,
     subOrderOrderNumberPontaB: r.subOrderOrderNumberPontaB ?? job.subOrderOrderNumberPontaB ?? null,
     subOrderOrderNumberEVC: r.subOrderOrderNumberEVC ?? job.subOrderOrderNumberEVC ?? null,
+    orderStatusPollFailed: r.orderStatusPollFailed ?? job.orderStatusPollFailed ?? false,
+    orderStatusPollError: r.orderStatusPollError ?? job.orderStatusPollError ?? null,
   };
 }
 
-async function openJobDetail(id) {
-  const modal = document.getElementById('modal');
-  const body = document.getElementById('modal-body');
-  const title = document.getElementById('modal-title');
-  modal.hidden = false;
-  const cached = cachedJobsForList.find((j) => String(j.id) === String(id));
-  title.textContent = cached
-    ? `Job ${formatJobDisplayLabel(cached, { showOwnerVt: !!cachedJobsMeta?.showOwnerVt })}`
-    : `Job #${id}`;
-  body.innerHTML = '<p>Carregando…</p>';
+function stopJobDetailPoll() {
+  if (jobDetailPollTimer) {
+    clearInterval(jobDetailPollTimer);
+    jobDetailPollTimer = null;
+  }
+}
 
-  try {
-    const job = await api(`/jobs/${id}`);
-    if (job.displayNumber != null) {
-      title.textContent = `Job ${formatJobDisplayLabel(
-        { ...job, ownerVt: job.ownerVt || job.data?.createdByVt },
-        { showOwnerVt: !!cachedJobsMeta?.showOwnerVt },
-      )}`;
+function isJobInFlight(job) {
+  const s = (job?.status || '').toLowerCase();
+  return s === 'waiting' || s === 'active';
+}
+
+function isJobTerminal(job) {
+  const s = (job?.status || '').toLowerCase();
+  return s === 'completed' || s === 'failed' || s === 'user_error' || s === 'cancelled';
+}
+
+/** Job saiu de fila/executando → estado final (refresh da lista, não durante poll SF). */
+function jobTransitionedToTerminal(prevJob, nextJob) {
+  if (!prevJob || !nextJob) return false;
+  if (String(prevJob.id) !== String(nextJob.id)) return false;
+  return isJobInFlight(prevJob) && isJobTerminal(nextJob);
+}
+
+function scheduleJobsAutoRefresh(jobs) {
+  const hasInFlight = (jobs || []).some(isJobInFlight);
+  if (!hasInFlight) {
+    if (jobsAutoRefreshTimer) {
+      clearInterval(jobsAutoRefreshTimer);
+      jobsAutoRefreshTimer = null;
     }
-    const r = mergeJobResultFields(job);
-    const hasOrderResult =
-      r.orderId ||
-      r.orderNumber ||
-      r.subOrderOrderNumber ||
-      jobHasLinkDedicadoSubpedidos(r) ||
-      r.pegaCaseId ||
-      r.pegaOrdemServicoOs ||
-      jobHasLinkDedicadoPegaLegs(r);
-    body.innerHTML = `
+    return;
+  }
+  if (jobsAutoRefreshTimer) return;
+  jobsAutoRefreshTimer = setInterval(async () => {
+    try {
+      const ownerVt = document.getElementById('jobs-filter-owner')?.value?.trim();
+      const qs = ownerVt ? `?ownerVt=${encodeURIComponent(ownerVt)}` : '';
+      const { jobs: freshJobs } = await api(`/jobs${qs}`);
+      const prevById = new Map(cachedJobsForList.map((j) => [String(j.id), j]));
+      const settled = freshJobs.some((j) => {
+        const prev = prevById.get(String(j.id));
+        return jobTransitionedToTerminal(prev, j);
+      });
+      if (settled) {
+        loadJobs({ fromUiRefresh: true });
+      } else {
+        scheduleJobsAutoRefresh(freshJobs);
+      }
+    } catch (_) {
+      /* próximo ciclo tenta de novo */
+    }
+  }, JOB_LIVE_POLL_MS);
+}
+
+function renderJobDetailBody(job, id) {
+  const r = mergeJobResultFields(job);
+  const hasOrderResult =
+    r.orderId ||
+    r.orderNumber ||
+    r.subOrderOrderNumber ||
+    jobHasLinkDedicadoSubpedidos(r) ||
+    r.pegaCaseId ||
+    r.pegaOrdemServicoOs ||
+    jobHasLinkDedicadoPegaLegs(r);
+  const isRunning = job.state === 'active' || job.state === 'waiting';
+  const statusPollFailed = hasOrderStatusPollFailed(job, r);
+  const progressHint = statusPollFailed
+    ? orderStatusPollErrorText(job, r)
+    : hasOrderResult
+      ? 'Aguardando atualização do status no Salesforce (atualiza a cada 10s)…'
+      : 'Em execução — o resultado aparecerá conforme o fluxo avança.';
+
+  return `
       <div class="detail-row">
         <div class="detail-label">Status</div>
         <div class="detail-value"><span class="job-status ${(job.state || '').toLowerCase()}">${statusLabel(job.state)}</span></div>
@@ -892,7 +987,7 @@ async function openJobDetail(id) {
         <div class="detail-value">
           ${r.orderId ? `OrderId: ${escapeHtml(r.orderId)}<br>` : ''}
           ${r.orderNumber ? `OrderNumber (pedido): ${escapeHtml(r.orderNumber)}<br>` : ''}
-          ${r.orderStatus ? `Status: ${escapeHtml(r.orderStatus)}<br>` : ''}
+          ${r.orderStatus ? `Status: ${escapeHtml(formatOrderStatusDisplay(r.orderStatus))}<br>` : ''}
           ${renderJobSubpedidoDetailLines(r)}
           ${renderJobPegaDetailLines(r)}
           ${r.pegaCaseId && !jobHasLinkDedicadoPegaLegs(r) ? `PEGA Caso: ${escapeHtml(r.pegaCaseId)}<br>` : ''}
@@ -907,17 +1002,22 @@ async function openJobDetail(id) {
       </div>
       ` : showJobError(job, r) ? `
       <div class="detail-row">
-        <div class="detail-label">Erro</div>
-        <div class="detail-value" style="color: var(--error);">${escapeHtml(jobErrorText(job, r))}</div>
+        <div class="detail-label">${(job.state || '').toLowerCase() === 'user_error' ? 'Erro do usuário' : 'Erro'}</div>
+        <div class="detail-value" style="color: ${(job.state || '').toLowerCase() === 'user_error' ? 'var(--warning, #f59e0b)' : 'var(--error)'};">${escapeHtml(jobErrorText(job, r))}</div>
       </div>
-      ` : job.state === 'active' || job.state === 'waiting' ? `
+      ` : statusPollFailed ? `
+      <div class="detail-row">
+        <div class="detail-label">Erro</div>
+        <div class="detail-value" style="color: var(--error);">${escapeHtml(orderStatusPollErrorText(job, r))}</div>
+      </div>
+      ` : isRunning ? `
       <div class="detail-row">
         <div class="detail-label">Progresso</div>
-        <div class="detail-value">Em execução — o resultado aparecerá quando o fluxo terminar.</div>
+        <div class="detail-value">${escapeHtml(progressHint)}</div>
       </div>
       ` : ''}
       ${
-        (job.state || job.status || '').toLowerCase() === 'completed' && !showJobError(job, r)
+        (job.state || job.status || '').toLowerCase() === 'completed' && !showJobError(job, r) && !statusPollFailed
           ? `
       <div class="detail-row detail-row--actions">
         <button type="button" class="btn btn-primary job-rerun-btn" data-job-id="${escapeHtml(String(id))}">Gerar massa novamente</button>
@@ -930,12 +1030,47 @@ async function openJobDetail(id) {
         Logs completos (stdout/stderr) ficam apenas no terminal da API ou do worker — não são exibidos aqui por desempenho e segurança.
       </p>
     `;
-  } catch (e) {
-    body.innerHTML = `<p class="error">Erro ao carregar job: ${escapeHtml(e.message)}</p>`;
-  }
+}
+
+async function openJobDetail(id) {
+  const modal = document.getElementById('modal');
+  const body = document.getElementById('modal-body');
+  const title = document.getElementById('modal-title');
+  stopJobDetailPoll();
+  modal.hidden = false;
+  const cached = cachedJobsForList.find((j) => String(j.id) === String(id));
+  title.textContent = cached
+    ? `Job ${formatJobDisplayLabel(cached, { showOwnerVt: !!cachedJobsMeta?.showOwnerVt })}`
+    : `Job #${id}`;
+  body.innerHTML = '<p>Carregando…</p>';
+
+  const refreshDetail = async () => {
+    try {
+      const job = await api(`/jobs/${id}`);
+      if (job.displayNumber != null) {
+        title.textContent = `Job ${formatJobDisplayLabel(
+          { ...job, ownerVt: job.ownerVt || job.data?.createdByVt },
+          { showOwnerVt: !!cachedJobsMeta?.showOwnerVt },
+        )}`;
+      }
+      body.innerHTML = renderJobDetailBody(job, id);
+      const state = (job.state || '').toLowerCase();
+      if (state !== 'active' && state !== 'waiting') {
+        stopJobDetailPoll();
+        loadJobs({ fromUiRefresh: true });
+      }
+    } catch (e) {
+      body.innerHTML = `<p class="error">Erro ao carregar job: ${escapeHtml(e.message)}</p>`;
+      stopJobDetailPoll();
+    }
+  };
+
+  await refreshDetail();
+  jobDetailPollTimer = setInterval(refreshDetail, JOB_LIVE_POLL_MS);
 }
 
 function closeModal() {
+  stopJobDetailPoll();
   document.getElementById('modal').hidden = true;
 }
 

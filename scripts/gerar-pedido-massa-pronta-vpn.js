@@ -42,6 +42,13 @@ const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/c
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 const { finalizePedidoWithOptionalPega } = require('../support/utils/finalizePedidoWithOptionalPega.js');
 const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
+const {
+  isIpConnectCpeEnabled,
+  resolveCpeProduct2Id,
+  resolveCpeOptionsFromEnv,
+  buildProductsValidationCpeAdvanceBodyVpn,
+  fetchCpePriceFromIp,
+} = require('../support/utils/salesforce/ipConnectCpePayload.js');
 
 const { createSalesforceScriptClient } = require('../support/utils/salesforce/scriptHttpClient.js');
 const { ensureQuoteApproved } = require('../support/utils/salesforce/ensureQuoteApproved.js');
@@ -586,6 +593,46 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
     }
   }
 
+  const quoteLineItemId = records[0]?.Id;
+  if (isIpConnectCpeEnabled() && quoteLineItemId) {
+    const cpeValorMensal = asNumeroString(VALOR_MENSAL_VPN, VALOR_MENSAL_VPN);
+    const cpeValorInstalacao = asNumeroString(VALOR_INSTALACAO_VPN, VALOR_INSTALACAO_VPN);
+    const cpeProduct2Id = resolveCpeProduct2Id();
+    let cpeOptions = resolveCpeOptionsFromEnv({ product2Id: cpeProduct2Id });
+    console.log(
+      '[E2E] 16c. CPE porte',
+      cpeOptions.porte,
+      '— Product2:',
+      cpeProduct2Id || '(não definido)',
+      '| Vtal_Seg_GetPriceCPE (opcional)...',
+    );
+    const cpePrice = await fetchCpePriceFromIp(apiCall, cpeOptions.porte, cpeProduct2Id);
+    if (cpePrice) {
+      cpeOptions = { ...cpeOptions, ...cpePrice };
+      console.log('   CPE preços:', cpePrice);
+    } else {
+      console.log('   CPE preços: defaults (trace cpe.har)');
+    }
+
+    console.log('[E2E] 16d. Vtal_Seg_ProductsValidation (advance + CPE) — ANTES da viabilidade...');
+    const cpeAdvanceRes = await apiCall(
+      'POST',
+      IP_PRODUCTS_VALIDATION,
+      buildProductsValidationCpeAdvanceBodyVpn(
+        quoteId,
+        quoteLineItemId,
+        cpeValorMensal,
+        cpeValorInstalacao,
+        vpnProduct.productCode,
+        cpeOptions,
+      ),
+    );
+    if (cpeAdvanceRes.status !== 200 && cpeAdvanceRes.status !== 201) {
+      fail('ProductsValidation(advance + CPE VPN) — child CPE não persistido', cpeAdvanceRes);
+    }
+    console.log('   CPE child Porte', cpeOptions.porte, 'registrado na cotação VPN');
+  }
+
   console.log('[E2E] 17. Vtal_ViabilityDetailsForQuote (viabilidade async)...');
   const viabilityRes = await apiCall('POST', IP_VIABILITY, { UserId: userId, QuoteId: quoteId, Debug: true });
   if (viabilityRes.status !== 200 && viabilityRes.status !== 201) fail('ViabilityDetailsForQuote', viabilityRes);
@@ -613,6 +660,9 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
 
   // 6) ProductsValidation save (FCVpnMplsChild)
   console.log('[E2E] 17b0. Vtal_Seg_ProductsValidation (function: save — FCVpnMplsChild)...');
+  if (isIpConnectCpeEnabled()) {
+    console.log('   (CPE já registrado no passo 16d — save sem reenviar child CPE)');
+  }
   const saveValidationRes = await apiCall(
     'POST',
     IP_PRODUCTS_VALIDATION,

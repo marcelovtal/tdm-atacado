@@ -37,6 +37,11 @@ const UI_BY_ID = {
     subtitle: 'Massa já cadastrada até BRM. Só Opp → Cotação → Pedido com produto Link Dedicado',
     formVariant: 'massa-pronta-triple',
   },
+  'massa-pronta-opp-pedido-link-dedicado-cpe': {
+    cardClass: 'choice-card--massa-pronta-cpe',
+    subtitle: 'Massa pronta LD + CPE porte P em Ponta A ou B antes da viabilidade',
+    formVariant: 'massa-pronta-triple',
+  },
   'massa-pronta-opp-pedido-link-dedicado-pega': {
     cardClass: 'choice-card--massa-pronta-link-dedicado-pega',
     subtitle: 'Mesmo fluxo Salesforce + PEGA nas duas pontas (designação Ponta A; agendamento Ponta B)',
@@ -55,6 +60,11 @@ const UI_BY_ID = {
   'massa-pronta-opp-pedido-vpn': {
     cardClass: 'choice-card--massa-pronta-vpn',
     subtitle: 'Massa já cadastrada até BRM. Só Opp → Cotação → Pedido com produto VPN',
+    formVariant: 'massa-pronta-triple',
+  },
+  'massa-pronta-opp-pedido-vpn-cpe': {
+    cardClass: 'choice-card--massa-pronta-cpe',
+    subtitle: 'Massa pronta VPN + CPE porte P antes da viabilidade (Opp → Cotação → Pedido)',
     formVariant: 'massa-pronta-triple',
   },
   'massa-pronta-opp-pedido-vpn-pega': {
@@ -94,10 +104,11 @@ export const MASS_CATEGORIES = [
   {
     id: 'link-dedicado',
     title: 'Link Dedicado',
-    hint: 'gerar-pedido-link-dedicado.js · gerar-pedido-massa-pronta-link-dedicado.js · gerar-pedido-massa-pronta-link-dedicado-config-pega.js · gerar-pedido-massa-pronta-link-dedicado-config-pega-ofs.js',
+    hint: 'gerar-pedido-link-dedicado.js · gerar-pedido-massa-pronta-link-dedicado.js · gerar-pedido-massa-pronta-link-dedicado-cpe.js · gerar-pedido-massa-pronta-link-dedicado-config-pega.js · gerar-pedido-massa-pronta-link-dedicado-config-pega-ofs.js',
     typeIds: [
       'lead-link-dedicado-pedido',
       'massa-pronta-opp-pedido-link-dedicado',
+      'massa-pronta-opp-pedido-link-dedicado-cpe',
       'massa-pronta-opp-pedido-link-dedicado-pega',
       'massa-pronta-opp-pedido-link-dedicado-pega-ofs',
     ],
@@ -105,10 +116,11 @@ export const MASS_CATEGORIES = [
   {
     id: 'vpn',
     title: 'VPN',
-    hint: 'gerar-pedido-vpn.js · gerar-pedido-massa-pronta-vpn.js · gerar-pedido-massa-pronta-vpn-connect-config-pega.js · gerar-pedido-massa-pronta-vpn-connect-config-pega-ofs.js',
+    hint: 'gerar-pedido-vpn.js · gerar-pedido-massa-pronta-vpn.js · gerar-pedido-massa-pronta-vpn-connect-cpe.js · gerar-pedido-massa-pronta-vpn-connect-config-pega.js · gerar-pedido-massa-pronta-vpn-connect-config-pega-ofs.js',
     typeIds: [
       'lead-vpn-pedido',
       'massa-pronta-opp-pedido-vpn',
+      'massa-pronta-opp-pedido-vpn-cpe',
       'massa-pronta-opp-pedido-vpn-pega',
       'massa-pronta-opp-pedido-vpn-pega-ofs',
     ],

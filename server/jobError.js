@@ -1,7 +1,7 @@
 /** Estados em que o job já terminou — único momento em que erro deve ir ao painel. */
 export function isTerminalJobState(state) {
   const s = String(state || '').toLowerCase();
-  return s === 'failed' || s === 'completed' || s === 'cancelled';
+  return s === 'failed' || s === 'user_error' || s === 'completed' || s === 'cancelled';
 }
 
 export function stripAnsi(text) {

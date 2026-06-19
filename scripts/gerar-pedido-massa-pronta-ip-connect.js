@@ -48,7 +48,6 @@ const {
   isIpConnectCpeEnabled,
   resolveCpeOptionsFromEnv,
   resolveCpeProduct2Id,
-  attachCpeToFcIpConnectChild,
   buildProductsValidationCpeAdvanceBody,
   buildProductsValidationViabilityAdvanceBody,
   fetchQuoteLineItemViabilityFields,
@@ -292,7 +291,6 @@ function buildProductsValidationBody(
   fn = 'advance',
   valorMensal = VALOR_MENSAL_IP_CONNECT,
   valorInstalacao = VALOR_INSTALACAO_IP_CONNECT,
-  cpeOptions = null
 ) {
   const mensal = asNumeroString(valorMensal, VALOR_MENSAL_IP_CONNECT);
   const instalacao = asNumeroString(valorInstalacao, VALOR_INSTALACAO_IP_CONNECT);
@@ -330,9 +328,6 @@ function buildProductsValidationBody(
       },
     },
   };
-  if (isIpConnectCpeEnabled()) {
-    attachCpeToFcIpConnectChild(FCIPConnectChild, quoteLineItemId, cpeOptions || resolveCpeOptionsFromEnv());
-  }
   return {
     quoteId,
     function: fn,
@@ -354,7 +349,6 @@ function buildProductsValidationAdvanceBody(
   quoteLineItemId,
   valorMensal = VALOR_MENSAL_IP_CONNECT,
   valorInstalacao = VALOR_INSTALACAO_IP_CONNECT,
-  cpeOptions = null
 ) {
   const mensal = asNumeroString(valorMensal, VALOR_MENSAL_IP_CONNECT);
   const instalacao = asNumeroString(valorInstalacao, VALOR_INSTALACAO_IP_CONNECT);
@@ -385,9 +379,6 @@ function buildProductsValidationAdvanceBody(
           },
         }
       : '';
-  if (FCIPConnectChild && isIpConnectCpeEnabled()) {
-    attachCpeToFcIpConnectChild(FCIPConnectChild, quoteLineItemId, cpeOptions || resolveCpeOptionsFromEnv());
-  }
   return {
     quoteId,
     function: 'advance',
@@ -711,10 +702,10 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
     // save + advance com FCIPConnectChild (Mensalidade/TaxaInstalacao) para cotação e subpedido com valor correto (trace Salvar e Avançar).
     console.log('[E2E] 17b0. Vtal_Seg_ProductsValidation (function: save — FCIPConnectChild com Mensalidade e TaxaInstalacao)...');
     if (isIpConnectCpeEnabled()) {
-      console.log('   + CPE child (Porte', cpeOptions.porte + ')');
+      console.log('   (CPE já registrado no passo 16c — save sem reenviar child CPE)');
     }
     console.log('   Payload save: Mensalidade="' + orderValorMensal + '", TaxaInstalacao="' + orderValorInstalacao + '" (nunca "null")');
-    const saveValidationRes = await apiCall('POST', IP_PRODUCTS_VALIDATION, buildProductsValidationBody(quoteId, quoteLineItemId, 'save', orderValorMensal, orderValorInstalacao, cpeOptions));
+    const saveValidationRes = await apiCall('POST', IP_PRODUCTS_VALIDATION, buildProductsValidationBody(quoteId, quoteLineItemId, 'save', orderValorMensal, orderValorInstalacao));
     if (saveValidationRes.status !== 200 && saveValidationRes.status !== 201) {
       fail('ProductsValidation(save) — cotação não consolidada; Valor Mensal/Instalação ficarão vazios no subpedido', saveValidationRes);
     }
@@ -732,7 +723,7 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
     }
 
     console.log('[E2E] 17c. Vtal_Seg_ProductsValidation (function: advance — FCIPConnectChild com Mensalidade/TaxaInstalacao para cotação e subpedido corretos)...');
-    const validationRes = await apiCall('POST', IP_PRODUCTS_VALIDATION, buildProductsValidationAdvanceBody(quoteId, quoteLineItemId, orderValorMensal, orderValorInstalacao, cpeOptions));
+    const validationRes = await apiCall('POST', IP_PRODUCTS_VALIDATION, buildProductsValidationAdvanceBody(quoteId, quoteLineItemId, orderValorMensal, orderValorInstalacao));
     if (validationRes.status !== 200 && validationRes.status !== 201) fail('ProductsValidation(advance)', validationRes);
 
     // NÃO fazer PATCH em QuoteLineItem: o fluxo correto (com taxa de instalação) deixa o produto principal

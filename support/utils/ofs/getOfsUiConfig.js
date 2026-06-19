@@ -1,5 +1,6 @@
 const { getOfsFixture } = require('./getOfsConfig.js');
 const { ensureOfsUiSession } = require('./ofsUiLogin.js');
+const { resolveOfsTechCandidates } = require('./ofsTechCandidates.js');
 
 function envTrim(name) {
   const v = process.env[name];
@@ -49,9 +50,10 @@ function getOfsUiConfigFromSession(session) {
     trust,
     user,
     window_id: envTrim('OFS_UI_WINDOW_ID') || `${Date.now()}-0000-0000`,
-    bucket_pid: envTrim('OFS_BUCKET_PID') || rest.bucket_pid || '3457',
-    tech_pid: envTrim('OFS_TECH_PID') || rest.tech_pid || '881',
-    tech_search: envTrim('OFS_TECH_SEARCH') || rest.tech_search || 'geraldo',
+    bucket_pid: envTrim('OFS_BUCKET_PID') || rest.bucket_pid || '',
+    tech_pid: envTrim('OFS_TECH_PID') || rest.tech_pid || '',
+    tech_search: envTrim('OFS_TECH_SEARCH') || rest.tech_search || '',
+    tech_candidates: resolveOfsTechCandidates(rest),
     dv,
     protocol: envTrim('OFS_UI_PROTOCOL') || '7',
   };

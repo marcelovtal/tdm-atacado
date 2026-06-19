@@ -162,7 +162,9 @@
 
             <div class="dashboard-chart-card">
 
-              <h3 class="dashboard-chart-card__title">Distribuição por tipo de massa</h3>
+              <h3 class="dashboard-chart-card__title">Distribuição por família de produto</h3>
+
+              <p class="card-hint dashboard-chart-card__hint">IP Connect, VPN, Link Dedicado e Outros (todos os fluxos agrupados).</p>
 
               <div class="dashboard-chart-wrap dashboard-chart-wrap--pie">
 
@@ -204,13 +206,13 @@
 
           <h2>Resultado dos testes</h2>
 
-          <p class="card-hint">Sucesso e falha com base no status gravado ao final de cada job.</p>
+          <p class="card-hint">Sucesso, falha técnica e erro do usuário (configuração/massa incorreta) — erros do usuário não entram na taxa de sucesso técnica.</p>
 
           <div class="dashboard-results">
 
             <div class="dashboard-chart-card">
 
-              <h3 class="dashboard-chart-card__title">Sucesso x Falha</h3>
+              <h3 class="dashboard-chart-card__title">Sucesso x Falha técnica x Erro do usuário</h3>
 
               <div class="dashboard-chart-wrap dashboard-chart-wrap--result">
 
@@ -224,9 +226,25 @@
 
               <article class="dashboard-result-kpi">
 
-                <p class="dashboard-result-kpi__label">Taxa de sucesso</p>
+                <p class="dashboard-result-kpi__label">Taxa de sucesso (técnica)</p>
 
                 <p class="dashboard-result-kpi__value" id="kpi-success-rate">—</p>
+
+              </article>
+
+              <article class="dashboard-result-kpi">
+
+                <p class="dashboard-result-kpi__label">Erros do usuário</p>
+
+                <p class="dashboard-result-kpi__value dashboard-result-kpi__value--warning" id="kpi-user-errors">—</p>
+
+              </article>
+
+              <article class="dashboard-result-kpi">
+
+                <p class="dashboard-result-kpi__label">Taxa erro do usuário</p>
+
+                <p class="dashboard-result-kpi__value dashboard-result-kpi__value--warning" id="kpi-user-error-rate">—</p>
 
               </article>
 
@@ -248,9 +266,17 @@
 
               <article class="dashboard-result-kpi">
 
-                <p class="dashboard-result-kpi__label">Falhas com erro</p>
+                <p class="dashboard-result-kpi__label">Falhas técnicas</p>
 
                 <p class="dashboard-result-kpi__value" id="kpi-critical">—</p>
+
+              </article>
+
+              <article class="dashboard-result-kpi dashboard-result-kpi--health" id="kpi-health-wrap" hidden>
+
+                <p class="dashboard-result-kpi__label">Saúde da automação</p>
+
+                <p class="dashboard-result-kpi__value" id="kpi-automation-health">—</p>
 
               </article>
 
@@ -264,7 +290,7 @@
 
     </div>
 
-    <script src="/dashboard.js"></script>
+    <script src="./dashboard.js"></script>
 
   </body>
 

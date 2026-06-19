@@ -10,9 +10,11 @@ const MASSA_PRONTA_TRIPLE_TYPES = new Set([
   'massa-pronta-opp-pedido-pega',
   'massa-pronta-opp-pedido-pega-ofs',
   'massa-pronta-opp-pedido-link-dedicado',
+  'massa-pronta-opp-pedido-link-dedicado-cpe',
   'massa-pronta-opp-pedido-link-dedicado-pega',
   'massa-pronta-opp-pedido-link-dedicado-pega-ofs',
   'massa-pronta-opp-pedido-vpn',
+  'massa-pronta-opp-pedido-vpn-cpe',
   'massa-pronta-opp-pedido-vpn-pega',
   'massa-pronta-opp-pedido-vpn-pega-ofs',
 ]);
@@ -21,6 +23,12 @@ const OFS_UI_MASS_TYPES = new Set([
   'massa-pronta-opp-pedido-pega-ofs',
   'massa-pronta-opp-pedido-vpn-pega-ofs',
   'massa-pronta-opp-pedido-link-dedicado-pega-ofs',
+]);
+
+const CPE_MASS_TYPES = new Set([
+  'massa-pronta-opp-pedido-ip-connect-cpe',
+  'massa-pronta-opp-pedido-vpn-cpe',
+  'massa-pronta-opp-pedido-link-dedicado-cpe',
 ]);
 
 function loadUserFixture() {
@@ -63,12 +71,27 @@ function getOfsUiEnvVars(environment) {
   const uiPass = pick(process.env.OFS_UI_PASSWORD, process.env.OFS_PASSWORD, ofs.ui_password);
   if (uiUser) vars.OFS_USERNAME = uiUser;
   if (uiPass) vars.OFS_PASSWORD = uiPass;
-  const techPid = pick(process.env.OFS_TECH_PID, ofs.tech_pid, '881');
-  const techSearch = pick(process.env.OFS_TECH_SEARCH, ofs.tech_search, 'geraldo');
-  const bucketPid = pick(process.env.OFS_BUCKET_PID, ofs.bucket_pid, '3457');
+  const org = pick(process.env.OFS_UI_ORGANIZATION, ofs.ui_organization);
+  if (org) vars.OFS_UI_ORGANIZATION = org;
+  const techPid = pick(process.env.OFS_TECH_PID, ofs.tech_pid);
+  const techSearch = pick(process.env.OFS_TECH_SEARCH, ofs.tech_search);
+  const bucketPid = pick(process.env.OFS_BUCKET_PID, ofs.bucket_pid);
   if (techPid) vars.OFS_TECH_PID = techPid;
   if (techSearch) vars.OFS_TECH_SEARCH = techSearch;
   if (bucketPid) vars.OFS_BUCKET_PID = bucketPid;
+  if (Array.isArray(ofs.tech_candidates) && ofs.tech_candidates.length) {
+    vars.OFS_TECH_CANDIDATES = JSON.stringify(ofs.tech_candidates);
+  }
+  return vars;
+}
+
+/** Product2 CPE por ambiente (override opcional via user.json → cpe.product2_id). */
+function getCpeEnvVars(environment) {
+  const block = envBlock(environment);
+  const cpe = block.cpe && typeof block.cpe === 'object' ? block.cpe : {};
+  const product2Id = pick(process.env.CPE_PRODUCT2_ID, cpe.product2_id);
+  const vars = {};
+  if (product2Id) vars.CPE_PRODUCT2_ID = product2Id;
   return vars;
 }
 
@@ -80,6 +103,9 @@ export function resolveMassEnvVars(massTypeId, environment) {
   const merged = {};
   if (OFS_UI_MASS_TYPES.has(massTypeId)) {
     Object.assign(merged, getOfsUiEnvVars(environment));
+  }
+  if (CPE_MASS_TYPES.has(massTypeId)) {
+    Object.assign(merged, getCpeEnvVars(environment));
   }
   return merged;
 }

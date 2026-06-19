@@ -75,5 +75,7 @@ export function resolveJobFieldsFromExecutionRow(row, parseStdoutFn) {
     subOrderOrderNumberPontaA: merged.subOrderOrderNumberPontaA ?? null,
     subOrderOrderNumberPontaB: merged.subOrderOrderNumberPontaB ?? null,
     subOrderOrderNumberEVC: merged.subOrderOrderNumberEVC ?? null,
+    orderStatusPollFailed: merged.orderStatusPollFailed === true,
+    orderStatusPollError: merged.orderStatusPollError ?? null,
   };
 }

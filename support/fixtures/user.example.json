@@ -19,11 +19,22 @@
       "username": "qa@ofsvtal1.test",
       "password": "26b9b936600d8f7eaf4548915539afa20a8133c605cd7c1b742cbed9e460",
       "resource_id": "TEC_TESTE_01",
+      "ui_organization": "ofsc-4651d6.test",
       "ui_username": "SEU_SUPERVISOR_OFS",
       "ui_password": "SUA_SENHA_SUPERVISOR_OFS",
-      "tech_pid": "881",
-      "tech_search": "geraldo",
-      "bucket_pid": "3457"
+      "tech_pid": "93",
+      "tech_search": "ANDERSON NA",
+      "bucket_pid": "489",
+      "tech_candidates": [
+        { "label": "ANDERSON NATALÍCIO SCHEFFER", "pid": "93", "search": "ANDERSON NA" },
+        { "label": "ANDRE HEIDER DE LIMA", "pid": "", "search": "ANDRE HEIDER" },
+        { "label": "Técnico Tester 2", "pid": "567", "search": "TESTER 2", "login": "TECQA002" },
+        { "label": "Técnico Tester 3", "pid": "568", "search": "TESTER 3", "login": "TECQA003" },
+        { "label": "Técnico Tester 4", "pid": "", "search": "TESTER 4", "login": "TECQA004" }
+      ]
+    },
+    "cpe": {
+      "product2_id": "01tHZ00000Gy7AIYAZ"
     },
     "massa_pronta": {
       "account_organization_id": "001HZ00000iv5PyYAI",
@@ -67,11 +78,21 @@
       "username": "qa@ofsvtal1.test",
       "password": "26b9b936600d8f7eaf4548915539afa20a8133c605cd7c1b742cbed9e460",
       "resource_id": "TEC_TESTE_01",
+      "ui_organization": "ofsc-7a9fa8.test",
       "ui_username": "vt422570",
       "ui_password": "SUA_SENHA_SUPERVISOR_OFS",
       "tech_pid": "881",
       "tech_search": "geraldo",
-      "bucket_pid": "3457"
+      "bucket_pid": "3457",
+      "tech_candidates": [
+        { "label": "GERALDO DE PADUA PAIVA", "pid": "881", "search": "geraldo" },
+        { "label": "MARCELO FAVARO CUNHA NISHYAMA", "pid": "625", "search": "MARCELO FAV", "login": "TT164943" },
+        { "label": "MARCOS GERALDO GOMES", "pid": "698", "search": "MARCOS GERALDO", "login": "TT013984" },
+        { "label": "RAFAEL IGOR BORDINI", "pid": "675", "search": "RAFAEL IGOR", "login": "TT071069" }
+      ]
+    },
+    "cpe": {
+      "product2_id": "01tHa000009yFwfIAE"
     },
     "massa_pronta": {
       "account_organization_id": "001Ha00000v7ZcxIAE",

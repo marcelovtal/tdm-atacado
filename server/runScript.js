@@ -5,6 +5,7 @@ import { createRequire } from 'module';
 import { config } from './config.js';
 import { registerJobProcess, unregisterJobProcess, wasJobCancelled } from './jobCancelRegistry.js';
 import { sanitizeJobErrorMessage } from './jobError.js';
+import { classifyUserJobError } from './classifyUserJobError.js';
 
 const require = createRequire(import.meta.url);
 const { resolvePedidoPanelStatus } = require('../support/utils/resolvePedidoPanelStatus.js');
@@ -120,14 +121,17 @@ export function parseScriptStdout(text) {
 
   const subOrderEmImplantacao = parseSubOrderEmImplantacao(text);
   const rawOrderStatus = parseOrderStatus(text);
+  const subOrderStatus = parseSubOrderStatus(text);
 
   return {
     orderId: panelSnapshot.orderId || parseOrderId(text),
     orderNumber: panelSnapshot.orderNumber || parseOrderNumber(text),
     orderStatus: resolvePedidoPanelStatus({
-      orderStatus: rawOrderStatus,
+      orderStatus: panelSnapshot.orderStatus || rawOrderStatus,
+      subOrderStatus: panelSnapshot.subOrderStatus || subOrderStatus,
       subOrderEmImplantacao,
     }),
+    subOrderStatus: panelSnapshot.subOrderStatus || subOrderStatus,
     subOrderEmImplantacao,
     accountBillingId: panelSnapshot.accountBillingId || parseAccountBillingId(text),
     accountBusinessId: panelSnapshot.accountBusinessId || parseAccountBusinessId(text),
@@ -154,6 +158,8 @@ export function parseScriptStdout(text) {
     ofsActivityId: parseLabeledField(text, 'OFS ActivityId'),
     ofsActivityStatus: parseLabeledField(text, 'OFS Status'),
     ofsInstalacaoConcluida: parseOfsInstalacaoConcluida(text),
+    orderStatusPollFailed: panelSnapshot.orderStatusPollFailed === true || parseOrderStatusPollFailed(text),
+    orderStatusPollError: panelSnapshot.orderStatusPollError || parseOrderStatusPollError(text),
   };
 }
 
@@ -206,6 +212,13 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
       const text = chunk.toString();
       stdout += text;
       process.stdout.write(`[SCRIPT ${scriptName}] ${text}`);
+      if (options.onStdoutChunk) {
+        try {
+          options.onStdoutChunk(stdout);
+        } catch (_) {
+          /* best-effort live snapshot */
+        }
+      }
     });
     child.stderr?.on('data', (chunk) => {
       const text = chunk.toString();
@@ -242,6 +255,27 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
       const success = !cancelled && code === 0;
       const parsed = parseScriptStdout(`${stdout}\n${stderr}`);
 
+      let error = cancelled
+        ? null
+        : success
+          ? null
+          : buildScriptFailureMessage(stderr, stdout, code);
+      let userError = false;
+      let userErrorCode = null;
+      if (!cancelled && !success) {
+        const classified = classifyUserJobError({
+          stderr,
+          stdout,
+          environment,
+          envVars,
+        });
+        if (classified?.userError) {
+          userError = true;
+          userErrorCode = classified.code;
+          error = classified.message;
+        }
+      }
+
       resolve({
         success,
         cancelled,
@@ -249,11 +283,9 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
         signal: signal || null,
         stdout,
         stderr,
-        error: cancelled
-          ? null
-          : success
-            ? null
-            : buildScriptFailureMessage(stderr, stdout, code),
+        error,
+        userError,
+        userErrorCode,
         ...parsed,
       });
     });
@@ -311,12 +343,36 @@ function parseOrderStatus(text) {
   return m ? m[1].trim() : null;
 }
 
+function parseSubOrderStatus(text) {
+  const panelSnapshot = parsePanelSnapshotFromText(text);
+  if (panelSnapshot?.subOrderStatus) return String(panelSnapshot.subOrderStatus).trim();
+  const block = extractPedidoGeradoBlock(text);
+  const src = block || text;
+  const m = src.match(/^\s+SubOrderStatus:\s*(.+)$/m);
+  return m ? m[1].trim() : null;
+}
+
 function parseSubOrderEmImplantacao(text) {
   const block = extractPedidoGeradoBlock(text);
   const src = block || text;
   const m = src.match(/Subpedido "Em implantação":\s*(sim|não|nao)/i);
   if (!m) return null;
   return /^sim$/i.test(m[1].trim());
+}
+
+function parseOrderStatusPollFailed(text) {
+  const block = extractPedidoGeradoBlock(text);
+  const src = block || text;
+  return /^\s+ERRO status ordem:/m.test(src) || /\[E2E\] ERRO:.*status da ordem não foi alterado/i.test(text);
+}
+
+function parseOrderStatusPollError(text) {
+  const block = extractPedidoGeradoBlock(text);
+  const src = block || text;
+  const fromBlock = src.match(/^\s+ERRO status ordem:\s*(.+)$/m);
+  if (fromBlock) return fromBlock[1].trim();
+  const fromLog = text.match(/\[E2E\] ERRO:\s*(.+)$/m);
+  return fromLog ? fromLog[1].trim() : null;
 }
 
 function parseAccountBillingId(text) {

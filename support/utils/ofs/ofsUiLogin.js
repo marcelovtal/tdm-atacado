@@ -7,7 +7,7 @@ const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36';
 
 const ORG_BY_HOST = {
-  'ofsvtal1.test.fs.ocs.oraclecloud.com': 'ofsc-7a9fa8.test',
+  'ofsvtal1.test.fs.ocs.oraclecloud.com': 'ofsc-4651d6.test',
   'ofsvtal3.test.fs.ocs.oraclecloud.com': 'ofsc-7a9fa8.test',
 };
 
@@ -301,7 +301,13 @@ async function loginPortalWithCredentials(baseUrl, cookies, portal, { username, 
 async function loginOfsUiSession(options = {}) {
   const { baseUrl, username, password, user } = resolveCredentials(options);
   const host = new URL(baseUrl).host;
-  const organization = options.organization || envTrim('OFS_UI_ORGANIZATION') || ORG_BY_HOST[host] || 'ofsc-7a9fa8.test';
+  const ofs = getOfsFixture() || {};
+  const organization =
+    options.organization ||
+    envTrim('OFS_UI_ORGANIZATION') ||
+    ofs.ui_organization ||
+    ORG_BY_HOST[host] ||
+    'ofsc-7a9fa8.test';
 
   let cookies = {};
   console.log(`[OFS-UI] login | ${baseUrl} | user=${username}`);

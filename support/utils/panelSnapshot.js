@@ -1,11 +1,14 @@
 /** Campos persistidos no painel FDL — espelham server/jobResultSnapshot.js */
 
+const { enrichPedidoResultForPanel } = require('./resolvePedidoPanelStatus.js');
+
 const PANEL_SNAPSHOT_PREFIX = 'FDL_PANEL_SNAPSHOT:';
 
 const PANEL_SNAPSHOT_KEYS = [
   'orderId',
   'orderNumber',
   'orderStatus',
+  'subOrderStatus',
   'accountOrganizationId',
   'accountBusinessId',
   'accountBillingId',
@@ -22,6 +25,8 @@ const PANEL_SNAPSHOT_KEYS = [
   'subOrderOrderNumberPontaA',
   'subOrderOrderNumberPontaB',
   'subOrderOrderNumberEVC',
+  'orderStatusPollFailed',
+  'orderStatusPollError',
 ];
 
 function buildPanelSnapshotPayload(result = {}) {
@@ -53,9 +58,19 @@ function parsePanelSnapshotFromText(text) {
   }
 }
 
+/** Emite snapshot parcial no stdout (painel FDL atualiza durante execução do job). */
+function emitPanelSnapshot(result = {}) {
+  const forPanel = enrichPedidoResultForPanel(result);
+  const snap = buildPanelSnapshotPayload(forPanel);
+  if (snap) {
+    console.log(`${PANEL_SNAPSHOT_PREFIX}${JSON.stringify(snap)}`);
+  }
+}
+
 module.exports = {
   PANEL_SNAPSHOT_PREFIX,
   PANEL_SNAPSHOT_KEYS,
   buildPanelSnapshotPayload,
   parsePanelSnapshotFromText,
+  emitPanelSnapshot,
 };

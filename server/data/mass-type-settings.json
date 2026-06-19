@@ -26,7 +26,7 @@
     },
     "massa-pronta-opp-pedido-ip-connect-cpe": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
@@ -38,11 +38,17 @@
     },
     "massa-pronta-opp-pedido-pega-ofs": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido-vpn": {
+      "environments": {
+        "ti": true,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-vpn-cpe": {
       "environments": {
         "ti": true,
         "trg": true
@@ -56,11 +62,17 @@
     },
     "massa-pronta-opp-pedido-vpn-pega-ofs": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido-link-dedicado": {
+      "environments": {
+        "ti": true,
+        "trg": true
+      }
+    },
+    "massa-pronta-opp-pedido-link-dedicado-cpe": {
       "environments": {
         "ti": true,
         "trg": true
@@ -74,7 +86,7 @@
     },
     "massa-pronta-opp-pedido-link-dedicado-pega-ofs": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },

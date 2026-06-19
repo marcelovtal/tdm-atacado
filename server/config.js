@@ -120,7 +120,7 @@ export const MASS_TYPES = [
     id: 'massa-pronta-opp-pedido-ip-connect-cpe',
     label: 'IP Connect Massa Pronta CPE',
     script: 'gerar-pedido-massa-pronta-ip-connect-cpe.js',
-    envVars: { INCLUDE_IP_CONNECT_CPE: '1', CPE_PRODUCT2_ID: '01tHa000009yFwfIAE' },
+    envVars: { INCLUDE_IP_CONNECT_CPE: '1' },
   },
   {
     id: 'massa-pronta-opp-pedido-pega',
@@ -138,6 +138,12 @@ export const MASS_TYPES = [
   },
   { id: 'massa-pronta-opp-pedido-vpn', label: 'VPN (massa pronta)', script: 'gerar-pedido-massa-pronta-vpn.js', envVars: {} },
   {
+    id: 'massa-pronta-opp-pedido-vpn-cpe',
+    label: 'VPN Massa Pronta CPE',
+    script: 'gerar-pedido-massa-pronta-vpn-connect-cpe.js',
+    envVars: { INCLUDE_VPN_CPE: '1' },
+  },
+  {
     id: 'massa-pronta-opp-pedido-vpn-pega',
     label: 'VPN (massa pronta + Config PEGA)',
     script: 'gerar-pedido-massa-pronta-vpn-connect-config-pega.js',
@@ -152,6 +158,12 @@ export const MASS_TYPES = [
     },
   },
   { id: 'massa-pronta-opp-pedido-link-dedicado', label: 'Link Dedicado (massa pronta)', script: 'gerar-pedido-massa-pronta-link-dedicado.js', envVars: {} },
+  {
+    id: 'massa-pronta-opp-pedido-link-dedicado-cpe',
+    label: 'Link Dedicado Massa Pronta CPE',
+    script: 'gerar-pedido-massa-pronta-link-dedicado-cpe.js',
+    envVars: { INCLUDE_LD_CPE: '1' },
+  },
   {
     id: 'massa-pronta-opp-pedido-link-dedicado-pega',
     label: 'Link Dedicado (massa pronta + Config PEGA)',

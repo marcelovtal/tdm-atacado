@@ -60,6 +60,8 @@ function chartOptions(extra = {}) {
 }
 
 function renderDashboard(stats) {
+  const results = stats.results || {};
+  const userError = Number(results.userError) || 0;
   const scopeHint =
     stats.scope === 'all'
       ? 'Visão geral de todos os QAs (histórico no banco).'
@@ -82,9 +84,24 @@ function renderDashboard(stats) {
 
   document.getElementById('kpi-success-rate').textContent =
     stats.results.total > 0 ? `${stats.results.successRate}%` : '—';
+  document.getElementById('kpi-user-errors').textContent = formatNumber(userError);
+  document.getElementById('kpi-user-error-rate').textContent =
+    results.total > 0 ? `${results.userErrorRate ?? 0}%` : '—';
   document.getElementById('kpi-results-avg').textContent = formatDuration(stats.results.avgDurationMs);
   document.getElementById('kpi-results-total').textContent = formatNumber(stats.results.total);
   document.getElementById('kpi-critical').textContent = formatNumber(stats.results.criticalFailures);
+
+  const healthWrap = document.getElementById('kpi-health-wrap');
+  const healthEl = document.getElementById('kpi-automation-health');
+  const health = stats.quality?.automationHealth;
+  if (healthWrap && healthEl && health) {
+    healthWrap.hidden = false;
+    const labels = { boa: 'Boa', atenção: 'Atenção', crítica: 'Crítica' };
+    healthEl.textContent = labels[health] || health;
+    healthEl.dataset.health = health;
+  } else if (healthWrap) {
+    healthWrap.hidden = true;
+  }
 
   destroyCharts();
 
@@ -195,17 +212,23 @@ function renderDashboard(stats) {
     })
   );
 
-  const success = stats.results.success || 0;
-  const failed = stats.results.failed || 0;
-  const cancelled = stats.results.cancelled || 0;
-  const doughnutLabels = ['Sucesso', 'Falha'];
+  const success = results.success || 0;
+  const failed = results.failed || 0;
+  const cancelled = results.cancelled || 0;
+  const doughnutLabels = ['Sucesso', 'Falha técnica'];
   const doughnutData = [success, failed];
   const doughnutColors = ['#22c55e', '#ef4444'];
+  if (userError > 0) {
+    doughnutLabels.push('Erro do usuário');
+    doughnutData.push(userError);
+    doughnutColors.push('#f59e0b');
+  }
   if (cancelled > 0) {
     doughnutLabels.push('Cancelado');
     doughnutData.push(cancelled);
     doughnutColors.push('#a1a1aa');
   }
+  const hasResultData = success + failed + userError + cancelled > 0;
   charts.push(
     new Chart(document.getElementById('chart-resultado-teste'), {
       type: 'doughnut',
@@ -213,7 +236,7 @@ function renderDashboard(stats) {
         labels: doughnutLabels,
         datasets: [
           {
-            data: success + failed + cancelled > 0 ? doughnutData : [0, 0],
+            data: hasResultData ? doughnutData : [0, 0],
             backgroundColor: doughnutColors,
             borderColor: '#ffffff',
             borderWidth: 2,

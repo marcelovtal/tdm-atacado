@@ -2,7 +2,8 @@
 
  * Payload do child CPE em ProductsValidation (FCIPConnectChild[`{qliId}.Child.CPE`]).
 
- * Trace: cpe.har / cpe2.har — advance com CPE ANTES da viabilidade; advance pós-viabilidade sem CPE.
+ * Trace: cpe.har / cpe2.har — CPE child enviado UMA vez (advance antes da viabilidade);
+ * save/advance posteriores e pós-viabilidade NÃO reenviam CPE (evita duplicar linhas).
 
  */
 
@@ -32,7 +33,9 @@ const DEFAULT_CPE = {
 
 
 
-/** Product2 CPE porte P — TRG: 01tHa000009yFwfIAE */
+/** Product2 CPE porte P — TI: 01tHZ00000Gy7AIYAZ | TRG: 01tHa000009yFwfIAE */
+
+const CPE_PRODUCT2_ID_TI = '01tHZ00000Gy7AIYAZ';
 
 const CPE_PRODUCT2_ID_TRG = '01tHa000009yFwfIAE';
 
@@ -44,12 +47,16 @@ const IP_GET_PRICE_CPE =
 
 
 
+function isTruthyEnvFlag(value) {
+  return value === '1' || value === 'true' || String(value || '').toLowerCase() === 'yes';
+}
+
 function isIpConnectCpeEnabled() {
-
-  const v = process.env.INCLUDE_IP_CONNECT_CPE;
-
-  return v === '1' || v === 'true' || String(v || '').toLowerCase() === 'yes';
-
+  return (
+    isTruthyEnvFlag(process.env.INCLUDE_IP_CONNECT_CPE)
+    || isTruthyEnvFlag(process.env.INCLUDE_VPN_CPE)
+    || isTruthyEnvFlag(process.env.INCLUDE_LD_CPE)
+  );
 }
 
 
@@ -64,7 +71,9 @@ function resolveCpeProduct2Id() {
 
   if (env === 'trg') return CPE_PRODUCT2_ID_TRG;
 
-  return String(process.env.CPE_PRODUCT2_ID_TI || '').trim() || null;
+  const tiOverride = String(process.env.CPE_PRODUCT2_ID_TI || '').trim();
+
+  return tiOverride || CPE_PRODUCT2_ID_TI;
 
 }
 
@@ -143,6 +152,10 @@ function buildCpeChildEntry(quoteLineItemId, options = {}) {
     ValorManutencao: String(opts.valorManutencao),
 
   };
+
+  if (opts.pontaLabel) {
+    entry.Ponta = opts.pontaLabel;
+  }
 
   if (opts.product2Id) {
 
@@ -262,7 +275,79 @@ function buildProductsValidationCpeAdvanceBody(
 
 }
 
+/** Parent VPN QLI + CPE child — advance ANTES da viabilidade (1 CPE no primeiro QLI). */
+function buildProductsValidationCpeAdvanceBodyVpn(
+  quoteId,
+  quoteLineItemId,
+  valorMensal,
+  valorInstalacao,
+  productCodeResolved,
+  cpeOptions = null,
+) {
+  const mensal = String(valorMensal ?? '');
+  const instalacao = String(valorInstalacao ?? '');
+  const FCVpnMplsChild = {
+    [quoteLineItemId]: {
+      Id: quoteLineItemId,
+      productCode: productCodeResolved || 'CONNECTIVITY_VPN_MPLS',
+      Mensalidade: mensal,
+      MensalidadeLPU: mensal,
+      TaxaInstalacao: instalacao,
+      TaxaInstalacaoLPU: instalacao,
+      PrazoInstalacao: 'Até 30 dias',
+    },
+  };
+  attachCpeToFcIpConnectChild(FCVpnMplsChild, quoteLineItemId, cpeOptions || resolveCpeOptionsFromEnv());
+  return {
+    quoteId,
+    function: 'advance',
+    IncludeAntiDDOSAndIpAdcional: '',
+    FC_LDQuoteInstallationAddress: '',
+    FCIPConnectChild: '',
+    FCVpnMplsChild,
+    CustomLWC1: '',
+  };
+}
 
+/** Parent ponta LD + CPE child — advance ANTES da viabilidade (1 CPE em Ponta A ou B). */
+function buildProductsValidationCpeAdvanceBodyLd(
+  quoteId,
+  quoteLineItemId,
+  valorMensal,
+  valorInstalacao,
+  productCodeResolved,
+  cpeOptions = null,
+) {
+  const mensal = String(valorMensal ?? '');
+  const instalacao = String(valorInstalacao ?? '');
+  const FC_LDQuoteInstallationAddress = {
+    [quoteLineItemId]: {
+      Id: quoteLineItemId,
+      productCode: productCodeResolved || 'CONNECTIVITY_DEDICATED_LINK_POINT',
+      Roteador: 'Não se Aplica',
+      TecnologiaAcesso: 'Ponto a ponto',
+      TipoInterface: 'Fast Ethernet',
+      ModalidadeTaxa: 'CobrancaTotal',
+      Mensalidade: mensal,
+      MensalidadeLPU: mensal,
+      TaxaInstalacao: instalacao,
+      TaxaInstalacaoLPU: instalacao,
+    },
+  };
+  attachCpeToFcIpConnectChild(FC_LDQuoteInstallationAddress, quoteLineItemId, {
+    ...(cpeOptions || resolveCpeOptionsFromEnv()),
+    pontaLabel: (cpeOptions && cpeOptions.pontaLabel) || undefined,
+  });
+  return {
+    quoteId,
+    function: 'advance',
+    IncludeAntiDDOSAndIpAdcional: '',
+    FC_LDQuoteInstallationAddress,
+    FCVpnMplsChild: '',
+    FCIPConnectChild: '',
+    CustomLWC1: '',
+  };
+}
 
 /** Advance pós-viabilidade — trace cpe2.har entry 638 (sem CPE no payload). */
 
@@ -444,6 +529,8 @@ module.exports = {
 
   DEFAULT_CPE,
 
+  CPE_PRODUCT2_ID_TI,
+
   CPE_PRODUCT2_ID_TRG,
 
   IP_GET_PRICE_CPE,
@@ -459,6 +546,10 @@ module.exports = {
   attachCpeToFcIpConnectChild,
 
   buildProductsValidationCpeAdvanceBody,
+
+  buildProductsValidationCpeAdvanceBodyVpn,
+
+  buildProductsValidationCpeAdvanceBodyLd,
 
   buildProductsValidationViabilityAdvanceBody,
 

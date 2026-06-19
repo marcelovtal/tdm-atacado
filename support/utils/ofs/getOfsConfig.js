@@ -1,6 +1,8 @@
 const { getEnvName, pickFirst, envScopedKey } = require('../../../config/credentials.js');
 const {
   OFS_HOST_BY_ENV,
+  OFS_UI_ORG_BY_ENV,
+  OFS_UI_DEFAULTS_BY_ENV,
   OFS_API_USERNAME_DEFAULT,
   OFS_API_PASSWORD_DEFAULT,
   OFS_RESOURCE_ID_DEFAULT,
@@ -43,6 +45,7 @@ function mergeOfsCredentials(fileOfs, envName) {
   const name = envName || getEnvName();
   const file = fileOfs && typeof fileOfs === 'object' ? fileOfs : {};
   const defaults = OFS_DEFAULTS[name] || OFS_DEFAULTS.ti;
+  const uiDefaults = OFS_UI_DEFAULTS_BY_ENV[name] || OFS_UI_DEFAULTS_BY_ENV.ti;
   const baseUrl = pickFirst(
     envTrim('OFS_BASE_URL'),
     envScopedKey('OFS', name, 'BASE_URL'),
@@ -87,9 +90,16 @@ function mergeOfsCredentials(fileOfs, envName) {
       file.ui_password,
       '',
     ),
-    tech_pid: pickFirst(envTrim('OFS_TECH_PID'), file.tech_pid, '881'),
-    tech_search: pickFirst(envTrim('OFS_TECH_SEARCH'), file.tech_search, 'geraldo'),
-    bucket_pid: pickFirst(envTrim('OFS_BUCKET_PID'), file.bucket_pid, '3457'),
+    ui_organization: pickFirst(
+      envTrim('OFS_UI_ORGANIZATION'),
+      envScopedKey('OFS', name, 'UI_ORGANIZATION'),
+      file.ui_organization,
+      OFS_UI_ORG_BY_ENV[name] || '',
+    ),
+    tech_pid: pickFirst(envTrim('OFS_TECH_PID'), file.tech_pid, uiDefaults.tech_pid, ''),
+    tech_search: pickFirst(envTrim('OFS_TECH_SEARCH'), file.tech_search, uiDefaults.tech_search, ''),
+    bucket_pid: pickFirst(envTrim('OFS_BUCKET_PID'), file.bucket_pid, uiDefaults.bucket_pid, ''),
+    tech_candidates: Array.isArray(file.tech_candidates) ? file.tech_candidates : [],
   };
 }
 

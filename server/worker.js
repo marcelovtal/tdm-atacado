@@ -7,6 +7,7 @@ import { initDatabase } from './database.js';
 import { persistJobExecution } from './jobPersistence.js';
 import { buildJobReturnPayload, jobStatusFromResult } from './jobOutcome.js';
 import { serializeJobResultSnapshot } from './jobResultSnapshot.js';
+import { createStdoutLiveSnapshotHandler } from './jobLiveSnapshot.js';
 
 import { config } from './config.js';
 import { logRedis, logRedisJob, getRedisConnectionSummary } from './monitor.js';
@@ -42,7 +43,10 @@ const worker = new Worker(
     const startedAt = Date.now();
     logRedisJob('active', `Processando script ${script}`, job.id, job.data, { attempt: job.attemptsMade + 1 });
     await job.updateProgress(10);
-    const result = await runVtalScript(script, environment, envVars, { jobId: job.id });
+    const result = await runVtalScript(script, environment, envVars, {
+      jobId: job.id,
+      onStdoutChunk: createStdoutLiveSnapshotHandler(job),
+    });
     await job.updateProgress(100);
     const dbSave = await persistJobExecution({
       jobId: String(job.id ?? ''),

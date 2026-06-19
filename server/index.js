@@ -17,6 +17,11 @@ import {
 } from './massTypeSettings.js';
 import { runVtalScript, parseScriptStdout } from './runScript.js';
 import {
+  createStdoutLiveSnapshotHandler,
+  extractLiveSnapshotFromProgress,
+  mergeLiveFieldsIntoJobFields,
+} from './jobLiveSnapshot.js';
+import {
   initDatabase,
   listJobExecutionsForJobsPanel,
   listJobExecutionOwnersForPanel,
@@ -53,6 +58,7 @@ import {
   sanitizeJobErrorMessage,
   dbExecutionMatchesJobRun,
 } from './jobError.js';
+import { resolveJobFailureDisplay } from './classifyUserJobError.js';
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
 const clientDistDir = process.env.CLIENT_DIST_PATH || path.join(serverDir, '../client/dist');
@@ -101,13 +107,20 @@ function formatHistoryJobRow(row) {
   const executedMs = parseExecutedAtMs(row.executed_at);
   const displayNumber =
     row.user_execution_seq != null ? Number(row.user_execution_seq) : null;
+  const failure = resolveJobFailureDisplay({
+    status: row.status || 'completed',
+    errorMessage: sanitizeJobErrorMessage(row.error_message),
+    stderr: row.stderr,
+    stdout: row.stdout,
+    environment: row.environment,
+  });
   return {
     id: `hist-${row.id}`,
     displayNumber: Number.isFinite(displayNumber) ? displayNumber : null,
     massTypeId: resolveMassTypeIdByLabel(row.mass_type_label),
     massType: row.mass_type_label || 'Histórico',
     environment: row.environment,
-    status: row.status || 'completed',
+    status: failure.status,
     progress: 100,
     timestamp: executedMs,
     processedOn: null,
@@ -115,7 +128,10 @@ function formatHistoryJobRow(row) {
     executedAt: executedMs,
     orderId: fields.orderId,
     orderNumber: fields.orderNumber,
-    error: sanitizeJobErrorMessage(row.error_message) || null,
+    orderStatus: fields.orderStatus,
+    orderStatusPollFailed: fields.orderStatusPollFailed === true,
+    orderStatusPollError: fields.orderStatusPollError ?? null,
+    error: failure.error,
     ownerVt: row.user_code ? normalizeVt(row.user_code) : null,
     accountBillingId: fields.accountBillingId,
     accountBusinessId: fields.accountBusinessId,
@@ -145,6 +161,7 @@ function formatHistoryJobRow(row) {
 function getEffectiveJobState(job, bullState) {
   if (job.returnvalue?.cancelled) return 'cancelled';
   if (bullState === 'completed' && job.returnvalue && job.returnvalue.success === false) {
+    if (job.returnvalue.userError) return 'user_error';
     return 'failed';
   }
   return bullState;
@@ -174,7 +191,10 @@ async function processJob(job) {
   const { script, environment, envVars } = job.data;
   const startedAt = Date.now();
   if (job.updateProgress) await job.updateProgress(10);
-  const result = await runVtalScript(script, environment, envVars, { jobId: job.id });
+  const result = await runVtalScript(script, environment, envVars, {
+    jobId: job.id,
+    onStdoutChunk: createStdoutLiveSnapshotHandler(job),
+  });
   if (job.updateProgress) await job.updateProgress(100);
   const dbSave = await persistJobExecution({
     jobId: String(job.id ?? ''),
@@ -367,8 +387,11 @@ app.get('/api/jobs', requireAuth, async (req, res) => {
     const mapQueueJob = async (job) => {
       const state = await job.getState();
       const effective = getEffectiveJobState(job, state);
+      const live = extractLiveSnapshotFromProgress(job.progress);
+      const base = formatJob(job);
+      const merged = mergeLiveFieldsIntoJobFields(base, live);
       return {
-        ...formatJob(job),
+        ...merged,
         status: effective,
         error: getEffectiveJobError(job, state),
         source: 'queue',
@@ -503,6 +526,13 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
       const displayNumber = await getUserExecutionSeqForExecution(row, historyDays);
       const fields = resolveJobFieldsFromExecutionRow(row, parseScriptStdout);
       const executedMs = parseExecutedAtMs(row.executed_at);
+      const failure = resolveJobFailureDisplay({
+        status: row.status || 'completed',
+        errorMessage: sanitizeJobErrorMessage(row.error_message),
+        stderr: row.stderr,
+        stdout: row.stdout,
+        environment: row.environment,
+      });
       return res.json(
         stripJobLogsFromResponse({
           id,
@@ -513,7 +543,7 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
             environment: row.environment,
             createdByVt: row.user_code ? normalizeVt(row.user_code) : null,
           },
-          state: row.status || 'completed',
+          state: failure.status,
           progress: 100,
           timestamp: executedMs,
           processedOn: null,
@@ -521,12 +551,15 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
           result: {
             ...fields,
             durationMs: row.duration_ms ?? null,
-            error: sanitizeJobErrorMessage(row.error_message) || null,
+            error: failure.error,
             source: 'db-history',
           },
           ...fields,
           orderNumber: fields.orderNumber,
-          failedReason: row.status === 'failed' ? (row.error_message || 'Falha registrada no histórico.') : null,
+          failedReason:
+            failure.status === 'failed' || failure.status === 'user_error'
+              ? failure.error || 'Falha registrada no histórico.'
+              : null,
         })
       );
     }
@@ -574,6 +607,8 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
       result.subOrderOrderNumberPontaA = rv.subOrderOrderNumberPontaA;
       result.subOrderOrderNumberPontaB = rv.subOrderOrderNumberPontaB;
       result.subOrderOrderNumberEVC = rv.subOrderOrderNumberEVC;
+      result.orderStatusPollFailed = rv.orderStatusPollFailed === true;
+      result.orderStatusPollError = rv.orderStatusPollError ?? null;
     }
     const rowByJob =
       isTerminalJobState(effectiveState) ? await getJobExecutionByJobId(String(job.id)) : null;
@@ -589,6 +624,9 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
         }
         for (const key of [
           'orderId',
+          'orderStatus',
+          'orderStatusPollFailed',
+          'orderStatusPollError',
           'accountBillingId',
           'accountBusinessId',
           'accountOrganizationId',
@@ -619,7 +657,11 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
     if (state === 'failed') {
       result.failedReason = sanitizeJobErrorMessage(job.failedReason);
     }
-    if (effectiveState === 'failed' && state === 'completed' && job.returnvalue?.success === false) {
+    if (
+      (effectiveState === 'failed' || effectiveState === 'user_error') &&
+      state === 'completed' &&
+      job.returnvalue?.success === false
+    ) {
       result.failedReason = getEffectiveJobError(job, state);
     }
     if (!isTerminalJobState(effectiveState)) {
@@ -628,6 +670,12 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
       }
       result.error = null;
       result.failedReason = null;
+      const live = extractLiveSnapshotFromProgress(job.progress);
+      if (live) {
+        const mergedLive = mergeLiveFieldsIntoJobFields(result, live);
+        Object.assign(result, mergedLive);
+        result.result = { ...(result.result || {}), ...mergedLive };
+      }
     }
     res.json(stripJobLogsFromResponse(result));
   } catch (err) {
@@ -649,7 +697,7 @@ function resolveMassTypeIdByLabel(label) {
 
 function formatJob(job) {
   const state = job.getState?.() ? undefined : (job.state || 'unknown');
-  return {
+  const base = {
     id: job.id,
     massTypeId: job.data?.massTypeId ?? null,
     massType: job.data?.massTypeLabel,
@@ -661,6 +709,7 @@ function formatJob(job) {
     finishedOn: job.finishedOn,
     orderId: job.returnvalue?.orderId ?? null,
     orderNumber: job.returnvalue?.orderNumber ?? null,
+    orderStatus: job.returnvalue?.orderStatus ?? null,
     error: null,
     accountBillingId: job.returnvalue?.accountBillingId ?? null,
     accountBusinessId: job.returnvalue?.accountBusinessId ?? null,
@@ -678,8 +727,11 @@ function formatJob(job) {
     subOrderOrderNumberPontaA: job.returnvalue?.subOrderOrderNumberPontaA ?? null,
     subOrderOrderNumberPontaB: job.returnvalue?.subOrderOrderNumberPontaB ?? null,
     subOrderOrderNumberEVC: job.returnvalue?.subOrderOrderNumberEVC ?? null,
+    orderStatusPollFailed: job.returnvalue?.orderStatusPollFailed === true,
+    orderStatusPollError: job.returnvalue?.orderStatusPollError ?? null,
     ownerVt: job.data?.createdByVt || null,
   };
+  return mergeLiveFieldsIntoJobFields(base, extractLiveSnapshotFromProgress(job.progress));
 }
 
 initDatabase()

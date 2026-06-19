@@ -2,6 +2,7 @@ import { canSeeAllJobs } from './auth/platformAdmin.js';
 import { normalizeVt } from './auth/vt.js';
 import { countActiveSessions, touchActiveSession } from './auth/session.js';
 import { getDashboardAggregates } from './database.js';
+import { groupByMassFamily } from './dashboardMassFamily.js';
 
 const WEEKDAY = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -53,8 +54,6 @@ function fillLast7Days(byDayRows) {
   return out;
 }
 
-const CHART_COLORS = ['#38bdf8', '#14b8a6', '#f59e0b', '#a855f7', '#2563eb', '#22c55e', '#ef4444', '#ec4899'];
-
 export async function buildDashboardStats(viewer) {
   const seeAll = canSeeAllJobs(viewer);
   const userCode = seeAll ? null : normalizeVt(viewer?.vt);
@@ -64,17 +63,20 @@ export async function buildDashboardStats(viewer) {
   const raw = await getDashboardAggregates(userCode);
 
   const success = Number(raw.statusCounts?.completed) || 0;
-  const failed = Number(raw.statusCounts?.failed) || 0;
+  const failedRaw = Number(raw.statusCounts?.failed) || 0;
+  const userErrorStatus = Number(raw.statusCounts?.user_error) || 0;
+  const legacyUserErrors = Number(raw.legacyUserErrors) || 0;
+  const userError = userErrorStatus + legacyUserErrors;
+  const failed = Math.max(0, failedRaw - legacyUserErrors);
   const cancelled = Number(raw.statusCounts?.cancelled) || 0;
   const total = Number(raw.total) || 0;
-  const measured = success + failed;
-  const successRate = measured > 0 ? Math.round((success / measured) * 100) : 0;
 
-  const byMassType = (raw.byMassType || []).map((row, i) => ({
-    label: row.label || 'Sem tipo',
-    count: Number(row.count) || 0,
-    color: CHART_COLORS[i % CHART_COLORS.length],
-  }));
+  const technicalMeasured = success + failed;
+  const successRate = technicalMeasured > 0 ? Math.round((success / technicalMeasured) * 100) : 0;
+  const terminalMeasured = success + failed + userError;
+  const userErrorRate = terminalMeasured > 0 ? Math.round((userError / terminalMeasured) * 100) : 0;
+
+  const byMassType = groupByMassFamily(raw.byMassType || []);
 
   const topUsers = seeAll
     ? (raw.topUsers || []).map((row) => ({
@@ -99,11 +101,27 @@ export async function buildDashboardStats(viewer) {
     results: {
       success,
       failed,
+      userError,
       cancelled,
       successRate,
+      userErrorRate,
       avgDurationMs: raw.avgDurationMs != null ? Number(raw.avgDurationMs) : null,
       total,
-      criticalFailures: Number(raw.criticalFailures) || failed,
+      criticalFailures: failed,
+    },
+    quality: {
+      technicalSuccessRate: successRate,
+      userErrorRate,
+      userErrors: userError,
+      technicalFailures: failed,
+      automationHealth:
+        technicalMeasured > 0
+          ? successRate >= 90
+            ? 'boa'
+            : successRate >= 75
+              ? 'atenção'
+              : 'crítica'
+          : null,
     },
   };
 }
