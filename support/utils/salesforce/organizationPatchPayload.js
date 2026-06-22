@@ -8,6 +8,7 @@
  *
  * Também grava vtal_LXD_FantasyName__c com o mesmo valor resolvido — obrigatório para geração de
  * pedido Link Dedicado / subpedidos em vários fluxos Vlocity.
+ * vtal_LXD_CustomerCategory__c fixo em Premium na conta Organization.
  */
 function resolveLxdFantasyName(fantasyName, options = {}) {
   const { accountName = '', companyFromLead = '', fallback = '' } = options || {};
@@ -25,6 +26,7 @@ function buildOrganizationPatchPayload(fantasyName, options = {}) {
 
   const payload = {
     vtal_LXD_OrganizationName__c: resolved,
+    vtal_LXD_CustomerCategory__c: 'Premium',
   };
   if (resolved) {
     payload.Name = resolved;
