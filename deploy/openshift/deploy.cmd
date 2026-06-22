@@ -22,7 +22,10 @@ oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1
 echo === Build da imagem ===
 oc start-build tdm-qa --from-dir=. --wait
 if errorlevel 1 (
-  echo Build falhou. Se quota estiver cheia, libere recursos no namespace e rode de novo.
+  echo.
+  echo BUILD FALHOU — pods continuam com imagem antiga.
+  echo Ver logs: oc logs build/tdm-qa-13 -n qualidade-automation-tdm-qa --tail=50
+  echo         oc get builds -n qualidade-automation-tdm-qa
   exit /b 1
 )
 

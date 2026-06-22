@@ -52,7 +52,7 @@ Na raiz do repo:
 deploy\openshift\deploy.cmd
 ```
 
-Faz: `oc apply` de todos os manifests (inclui keepalive) → garante `replicas=1` → `oc start-build` → aguarda rollout.
+Faz: `oc apply` de todos os manifests (inclui keepalive) → garante `replicas=1` → `oc start-build` → **`rollout restart`** (pods pegam a imagem nova) → aguarda rollout.
 
 Recursos por pod (API e Worker): `500m` CPU, `768Mi` RAM, probes HTTP em `/api/health`, `RollingUpdate`.
 
@@ -402,18 +402,38 @@ oc rollout restart deployment/tdm-qa-worker -n qualidade-automation-tdm-qa
 
 ## 9. Atualizar código (redeploy)
 
-Fluxo completo após alterações no código:
+**Forma recomendada** — na raiz do repo, com VPN e `oc login` feitos:
+
+```cmd
+cd C:\projeto\test-fdl
+deploy\openshift\deploy.cmd
+```
+
+Isso aplica manifests, faz build do código local (`oc start-build --from-dir=.`) e reinicia API + Worker para carregar a imagem `tdm-qa:latest` (sem depender de “cache” de pod antigo).
+
+**Validar:**
+
+```cmd
+oc get pods -l app=tdm-qa
+oc logs deployment/tdm-qa-api --tail=20
+```
+
+URL: https://atacado-qualidade-automation-tdm-qa.apps.ocparc-nprd.vtal.intra/login.html
+
+---
+
+### Fluxo manual (se o script falhar ou precisar liberar quota)
 
 ```cmd
 oc project qualidade-automation-tdm-qa
 
-REM 1. Liberar quota para o build
+REM 1. Liberar quota para o build (opcional)
 oc scale deployment/tdm-qa-worker --replicas=0
 
-REM 2. Build nova imagem
+REM 2. Build nova imagem (na raiz do repo)
 oc start-build tdm-qa --from-dir=. --wait
 
-REM 3. Subir API e Worker (os dois — senão o site fica fora do ar)
+REM 3. Reiniciar pods — obrigatório após build na tag latest
 oc scale deployment/tdm-qa-api deployment/tdm-qa-worker --replicas=1
 oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker
 
@@ -513,6 +533,23 @@ Ver seção **[8. Site fora do ar](#8-site-fora-do-ar-application-is-not-availab
 **Causa:** rede corporativa bloqueia repositórios Debian no cluster.
 
 **Solução:** Dockerfile atual usa multi-stage sem `apt-get`; `sqlite3` só em dev local.
+
+---
+
+### Build Docker falha em `playwright install` / `cdn.playwright.dev` timeout
+
+**Causa:** o cluster bloqueia download do Chromium do Playwright (mesmo problema de rede do `apt-get`).
+
+**Sintoma:** `oc get builds` mostra `Failed (DockerBuildFailed)`; `deploy.cmd` termina mas o código no ar **não muda** (imagem `latest` antiga).
+
+**Solução:** o Dockerfile **não** roda `playwright install` no build. Confira:
+
+```cmd
+oc get builds -n qualidade-automation-tdm-qa
+oc logs build/tdm-qa-13 -n qualidade-automation-tdm-qa --tail=30
+```
+
+Depois rode `deploy\openshift\deploy.cmd` de novo. Tipos de massa que usam login OFS via Playwright no worker precisam de sessão manual (`.auth/...`) ou rede liberada para o CDN.
 
 ---
 
