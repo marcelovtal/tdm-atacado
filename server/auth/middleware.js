@@ -53,3 +53,15 @@ export function requireManageAccess(req, res, next) {
   }
   next();
 }
+
+/** Restrito ao administrador da plataforma (ex.: cancelar jobs). */
+export function requirePlatformAdmin(req, res, next) {
+  if (config.auth.mode === 'off') return next();
+  if (!req.user?.vt) {
+    return res.status(401).json({ error: 'Não autenticado' });
+  }
+  if (!isPlatformAdmin(req.user.vt)) {
+    return res.status(403).json({ error: 'Apenas o administrador pode executar esta ação' });
+  }
+  next();
+}

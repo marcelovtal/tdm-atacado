@@ -7,11 +7,12 @@ import { logRedisJob } from './monitor.js';
 let jobIdCounter = 0;
 const jobs = new Map();
 
-function createMemoryJob(id, name, data) {
+function createMemoryJob(id, name, data, priority = 100) {
   const job = {
     id: String(id),
     name,
     data,
+    priority,
     timestamp: Date.now(),
     processedOn: null,
     finishedOn: null,
@@ -35,9 +36,24 @@ export function createMemoryQueue(processor) {
   const pendingJobIds = [];
   let isProcessing = false;
 
+  /** Próximo job: menor `priority` primeiro (1 = reserva); empate mantém ordem de chegada (FIFO). */
+  function shiftNextByPriority() {
+    if (!pendingJobIds.length) return null;
+    let bestIdx = 0;
+    let bestPriority = jobs.get(pendingJobIds[0])?.priority ?? 100;
+    for (let i = 1; i < pendingJobIds.length; i++) {
+      const p = jobs.get(pendingJobIds[i])?.priority ?? 100;
+      if (p < bestPriority) {
+        bestPriority = p;
+        bestIdx = i;
+      }
+    }
+    return pendingJobIds.splice(bestIdx, 1)[0];
+  }
+
   async function processNext() {
     if (isProcessing) return;
-    const nextJobId = pendingJobIds.shift();
+    const nextJobId = shiftNextByPriority();
     if (!nextJobId) return;
 
     const job = jobs.get(nextJobId);
@@ -74,12 +90,13 @@ export function createMemoryQueue(processor) {
   }
 
   return {
-    async add(name, data, _opts = {}) {
+    async add(name, data, opts = {}) {
       const id = ++jobIdCounter;
-      const job = createMemoryJob(id, name, data);
+      const priority = Number.isFinite(opts.priority) ? opts.priority : 100;
+      const job = createMemoryJob(id, name, data, priority);
       jobs.set(job.id, job);
       pendingJobIds.push(job.id);
-      logRedisJob('enqueue', `Job enfileirado: ${name}`, job.id, data, { backend: 'memory' });
+      logRedisJob('enqueue', `Job enfileirado: ${name}`, job.id, data, { backend: 'memory', priority });
       setImmediate(processNext);
       return { id: job.id };
     },

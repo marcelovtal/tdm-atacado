@@ -12,7 +12,7 @@
     "worker:qa": "cross-env FDL_APP_PROFILE=qa APP_PROFILE=qa node server/worker.js",
     "dev": "concurrently \"npm run server:local\" \"npm run worker:local\" \"npm run client:dev\"",
     "dev:local": "npm run dev",
-    "dev:qa": "concurrently \"npm run server:qa\" \"npm run worker:qa\" \"npm run client:dev\"",
+    "dev:qa": "cross-env DEV_AUTH_BYPASS=1 concurrently \"npm run server:qa\" \"npm run worker:qa\" \"npm run client:dev\"",
     "start:qa": "npm run server:qa",
     "client:dev": "vite",
     "client:build": "vite build",

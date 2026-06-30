@@ -10,6 +10,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'client/index.html'),
+        planejamento: resolve(__dirname, 'client/planejamento.html'),
         dashboard: resolve(__dirname, 'client/dashboard.html'),
         login: resolve(__dirname, 'client/login.html'),
         admin: resolve(__dirname, 'client/admin.html'),

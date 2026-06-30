@@ -24,6 +24,7 @@
           <nav class="top-menu" aria-label="Navegação principal">
             <span id="nav-user-vt" class="top-menu__vt" title="Usuário logado"></span>
             <a href="/index.html" class="top-menu__link top-menu__link--active" aria-current="page">Massa</a>
+            <a href="/planejamento.html" class="top-menu__link">Planejamento</a>
             <a href="/dashboard.html" class="top-menu__link" data-require-perm="dashboard" hidden>Dashboard</a>
             <a
               href="/admin.html"
@@ -124,6 +125,12 @@
                 </div>
                 <div class="field field-actions">
                   <button type="submit" id="btn-submit" class="btn btn-primary" aria-busy="false">Gerar Massa</button>
+                </div>
+                <div class="field field--sm sidebar-planning-link">
+                  <a href="/planejamento.html" class="sidebar-planning-link__anchor">
+                    <span class="sidebar-planning-link__icon" aria-hidden="true">📅</span>
+                    Agendar ou reservar ambiente
+                  </a>
                 </div>
                 <div id="last-run-summary" class="last-run-summary" hidden>
                   <p id="last-run-queue" class="last-run-summary__line"></p>

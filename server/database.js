@@ -13,6 +13,21 @@ import {
   getJobExecutionByIdMysql,
   getDashboardAggregatesMysql,
   getUserExecutionSeqForExecutionMysql,
+  insertScheduledJobMysql,
+  listScheduledJobsMysql,
+  getDueScheduledJobsMysql,
+  claimScheduledJobMysql,
+  completeScheduledJobMysql,
+  failScheduledJobMysql,
+  resetStuckScheduledJobsMysql,
+  getScheduledJobByIdMysql,
+  cancelScheduledJobByIdMysql,
+  insertReservationMysql,
+  getReservationForDateMysql,
+  listReservationsMysql,
+  getReservationByIdMysql,
+  deleteReservationByIdMysql,
+  getReservationHolderMysql,
 } from './database/mysqlStore.js';
 import { SQLITE_EXECUTED_AT_DT, toSqliteDatetimeParam } from './database/datetime.js';
 import {
@@ -100,6 +115,46 @@ async function initSqliteDatabase() {
   await run(`CREATE INDEX IF NOT EXISTS idx_job_executions_executed_at ON job_executions(executed_at DESC)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_job_executions_order_number ON job_executions(order_number)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_job_executions_job_id ON job_executions(job_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS scheduled_jobs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mass_type_id TEXT NOT NULL,
+      mass_type_label TEXT,
+      environment TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      extra_env TEXT,
+      scheduled_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_by_vt TEXT,
+      created_at TEXT NOT NULL,
+      triggered_at TEXT,
+      triggered_job_ids TEXT,
+      last_error TEXT
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_status_at ON scheduled_jobs(status, scheduled_at)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_created_by ON scheduled_jobs(created_by_vt)`);
+  try {
+    await run(`ALTER TABLE scheduled_jobs ADD COLUMN mass_types_json TEXT`);
+  } catch (err) {
+    if (!String(err?.message || '').includes('duplicate column name')) {
+      throw err;
+    }
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS environment_reservations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      environment TEXT NOT NULL,
+      reserved_date TEXT NOT NULL,
+      vt TEXT NOT NULL,
+      created_by_vt TEXT,
+      created_at TEXT NOT NULL,
+      UNIQUE(environment, reserved_date)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_env_reservation_date ON environment_reservations(reserved_date)`);
 
   const schemaCheck = await verifyJobExecutionsSchema({
     driver: 'sqlite',
@@ -429,4 +484,200 @@ export async function getDashboardAggregates(userCode = null) {
   if (!initialized) await initDatabase();
   if (useMysql) return getDashboardAggregatesMysql(userCode);
   return getDashboardAggregatesSqlite(userCode);
+}
+
+/* ===================== Agendamentos (scheduled_jobs) ===================== */
+
+/** SQLite: scheduled_at é gravado em ISO (UTC); normaliza para comparar com datetime('now') (UTC). */
+const SQLITE_SCHEDULED_AT_DT = `datetime(replace(substr(replace(scheduled_at, 'Z', ''), 1, 19), 'T', ' '))`;
+
+export async function createScheduledJob(p) {
+  if (!initialized) await initDatabase();
+  const massTypes = Array.isArray(p.massTypes) && p.massTypes.length ? p.massTypes : null;
+  const payload = {
+    massTypeId: p.massTypeId,
+    massTypeLabel: p.massTypeLabel ?? null,
+    massTypesJson: massTypes ? JSON.stringify(massTypes) : null,
+    environment: p.environment || 'ti',
+    quantity: Math.max(1, parseInt(p.quantity, 10) || 1),
+    extraEnvJson: JSON.stringify(p.extraEnv || {}),
+    scheduledAt: p.scheduledAt,
+    createdByVt: p.createdByVt ?? null,
+  };
+  if (useMysql) {
+    return insertScheduledJobMysql(payload);
+  }
+  const result = await run(
+    `
+      INSERT INTO scheduled_jobs (
+        mass_type_id, mass_type_label, mass_types_json, environment, quantity, extra_env,
+        scheduled_at, status, created_by_vt, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+    `,
+    [
+      payload.massTypeId,
+      payload.massTypeLabel,
+      payload.massTypesJson,
+      payload.environment,
+      payload.quantity,
+      payload.extraEnvJson,
+      toSqliteDatetimeParam(payload.scheduledAt),
+      payload.createdByVt,
+      toSqliteDatetimeParam(new Date()),
+    ],
+  );
+  return { id: result?.lastID ?? null };
+}
+
+export async function listScheduledJobs(options = {}) {
+  if (!initialized) await initDatabase();
+  const { userCode = null, isAdmin = false, limit = 200 } = options;
+  if (useMysql) return listScheduledJobsMysql({ userCode, isAdmin, limit });
+  const safeLimit = Math.max(1, Math.min(1000, parseInt(limit, 10) || 200));
+  const params = [];
+  let clause = '';
+  if (!isAdmin && userCode) {
+    clause = 'WHERE UPPER(created_by_vt) = UPPER(?)';
+    params.push(userCode);
+  }
+  params.push(safeLimit);
+  return all(
+    `SELECT * FROM scheduled_jobs ${clause} ORDER BY ${SQLITE_SCHEDULED_AT_DT} DESC LIMIT ?`,
+    params,
+  );
+}
+
+export async function getDueScheduledJobs(limit = 20) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return getDueScheduledJobsMysql(limit);
+  const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
+  return all(
+    `
+      SELECT * FROM scheduled_jobs
+      WHERE status = 'pending' AND ${SQLITE_SCHEDULED_AT_DT} <= datetime('now')
+      ORDER BY ${SQLITE_SCHEDULED_AT_DT} ASC
+      LIMIT ?
+    `,
+    [safeLimit],
+  );
+}
+
+export async function claimScheduledJob(id) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return claimScheduledJobMysql(id);
+  const result = await run(
+    `UPDATE scheduled_jobs SET status = 'processing', triggered_at = ? WHERE id = ? AND status = 'pending'`,
+    [toSqliteDatetimeParam(new Date()), id],
+  );
+  return (result?.changes ?? 0) === 1;
+}
+
+export async function completeScheduledJob(id, jobIds = []) {
+  if (!initialized) await initDatabase();
+  const jobIdsJson = JSON.stringify(Array.isArray(jobIds) ? jobIds.map(String) : []);
+  if (useMysql) return completeScheduledJobMysql(id, jobIdsJson);
+  await run(
+    `UPDATE scheduled_jobs SET status = 'done', triggered_job_ids = ?, last_error = NULL WHERE id = ?`,
+    [jobIdsJson, id],
+  );
+}
+
+export async function failScheduledJob(id, errorMessage) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return failScheduledJobMysql(id, errorMessage ?? null);
+  await run(`UPDATE scheduled_jobs SET status = 'error', last_error = ? WHERE id = ?`, [
+    errorMessage ?? null,
+    id,
+  ]);
+}
+
+export async function resetStuckScheduledJobs(minutes = 10) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return resetStuckScheduledJobsMysql(minutes);
+  const m = Math.max(1, parseInt(minutes, 10) || 10);
+  await run(
+    `UPDATE scheduled_jobs SET status = 'pending'
+     WHERE status = 'processing' AND ${SQLITE_SCHEDULED_AT_DT.replace('scheduled_at', 'triggered_at')} < datetime('now', '-${m} minutes')`,
+  );
+}
+
+export async function getScheduledJobById(id) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return getScheduledJobByIdMysql(id);
+  return get(`SELECT * FROM scheduled_jobs WHERE id = ? LIMIT 1`, [id]);
+}
+
+export async function cancelScheduledJobById(id) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return cancelScheduledJobByIdMysql(id);
+  const result = await run(
+    `UPDATE scheduled_jobs SET status = 'cancelled' WHERE id = ? AND status = 'pending'`,
+    [id],
+  );
+  return (result?.changes ?? 0) === 1;
+}
+
+/* ===================== Reserva de ambiente ===================== */
+
+export async function createReservation(p) {
+  if (!initialized) await initDatabase();
+  const payload = {
+    environment: p.environment,
+    reservedDate: p.reservedDate,
+    vt: p.vt,
+    createdByVt: p.createdByVt ?? p.vt,
+  };
+  if (useMysql) return insertReservationMysql(payload);
+  const result = await run(
+    `INSERT INTO environment_reservations (environment, reserved_date, vt, created_by_vt, created_at) VALUES (?, ?, ?, ?, ?)`,
+    [payload.environment, payload.reservedDate, payload.vt, payload.createdByVt, toSqliteDatetimeParam(new Date())],
+  );
+  return { id: result?.lastID ?? null };
+}
+
+export async function getReservationForDate(environment, reservedDate) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return getReservationForDateMysql(environment, reservedDate);
+  return get(
+    `SELECT id, environment, reserved_date, vt, created_by_vt, created_at
+     FROM environment_reservations WHERE environment = ? AND reserved_date = ? LIMIT 1`,
+    [environment, reservedDate],
+  );
+}
+
+export async function listReservations(fromDate) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return listReservationsMysql(fromDate);
+  return all(
+    `SELECT id, environment, reserved_date, vt, created_by_vt, created_at
+     FROM environment_reservations WHERE reserved_date >= ? ORDER BY reserved_date ASC, environment ASC`,
+    [fromDate],
+  );
+}
+
+export async function getReservationById(id) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return getReservationByIdMysql(id);
+  return get(
+    `SELECT id, environment, reserved_date, vt, created_by_vt, created_at
+     FROM environment_reservations WHERE id = ? LIMIT 1`,
+    [id],
+  );
+}
+
+export async function deleteReservationById(id) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return deleteReservationByIdMysql(id);
+  const result = await run(`DELETE FROM environment_reservations WHERE id = ?`, [id]);
+  return (result?.changes ?? 0) === 1;
+}
+
+export async function getReservationHolder(environment, reservedDate) {
+  if (!initialized) await initDatabase();
+  if (useMysql) return getReservationHolderMysql(environment, reservedDate);
+  const row = await get(
+    `SELECT vt FROM environment_reservations WHERE environment = ? AND reserved_date = ? LIMIT 1`,
+    [environment, reservedDate],
+  );
+  return row?.vt ?? null;
 }

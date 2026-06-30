@@ -87,12 +87,54 @@ const CREATE_MASS_TYPE_SETTINGS_TABLE = `
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 `;
 
+const CREATE_SCHEDULED_JOBS_TABLE = `
+  CREATE TABLE IF NOT EXISTS scheduled_jobs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    mass_type_id VARCHAR(64) NOT NULL,
+    mass_type_label VARCHAR(255) NULL,
+    environment VARCHAR(32) NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    extra_env LONGTEXT NULL,
+    scheduled_at DATETIME(3) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'pending',
+    created_by_vt VARCHAR(128) NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    triggered_at DATETIME(3) NULL,
+    triggered_job_ids LONGTEXT NULL,
+    last_error TEXT NULL,
+    INDEX idx_scheduled_jobs_status_at (status, scheduled_at),
+    INDEX idx_scheduled_jobs_created_by (created_by_vt)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+`;
+
+const CREATE_ENV_RESERVATIONS_TABLE = `
+  CREATE TABLE IF NOT EXISTS environment_reservations (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    environment VARCHAR(32) NOT NULL,
+    reserved_date DATE NOT NULL,
+    vt VARCHAR(128) NOT NULL,
+    created_by_vt VARCHAR(128) NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uq_env_reservation (environment, reserved_date),
+    INDEX idx_env_reservation_date (reserved_date)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+`;
+
 export async function initMysqlDatabase() {
   await run(CREATE_TABLE);
   await run(CREATE_ACL_TABLE);
   await run(CREATE_MASS_TYPE_SETTINGS_TABLE);
+  await run(CREATE_SCHEDULED_JOBS_TABLE);
+  await run(CREATE_ENV_RESERVATIONS_TABLE);
   try {
     await run('ALTER TABLE job_executions ADD COLUMN result_json LONGTEXT NULL');
+  } catch (err) {
+    if (!String(err?.message || '').includes('Duplicate column')) {
+      throw err;
+    }
+  }
+  try {
+    await run('ALTER TABLE scheduled_jobs ADD COLUMN mass_types_json LONGTEXT NULL');
   } catch (err) {
     if (!String(err?.message || '').includes('Duplicate column')) {
       throw err;
@@ -347,6 +389,139 @@ export async function replaceMassTypeSettingsMysql(types) {
   } finally {
     conn.release();
   }
+}
+
+/* ===================== Agendamentos (scheduled_jobs) ===================== */
+
+export async function insertScheduledJobMysql(p) {
+  const result = await run(
+    `
+      INSERT INTO scheduled_jobs (
+        mass_type_id, mass_type_label, mass_types_json, environment, quantity, extra_env,
+        scheduled_at, status, created_by_vt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    `,
+    [
+      p.massTypeId,
+      p.massTypeLabel ?? null,
+      p.massTypesJson ?? null,
+      p.environment,
+      p.quantity,
+      p.extraEnvJson ?? null,
+      toMysqlDatetimeParam(p.scheduledAt),
+      p.createdByVt ?? null,
+    ],
+  );
+  return { id: result?.insertId ?? null };
+}
+
+export async function listScheduledJobsMysql({ userCode = null, isAdmin = false, limit = 200 } = {}) {
+  const safeLimit = Math.max(1, Math.min(1000, parseInt(limit, 10) || 200));
+  const params = [];
+  let clause = '';
+  if (!isAdmin && userCode) {
+    clause = 'WHERE UPPER(created_by_vt) = UPPER(?)';
+    params.push(userCode);
+  }
+  return all(
+    `SELECT * FROM scheduled_jobs ${clause} ORDER BY scheduled_at DESC LIMIT ${safeLimit}`,
+    params,
+  );
+}
+
+export async function getDueScheduledJobsMysql(limit = 20) {
+  const safeLimit = Math.max(1, Math.min(100, parseInt(limit, 10) || 20));
+  return all(
+    `SELECT * FROM scheduled_jobs WHERE status = 'pending' AND scheduled_at <= NOW(3)
+     ORDER BY scheduled_at ASC LIMIT ${safeLimit}`,
+  );
+}
+
+export async function claimScheduledJobMysql(id) {
+  const result = await run(
+    `UPDATE scheduled_jobs SET status = 'processing', triggered_at = NOW(3)
+     WHERE id = ? AND status = 'pending'`,
+    [id],
+  );
+  return (result?.affectedRows ?? 0) === 1;
+}
+
+export async function completeScheduledJobMysql(id, jobIdsJson) {
+  await run(
+    `UPDATE scheduled_jobs SET status = 'done', triggered_job_ids = ?, last_error = NULL WHERE id = ?`,
+    [jobIdsJson ?? null, id],
+  );
+}
+
+export async function failScheduledJobMysql(id, errorMessage) {
+  await run(`UPDATE scheduled_jobs SET status = 'error', last_error = ? WHERE id = ?`, [
+    errorMessage ?? null,
+    id,
+  ]);
+}
+
+export async function resetStuckScheduledJobsMysql(minutes = 10) {
+  const m = Math.max(1, parseInt(minutes, 10) || 10);
+  await run(
+    `UPDATE scheduled_jobs SET status = 'pending'
+     WHERE status = 'processing' AND triggered_at < DATE_SUB(NOW(3), INTERVAL ${m} MINUTE)`,
+  );
+}
+
+export async function getScheduledJobByIdMysql(id) {
+  return getRow(`SELECT * FROM scheduled_jobs WHERE id = ? LIMIT 1`, [id]);
+}
+
+export async function cancelScheduledJobByIdMysql(id) {
+  const result = await run(
+    `UPDATE scheduled_jobs SET status = 'cancelled' WHERE id = ? AND status = 'pending'`,
+    [id],
+  );
+  return (result?.affectedRows ?? 0) === 1;
+}
+
+/* ===================== Reserva de ambiente ===================== */
+
+const RESERVATION_COLUMNS = `id, environment, DATE_FORMAT(reserved_date, '%Y-%m-%d') AS reserved_date, vt, created_by_vt, created_at`;
+
+export async function insertReservationMysql(p) {
+  const result = await run(
+    `INSERT INTO environment_reservations (environment, reserved_date, vt, created_by_vt) VALUES (?, ?, ?, ?)`,
+    [p.environment, p.reservedDate, p.vt, p.createdByVt ?? p.vt],
+  );
+  return { id: result?.insertId ?? null };
+}
+
+export async function getReservationForDateMysql(environment, reservedDate) {
+  return getRow(
+    `SELECT ${RESERVATION_COLUMNS} FROM environment_reservations WHERE environment = ? AND reserved_date = ? LIMIT 1`,
+    [environment, reservedDate],
+  );
+}
+
+export async function listReservationsMysql(fromDate) {
+  return all(
+    `SELECT ${RESERVATION_COLUMNS} FROM environment_reservations
+     WHERE reserved_date >= ? ORDER BY reserved_date ASC, environment ASC`,
+    [fromDate],
+  );
+}
+
+export async function getReservationByIdMysql(id) {
+  return getRow(`SELECT ${RESERVATION_COLUMNS} FROM environment_reservations WHERE id = ? LIMIT 1`, [id]);
+}
+
+export async function deleteReservationByIdMysql(id) {
+  const result = await run(`DELETE FROM environment_reservations WHERE id = ?`, [id]);
+  return (result?.affectedRows ?? 0) === 1;
+}
+
+export async function getReservationHolderMysql(environment, reservedDate) {
+  const row = await getRow(
+    `SELECT vt FROM environment_reservations WHERE environment = ? AND reserved_date = ? LIMIT 1`,
+    [environment, reservedDate],
+  );
+  return row?.vt ?? null;
 }
 
 function userFilter(userCode) {

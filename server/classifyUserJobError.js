@@ -68,21 +68,30 @@ export function classifyUserJobError({ stderr = '', stdout = '', environment = '
     };
   }
 
+  const hasCrossRefError =
+    /INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY/i.test(combined) ||
+    /insufficient access rights on cross-reference id/i.test(combined);
+
+  if (hasCrossRefError && (massaPronta || SF_ACCOUNT_ID.test(combined))) {
+    const accountId =
+      (combined.match(/cross-reference id:\s*(001[A-Za-z0-9]{12,15})/i) || [])[1] ||
+      extractAccountIdFromLogs(combined);
+    const idHint = accountId ? ` Conta: ${accountId}.` : '';
+    return {
+      userError: true,
+      code: 'MASS_ACCOUNT_ENV_MISMATCH',
+      message: massaPronta
+        ? `Conta da massa pronta não existe no ambiente ${envUpper}.${idHint} Use Organization/Business/Billing deste ambiente — IDs de TRG não funcionam em TI (e vice-versa).`
+        : `Referência de conta inválida ou inacessível no ambiente ${envUpper}.${idHint}`,
+    };
+  }
+
   if (/Nenhum contato técnico encontrado\/criado|Informe CONTACT_TECNICO_ID/i.test(combined)) {
     return {
       userError: true,
       code: 'MISSING_TECHNICAL_CONTACT',
       message:
         'Contato técnico ausente na massa pronta. Informe CONTACT_TECNICO_ID ou use massa com contatos do fluxo Lead/BRM.',
-    };
-  }
-
-  if (/INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY/i.test(combined) && /Contact/i.test(combined)) {
-    return {
-      userError: true,
-      code: 'CONTACT_CREATE_DENIED',
-      message:
-        'Não foi possível criar contato na conta Business. Informe CONTACT_TECNICO_ID de um contato existente neste ambiente.',
     };
   }
 

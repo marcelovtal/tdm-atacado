@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Planejamento - Geração de Massa QA</title>
+    <script src="/auth.js"></script>
+    <script>
+      if (!window.fdlVtalAuth || !fdlVtalAuth.guardPage()) { /* redirect login */ }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="header">
+        <div class="header-top">
+          <div>
+            <h1>Gerenciamento de Dados de Teste - VTAL</h1>
+            <p class="subtitle">Planejamento de execuções e reservas</p>
+          </div>
+          <nav class="top-menu" aria-label="Navegação principal">
+            <span id="nav-user-vt" class="top-menu__vt" title="Usuário logado"></span>
+            <a href="/index.html" class="top-menu__link">Massa</a>
+            <a href="/planejamento.html" class="top-menu__link top-menu__link--active" aria-current="page">Planejamento</a>
+            <a href="/dashboard.html" class="top-menu__link" data-require-perm="dashboard" hidden>Dashboard</a>
+            <a
+              href="/admin.html"
+              class="top-menu__settings"
+              data-require-platform-admin
+              hidden
+              title="Configurações de acesso"
+              aria-label="Configurações de acesso"
+            >
+              <svg class="top-menu__settings-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </a>
+            <button type="button" class="top-menu__link top-menu__link--logout" onclick="fdlVtalLogout()" aria-label="Encerrar sessão">Sair</button>
+          </nav>
+        </div>
+      </header>
+
+      <main class="main main--planning">
+        <div class="planning-page">
+          <div class="planning-page__hero">
+            <div>
+              <h2 class="planning-page__title">Planejamento</h2>
+              <p class="planning-page__lead">
+                Programe execuções de massa para um horário futuro ou reserve um ambiente para ter prioridade na fila.
+              </p>
+            </div>
+            <a href="/index.html" class="btn btn-secondary">Executar agora →</a>
+          </div>
+
+          <nav class="planning-tabs" role="tablist" aria-label="Tipo de planejamento">
+            <button type="button" class="planning-tabs__btn planning-tabs__btn--active" role="tab" id="tab-btn-schedule" aria-selected="true" aria-controls="tab-panel-schedule" data-tab="schedule">
+              <span class="planning-tabs__icon" aria-hidden="true">📅</span>
+              Agendar massa
+            </button>
+            <button type="button" class="planning-tabs__btn" role="tab" id="tab-btn-reservation" aria-selected="false" aria-controls="tab-panel-reservation" data-tab="reservation">
+              <span class="planning-tabs__icon" aria-hidden="true">⚡</span>
+              Reservar ambiente
+            </button>
+          </nav>
+
+          <!-- ===== Aba: Agendar ===== -->
+          <section id="tab-panel-schedule" class="planning-tab-panel" role="tabpanel" aria-labelledby="tab-btn-schedule">
+            <div class="planning-split">
+              <div class="planning-split__form">
+                <section class="card card-planning-form">
+                  <h3 class="card-planning-form__title">Novo agendamento</h3>
+                  <p class="card-planning-form__hint">Selecione um ou mais tipos de massa, informe as contas (se necessário) e escolha quando executar.</p>
+
+                  <form id="form-schedule" class="planning-schedule-form">
+                    <div class="planning-schedule-form__row">
+                      <div class="field field--sm">
+                        <label for="schedule-environment">Ambiente</label>
+                        <select id="schedule-environment" class="form-control" required>
+                          <option value="ti">TI</option>
+                          <option value="trg">TRG</option>
+                        </select>
+                      </div>
+                      <div class="field field--sm">
+                        <label for="schedule-quantity">Quantidade</label>
+                        <select id="schedule-quantity" class="form-control" required>
+                          <option value="1">1</option>
+                          <option value="3">3</option>
+                          <option value="5">5</option>
+                        </select>
+                      </div>
+                      <div class="field field--sm">
+                        <label for="schedule-at">Data e hora</label>
+                        <input type="datetime-local" id="schedule-at" class="form-control form-control--date" required />
+                      </div>
+                    </div>
+
+                    <div class="field">
+                      <label for="schedule-mass-filter">Tipos de massa</label>
+                      <input type="search" id="schedule-mass-filter" class="form-control planning-mass-filter" placeholder="Filtrar por nome…" autocomplete="off" />
+                    </div>
+                    <div id="schedule-mass-types-root" class="planning-mass-picker">
+                      <p class="empty">Carregando tipos de massa…</p>
+                    </div>
+
+                    <div id="schedule-massa-pronta-fields" class="planning-accounts" hidden>
+                      <div class="planning-accounts__head">
+                        <p class="planning-accounts__title">Contas da massa pronta</p>
+                        <span class="planning-accounts__env" id="schedule-env-badge">TRG</span>
+                      </div>
+                      <div class="planning-accounts__grid">
+                        <label class="mp-field">
+                          <span class="mp-field__label">Organization</span>
+                          <input type="text" id="schedule-account-org" class="mp-field__input form-control" placeholder="001…" autocomplete="off" />
+                        </label>
+                        <label class="mp-field">
+                          <span class="mp-field__label">Business</span>
+                          <input type="text" id="schedule-account-business" class="mp-field__input form-control" placeholder="001…" autocomplete="off" />
+                        </label>
+                        <label class="mp-field">
+                          <span class="mp-field__label">Billing</span>
+                          <input type="text" id="schedule-account-billing" class="mp-field__input form-control" placeholder="001…" autocomplete="off" />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div id="schedule-brm-fields" class="planning-accounts" hidden>
+                      <label class="mp-field">
+                        <span class="mp-field__label">Id da conta Billing (BRM)</span>
+                        <input type="text" id="schedule-account-brm" class="mp-field__input form-control" placeholder="001…" autocomplete="off" />
+                      </label>
+                    </div>
+
+                    <div class="planning-schedule-form__actions">
+                      <button type="submit" id="btn-schedule-submit" class="btn btn-primary">Criar agendamento</button>
+                    </div>
+                  </form>
+                  <div id="schedule-form-message" class="message" aria-live="off" hidden></div>
+                </section>
+              </div>
+
+              <div class="planning-split__list">
+                <section class="card card-planning-list">
+                  <div class="card-planning-list__head">
+                    <h3 class="card-planning-list__title">Agendamentos</h3>
+                    <button type="button" id="btn-refresh-schedules" class="btn btn-secondary btn-sm">Atualizar</button>
+                  </div>
+                  <div id="schedules-list" class="planning-list">
+                    <p class="empty">Carregando…</p>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </section>
+
+          <!-- ===== Aba: Reservar ===== -->
+          <section id="tab-panel-reservation" class="planning-tab-panel" role="tabpanel" aria-labelledby="tab-btn-reservation" hidden>
+            <div class="planning-split planning-split--reservation">
+              <div class="planning-split__form">
+                <section class="card card-planning-form card-planning-form--reservation">
+                  <h3 class="card-planning-form__title">Nova reserva</h3>
+                  <p class="card-planning-form__hint">
+                    Quem reserva um ambiente para um dia tem <strong>prioridade na fila</strong> naquele dia:
+                    seus jobs passam à frente dos demais que estiverem aguardando.
+                  </p>
+                  <div class="planning-reservation-form">
+                    <div class="field field--sm">
+                      <label for="reservation-env">Ambiente</label>
+                      <select id="reservation-env" class="form-control">
+                        <option value="ti">TI</option>
+                        <option value="trg">TRG</option>
+                      </select>
+                    </div>
+                    <div class="field field--sm">
+                      <label for="reservation-date">Data</label>
+                      <input type="date" id="reservation-date" class="form-control form-control--date" />
+                    </div>
+                    <button type="button" id="btn-reserve" class="btn btn-primary">Reservar ambiente</button>
+                  </div>
+                  <div id="reservation-message" class="message" aria-live="off" hidden></div>
+                </section>
+              </div>
+
+              <div class="planning-split__list">
+                <section class="card card-planning-list">
+                  <div class="card-planning-list__head">
+                    <h3 class="card-planning-list__title">Reservas ativas</h3>
+                    <button type="button" id="btn-refresh-reservations" class="btn btn-secondary btn-sm">Atualizar</button>
+                  </div>
+                  <div id="reservations-list" class="planning-list">
+                    <p class="empty">Carregando…</p>
+                  </div>
+                </section>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        if (window.fdlVtalAuth) fdlVtalAuth.refreshNavFromServer();
+      });
+    </script>
+    <script type="module" src="/planejamento.js"></script>
+  </body>
+</html>

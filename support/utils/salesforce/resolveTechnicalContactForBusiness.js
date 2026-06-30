@@ -1,4 +1,5 @@
 const { buildContactPayload } = require('./contactPayload.js');
+const { formatMassAccountEnvErrorMessage } = require('./assertMassaProntaAccounts.js');
 
 async function queryContactId(apiCall, queryUrl, accountId, technicalOnly = false) {
   const typeFilter = technicalOnly ? " AND vlocity_cmt__Type__c = 'Technical'" : '';
@@ -56,8 +57,14 @@ async function resolveTechnicalContactForBusiness(apiCall, accountBussinessId, o
     return createRes.data.id;
   }
 
-  const errMsg = createRes.data?.[0]?.message || createRes.data?.message || createRes.text?.slice(0, 200);
-  if (errMsg) {
+  const errBody = Array.isArray(createRes.data) ? createRes.data[0] : createRes.data;
+  const errCode = errBody?.errorCode || '';
+  const errMsg = errBody?.message || createRes.text?.slice(0, 200) || '';
+  if (/INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE/i.test(`${errCode} ${errMsg}`)) {
+    const crossRefId = (String(errMsg).match(/001[A-Za-z0-9]{12,15}/i) || [])[0] || accountBussinessId;
+    const env = options.environment || process.env.ENVIRONMENT || 'ti';
+    console.error(formatMassAccountEnvErrorMessage('Business', crossRefId, env));
+  } else if (errMsg) {
     console.warn('[E2E] CREATE Contact na Business falhou:', createRes.status, errMsg);
   }
   return null;

@@ -14,9 +14,25 @@ const {
 const { logPegaCurl, logPegaResponse } = require('./pegaLogging.js');
 const { delay } = require('../helpers/waitHelper.js');
 
+function pegaIntEnv(name, fallback) {
+  const n = parseInt(String(process.env[name] ?? '').trim(), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** HTTP transitório (servidor sobrecarregado / indisponível momentaneamente) — vale retry, não aborta o fluxo. */
+function isTransientHttpStatus(status) {
+  return status === 408 || status === 425 || status === 429 || (status >= 500 && status <= 599);
+}
+
 /**
  * Link Dedicado: obterdadosordem pode voltar [] até o caso existir no PEGA — repetir GET.
  * Depois do 1º sucesso, opcionalmente exige pzInsKey igual a expectedChaveCaseOrdem.
+ *
+ * Retry inteligente (só fluxo LD): backoff exponencial com jitter + teto por espera e orçamento total
+ * de tempo, retentando também HTTP transitório (429/5xx) e exceções de rede em vez de abortar o fluxo todo.
+ * Ajustável por env: PEGA_OBTER_DADOS_BACKOFF_PCT (fator %, default 150 = 1,5x),
+ * PEGA_OBTER_DADOS_MAX_RETRY_MS (teto por espera, default 15000),
+ * PEGA_OBTER_DADOS_BUDGET_MS (orçamento total, default 240000), PEGA_OBTER_DADOS_HTTP_RETRY (default 4).
  */
 async function fetchObterDadosOrdemWithRetry(getObterDadosOrdemFn, parseOpts, options = {}) {
   const {
@@ -27,21 +43,28 @@ async function fetchObterDadosOrdemWithRetry(getObterDadosOrdemFn, parseOpts, op
     maxTriesOverride = null,
     retryMsOverride = null,
   } = options;
-  const defaultMaxTries = Math.max(
-    1,
-    parseInt(String(process.env.PEGA_OBTER_DADOS_EMPTY_MAX_TRIES || '10').trim(), 10) || 10,
-  );
+  const defaultMaxTries = Math.max(1, pegaIntEnv('PEGA_OBTER_DADOS_EMPTY_MAX_TRIES', 10) || 10);
   const maxTries = isLinkDedicated
     ? Math.max(1, maxTriesOverride != null ? parseInt(String(maxTriesOverride).trim(), 10) || defaultMaxTries : defaultMaxTries)
     : 1;
-  const defaultRetryMs = Math.max(
-    0,
-    parseInt(String(process.env.PEGA_OBTER_DADOS_EMPTY_RETRY_MS || '2500').trim(), 10) || 2500,
-  );
-  const retryMs =
+  const defaultRetryMs = Math.max(0, pegaIntEnv('PEGA_OBTER_DADOS_EMPTY_RETRY_MS', 2500) || 2500);
+  const baseRetryMs =
     retryMsOverride != null
       ? Math.max(0, parseInt(String(retryMsOverride).trim(), 10) || 0)
       : defaultRetryMs;
+
+  const backoffFactor = Math.max(1, pegaIntEnv('PEGA_OBTER_DADOS_BACKOFF_PCT', 150) / 100);
+  const maxRetryMs = Math.max(baseRetryMs, pegaIntEnv('PEGA_OBTER_DADOS_MAX_RETRY_MS', 20000));
+  const budgetMs = isLinkDedicated ? Math.max(0, pegaIntEnv('PEGA_OBTER_DADOS_BUDGET_MS', 600000)) : 0;
+  const httpRetryMax = Math.max(0, pegaIntEnv('PEGA_OBTER_DADOS_HTTP_RETRY', 4));
+  const prefix = logTag ? ` ${logTag}` : '';
+
+  /** Espera da tentativa i (1-based): cresce exponencialmente até o teto, com jitter de até +20%. */
+  const computeDelay = (attemptIdx) => {
+    const grown = baseRetryMs * backoffFactor ** Math.max(0, attemptIdx - 1);
+    const capped = Math.min(maxRetryMs, grown);
+    return Math.round(capped + capped * 0.2 * Math.random());
+  };
 
   const classifyBad = (parsed, data) => {
     const empty = !Array.isArray(data) || data.length === 0;
@@ -56,24 +79,60 @@ async function fetchObterDadosOrdemWithRetry(getObterDadosOrdemFn, parseOpts, op
     return { bad: false, reason: '' };
   };
 
+  const startedAt = Date.now();
+  /** Para antes da próxima espera quando estourou o orçamento total de tempo. */
+  const budgetExhausted = () => budgetMs > 0 && Date.now() - startedAt >= budgetMs;
+
   let last = null;
   let parsed = null;
+  let httpRetries = 0;
   for (let i = 1; i <= maxTries; i++) {
-    last = await getObterDadosOrdemFn();
-    if (!last.res.ok) {
-      return { ...last, parsed: null };
+    try {
+      last = await getObterDadosOrdemFn();
+    } catch (err) {
+      const msg = err?.message || String(err);
+      if (!isLinkDedicated || i === maxTries || budgetExhausted()) {
+        return { res: { ok: false, status: 0 }, text: msg, data: null, parsed: null };
+      }
+      const waitMs = computeDelay(i);
+      console.log(`[PEGA]${prefix} obterdadosordem (${i}/${maxTries}): exceção de rede "${msg}" — aguardando ${waitMs}ms`);
+      await delay(waitMs);
+      continue;
     }
+
+    if (!last.res.ok) {
+      const retryHttp =
+        isLinkDedicated &&
+        isTransientHttpStatus(last.res.status) &&
+        httpRetries < httpRetryMax &&
+        i < maxTries &&
+        !budgetExhausted();
+      if (!retryHttp) {
+        return { ...last, parsed: null };
+      }
+      httpRetries++;
+      const waitMs = computeDelay(i);
+      console.log(
+        `[PEGA]${prefix} obterdadosordem (${i}/${maxTries}): HTTP ${last.res.status} transitório — retry ${httpRetries}/${httpRetryMax} em ${waitMs}ms`,
+      );
+      await delay(waitMs);
+      continue;
+    }
+
     parsed = parseObterDadosOrdemResponse(last.data, parseOpts);
     const { bad, reason } = classifyBad(parsed, last.data);
     if (!bad) {
       return { ...last, parsed };
     }
-    if (!isLinkDedicated || i === maxTries) {
+    if (!isLinkDedicated || i === maxTries || budgetExhausted()) {
+      if (budgetExhausted() && isLinkDedicated) {
+        console.log(`[PEGA]${prefix} obterdadosordem: orçamento de ${budgetMs}ms esgotado — desistindo do poll.`);
+      }
       return { ...last, parsed };
     }
-    const prefix = logTag ? ` ${logTag}` : '';
-    console.log(`[PEGA]${prefix} obterdadosordem (${i}/${maxTries}): ${reason} — aguardando ${retryMs}ms`);
-    await delay(retryMs);
+    const waitMs = computeDelay(i);
+    console.log(`[PEGA]${prefix} obterdadosordem (${i}/${maxTries}): ${reason} — aguardando ${waitMs}ms`);
+    await delay(waitMs);
   }
   return { ...last, parsed };
 }
@@ -289,14 +348,14 @@ function ldObterPontaBRetryEnv() {
     process.env.PEGA_LD_OBTER_PONTA_A_MAX_TRIES ??
     process.env.PEGA_LD_OBTER_PONTA_B_MAX_TRIES ??
     process.env.PEGA_OBTER_DADOS_EMPTY_MAX_TRIES ??
-    '30';
+    '60';
   const retryMsRaw =
     process.env.PEGA_LD_OBTER_PONTA_A_RETRY_MS ??
     process.env.PEGA_LD_OBTER_PONTA_B_RETRY_MS ??
     process.env.PEGA_OBTER_DADOS_EMPTY_RETRY_MS ??
     '4000';
   return {
-    maxTries: Math.max(15, parseInt(String(maxTriesRaw).trim(), 10) || 30),
+    maxTries: Math.max(15, parseInt(String(maxTriesRaw).trim(), 10) || 60),
     retryMs: Math.max(2000, parseInt(String(retryMsRaw).trim(), 10) || 4000),
   };
 }
@@ -580,7 +639,21 @@ async function runPegaDesignacaoEConfiguracao(opts) {
   }
   let parsed1 = first.parsed;
   if (!parsed1?.pyMemo || !parsed1.chaveCaseOrdem) {
-    throw new Error('PEGA: não foi possível obter pyMemo/ChaveCaseOrdem do obterdadosordem');
+    const os = String(ordemServico).trim();
+    const rowCount = Array.isArray(first.data) ? first.data.length : 0;
+    const faltando = !parsed1?.pyMemo && !parsed1?.chaveCaseOrdem
+      ? 'pyMemo e ChaveCaseOrdem'
+      : !parsed1?.pyMemo
+        ? 'pyMemo'
+        : 'ChaveCaseOrdem';
+    const detalhe = rowCount === 0
+      ? 'obterdadosordem retornou [] (caso ainda não propagado do CRM para o PEGA)'
+      : `obterdadosordem retornou ${rowCount} linha(s), mas sem ${faltando} no caso de ativação`;
+    throw new Error(
+      `PEGA: não foi possível obter pyMemo/ChaveCaseOrdem do obterdadosordem (ORDEMSERVICO=${os}; ${detalhe}). ` +
+        'Se for propagação lenta no PEGA, aumente PEGA_OBTER_DADOS_BUDGET_MS / PEGA_LD_OBTER_PONTA_A_MAX_TRIES ' +
+        'ou PEGA_LD_DELAY_BEFORE_PONTA_A_MS.',
+    );
   }
   console.log(
     '[PEGA]   Caso ativação: ChaveCaseOrdem=' +
@@ -2510,6 +2583,8 @@ module.exports = {
   buildCaseViewRefreshPaths,
   buildConfiguracaoDeRedePaths,
   buildConfigurarEvcPaths,
+  fetchObterDadosOrdemWithRetry,
+  isTransientHttpStatus,
   PEGA_TOTAL_STEPS,
   PEGA_TOTAL_STEPS_VPN,
   getPegaTotalSteps,

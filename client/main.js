@@ -610,7 +610,7 @@ function renderJobCard(j, { showOwnerVt = false } = {}) {
   const canCancel =
     typeof window !== 'undefined' &&
     window.fdlVtalAuth &&
-    window.fdlVtalAuth.hasPermission('cancelJobs');
+    window.fdlVtalAuth.isPlatformAdmin();
   const isWaiting = status === 'waiting';
   const isActive = status === 'active';
   const cancelBtn =
@@ -1074,11 +1074,12 @@ function closeModal() {
   document.getElementById('modal').hidden = true;
 }
 
-async function submitForm(e) {
-  e.preventDefault();
-  const form = e.target;
-  const msg = document.getElementById('form-message');
-
+/**
+ * Lê e valida a seleção do formulário (tipo de massa, ambiente, quantidade, contas).
+ * Retorna { environment, massType, quantity, extraEnv } ou null (após exibir a mensagem de erro).
+ */
+function collectMassSelection(msg) {
+  const form = document.getElementById('form-mass');
   const environment = form.environment.value;
   const massType = form.massType.value;
   const quantity = parseInt(form.quantity.value, 10) || 1;
@@ -1086,7 +1087,7 @@ async function submitForm(e) {
 
   if (!massType || !selectedMeta) {
     showMessage(msg, 'Selecione um tipo de massa disponível.', 'error');
-    return;
+    return null;
   }
 
   let extraEnv = {};
@@ -1094,7 +1095,7 @@ async function submitForm(e) {
     const { org, business, billing } = resolveMassaProntaTripleEnv(environment);
     if (!org || !business || !billing) {
       showMessage(msg, 'Informe Organization, Business e Billing da massa pronta.', 'error');
-      return;
+      return null;
     }
     extraEnv = {
       START_FROM_QUOTE: '1',
@@ -1106,12 +1107,20 @@ async function submitForm(e) {
     const billing = document.getElementById('accountBillingIdBrmOnly')?.value?.trim();
     if (!billing) {
       showMessage(msg, 'Informe o Id da conta Billing para ativar no BRM.', 'error');
-      return;
+      return null;
     }
     extraEnv = { ACCOUNT_BILLING_ID: billing };
   }
 
   const effectiveQuantity = selectedMeta.formVariant === 'brm-massa-pronta' ? 1 : quantity;
+  return { environment, massType, quantity: effectiveQuantity, extraEnv };
+}
+
+async function submitForm(e) {
+  e.preventDefault();
+  const msg = document.getElementById('form-message');
+  const selection = collectMassSelection(msg);
+  if (!selection) return;
 
   setSubmitLoading(true);
   showMessage(
@@ -1123,7 +1132,7 @@ async function submitForm(e) {
   try {
     const { jobs, message } = await api('/jobs', {
       method: 'POST',
-      body: JSON.stringify({ environment, massType, quantity: effectiveQuantity, extraEnv }),
+      body: JSON.stringify(selection),
     });
     setLastRunSummary(message, jobs.length);
     showMessage(msg, 'Enfileirado com sucesso.', 'success');

@@ -35,6 +35,7 @@ const { extractLinkDedicadoSubpedidos } = require('../support/utils/extractLinkD
 const { patchMassaProntaAccounts } = require('../support/utils/salesforce/patchMassaProntaAccounts.js');
 const { patchLinkDedicadoMasterOrder } = require('../support/utils/salesforce/patchLinkDedicadoMasterOrder.js');
 const { resolveTechnicalContactForBusiness } = require('../support/utils/salesforce/resolveTechnicalContactForBusiness.js');
+const { assertMassaProntaAccountsExist } = require('../support/utils/salesforce/assertMassaProntaAccounts.js');
 const { refreshLinkDedicadoSubpedidosForPega } = require('../support/utils/refreshLinkDedicadoSubpedidosForPega.js');
 const {
   isIpConnectCpeEnabled,
@@ -2133,7 +2134,7 @@ function getAccountIdsFromEnv() {
 }
 
 /** Busca contato técnico na Business (Organization/Billing como fallback; cria na Business se necessário). */
-async function resolveContactFromBusiness(instanceUrl, accessToken, cookie, accountIdsOrBusinessId) {
+async function resolveContactFromBusiness(instanceUrl, accessToken, cookie, accountIdsOrBusinessId, options = {}) {
   const apiCall = (method, path, body) => api(instanceUrl, accessToken, method, path, body, cookie);
   const isObject = accountIdsOrBusinessId && typeof accountIdsOrBusinessId === 'object';
   const accountBussinessId = isObject ? accountIdsOrBusinessId.accountBussinessId : accountIdsOrBusinessId;
@@ -2144,6 +2145,8 @@ async function resolveContactFromBusiness(instanceUrl, accessToken, cookie, acco
     queryUrl: QUERY_URL,
     sobjectsContactPath: SOBJECTS_CONTACT,
     fallbackAccountIds,
+    skipCreate: options.skipCreate,
+    environment: options.environment,
   });
 }
 
@@ -2308,12 +2311,24 @@ async function main() {
         }
       }
       let accountIds = skipLead || (await runLeadFlow(instanceUrl, accessToken, cookie));
+      if (skipLead && accountIds?.accountOrganizationId) {
+        const apiCallValidate = (method, path, body) => api(instanceUrl, accessToken, method, path, body, cookie);
+        await assertMassaProntaAccountsExist(apiCallValidate, accountIds, {
+          environment: envName,
+          sobjectsAccountPath: SOBJECTS_ACCOUNT,
+        });
+      }
       if (accountIds && accountIds.contactTecnicoId == null && accountIds.accountBussinessId) {
         console.log('[E2E] Resolvendo contato técnico (Business → Organization → Billing)...');
-        accountIds.contactTecnicoId = await resolveContactFromBusiness(instanceUrl, accessToken, cookie, accountIds);
+        accountIds.contactTecnicoId = await resolveContactFromBusiness(instanceUrl, accessToken, cookie, accountIds, {
+          skipCreate: Boolean(skipLead),
+          environment: envName,
+        });
         if (!accountIds.contactTecnicoId) {
           console.error(
-            '[E2E] Nenhum contato técnico encontrado/criado. Informe CONTACT_TECNICO_ID no env ou use massa com contatos (fluxo Lead/BRM).',
+            skipLead
+              ? '[E2E] Nenhum contato encontrado nas contas da massa pronta. Informe CONTACT_TECNICO_ID de um contato existente neste ambiente.'
+              : '[E2E] Nenhum contato técnico encontrado/criado. Informe CONTACT_TECNICO_ID no env ou use massa com contatos (fluxo Lead/BRM).',
           );
           process.exit(1);
         }

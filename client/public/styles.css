@@ -1166,6 +1166,23 @@ body {
   color: var(--text);
 }
 
+a.btn,
+a.btn-secondary,
+a.btn-primary {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+a.btn-secondary {
+  color: var(--text);
+}
+
+a.btn-secondary:hover {
+  color: var(--text);
+}
+
 .btn-secondary:hover:not(:disabled) {
   background: var(--border);
 }
@@ -1655,4 +1672,601 @@ body {
 .modal-body .log-section h4 {
   margin: 0 0 0.5rem;
   font-size: 0.85rem;
+}
+
+/* ===================== Agendamento ===================== */
+.schedule-box {
+  margin-top: 0.5rem;
+}
+.schedule-box__toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent, #2563eb);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.schedule-box__panel {
+  margin-top: 0.6rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--surface-2, #f8fafc);
+}
+.schedule-box__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0;
+}
+.schedule-box__hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--muted, #64748b);
+}
+.schedule-box__hint--top {
+  margin-bottom: 0.15rem;
+}
+.schedule-mass-types {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 10rem;
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+}
+.schedule-mass-types__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.schedule-mass-types__item--inactive {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.schedule-mass-types__item input {
+  margin-top: 0.15rem;
+  flex-shrink: 0;
+}
+.schedule-mass-types__label {
+  color: var(--text, #1e293b);
+}
+
+/* Inputs de data/hora — alinhados ao select */
+.form-control {
+  width: 100%;
+  max-width: 14rem;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.field--sm .form-control {
+  max-width: 11rem;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.8125rem;
+  line-height: 1.35;
+}
+.form-control--date {
+  min-height: 2.125rem;
+  color-scheme: light;
+}
+.form-control:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--vtal-neon) 55%, var(--border));
+  box-shadow: 0 0 0 2px rgba(255, 238, 0, 0.18);
+}
+
+.job-status.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+.job-status.processing {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.job-status.done {
+  background: #dcfce7;
+  color: #166534;
+}
+
+/* ===================== Planejamento (reserva + agenda) ===================== */
+.card-planning .card-hint {
+  margin-bottom: 1rem;
+}
+.planning-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+}
+@media (min-width: 900px) {
+  .planning-grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+.planning-panel {
+  padding: 1rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 10px;
+  background: var(--surface-2, #f8fafc);
+}
+.planning-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+.planning-panel__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.planning-panel__hint {
+  margin: 0 0 0.85rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted, #64748b);
+  line-height: 1.45;
+}
+.planning-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+  margin-bottom: 0.75rem;
+}
+@media (min-width: 520px) {
+  .planning-form {
+    grid-template-columns: auto auto 1fr;
+    align-items: end;
+  }
+  .planning-form .btn {
+    justify-self: start;
+    white-space: nowrap;
+  }
+}
+.planning-form .field {
+  margin: 0;
+  min-width: 0;
+}
+.planning-list {
+  margin-top: 0.25rem;
+}
+.planning-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.planning-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+}
+.planning-item__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.planning-item__aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+.planning-item__id,
+.planning-item__env {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+}
+.planning-item__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text, #1e293b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.planning-item__meta {
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
+}
+.schedule-card__types {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  vertical-align: middle;
+}
+
+/* Link para planejamento na sidebar da Massa */
+.sidebar-planning-link {
+  margin-top: 0.25rem;
+}
+.sidebar-planning-link__anchor {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--vtal-neon);
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  background: var(--surface);
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.sidebar-planning-link__anchor:hover {
+  background: var(--bg-soft);
+  border-color: var(--border);
+  border-left-color: var(--vtal-neon);
+  box-shadow: 0 1px 4px rgba(24, 24, 27, 0.06);
+  color: var(--text);
+}
+.sidebar-planning-link__icon {
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.85;
+}
+
+/* ===================== Página Planejamento ===================== */
+.main--planning {
+  max-width: 1200px;
+}
+.planning-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.planning-page__hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.planning-page__title {
+  margin: 0 0 0.35rem;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.planning-page__lead {
+  margin: 0;
+  max-width: 36rem;
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.planning-page__hero .btn-secondary {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Tabs */
+.planning-tabs {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.25rem;
+  background: var(--surface-2, #f1f5f9);
+  border-radius: 10px;
+  border: 1px solid var(--border, #e2e8f0);
+}
+.planning-tabs__btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.65rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-muted, #64748b);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.planning-tabs__btn:hover {
+  color: var(--text, #1e293b);
+}
+.planning-tabs__btn--active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid color-mix(in srgb, var(--vtal-neon) 35%, var(--border));
+}
+.planning-tabs__btn--active .planning-tabs__icon {
+  filter: none;
+}
+.planning-tabs__icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+/* Split layout: form | list */
+.planning-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+@media (min-width: 960px) {
+  .planning-split {
+    grid-template-columns: 1.1fr 0.9fr;
+  }
+  .planning-split__form {
+    position: sticky;
+    top: 1rem;
+  }
+}
+
+.card-planning-form,
+.card-planning-list {
+  padding: 1.15rem;
+}
+.card-planning-form__title,
+.card-planning-list__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+.card-planning-form__hint {
+  margin: 0.35rem 0 1rem;
+  font-size: 0.8125rem;
+  color: var(--text-muted, #64748b);
+  line-height: 1.45;
+}
+.card-planning-list__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+/* Formulário de agendamento */
+.planning-schedule-form__row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+@media (min-width: 520px) {
+  .planning-schedule-form__row {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.planning-schedule-form__actions {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
+.planning-mass-filter {
+  max-width: none;
+  margin-bottom: 0.5rem;
+}
+
+/* Picker de mass types */
+.planning-mass-picker {
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 0.5rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  margin-bottom: 0.85rem;
+}
+.planning-mass-category {
+  margin-bottom: 0.85rem;
+}
+.planning-mass-category:last-child {
+  margin-bottom: 0;
+}
+.planning-mass-category__title {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, #64748b);
+}
+.planning-mass-category__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.4rem;
+}
+@media (min-width: 480px) {
+  .planning-mass-category__grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.planning-mass-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--surface, #fff);
+  transition: border-color 0.15s, background 0.15s;
+}
+.planning-mass-card:has(input:checked) {
+  border-color: color-mix(in srgb, var(--vtal-neon) 50%, var(--border));
+  background: color-mix(in srgb, var(--vtal-neon) 8%, var(--surface));
+}
+.planning-mass-card:hover:not(.planning-mass-card--inactive) {
+  border-color: color-mix(in srgb, var(--vtal-neon) 35%, var(--border));
+}
+.planning-mass-card--inactive {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.planning-mass-card input {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+.planning-mass-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.planning-mass-card__title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text, #1e293b);
+}
+.planning-mass-card__sub {
+  font-size: 0.7rem;
+  color: var(--text-muted, #64748b);
+  line-height: 1.3;
+}
+
+/* Contas massa pronta */
+.planning-accounts {
+  padding: 0.85rem;
+  margin-bottom: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--vtal-neon) 30%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--vtal-neon) 6%, var(--surface));
+}
+.planning-accounts__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.65rem;
+}
+.planning-accounts__title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.planning-accounts__env {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: var(--vtal-dark);
+  color: var(--vtal-white);
+}
+.planning-accounts__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+}
+@media (min-width: 520px) {
+  .planning-accounts__grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.planning-accounts .form-control {
+  max-width: none;
+}
+
+/* Formulário de reserva */
+.planning-reservation-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+@media (min-width: 520px) {
+  .planning-reservation-form {
+    grid-template-columns: auto auto 1fr;
+    align-items: end;
+  }
+  .planning-reservation-form .btn {
+    justify-self: start;
+  }
+}
+.planning-reservation-form .field {
+  margin: 0;
+}
+.planning-reservation-form .form-control {
+  min-width: 10rem;
+}
+
+/* Items das listas — versão página */
+.planning-item__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.planning-item__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text, #1e293b);
+}
+.planning-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.65rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted, #64748b);
+}
+.planning-item__meta span:not(:last-child)::after {
+  content: '·';
+  margin-left: 0.65rem;
+  color: var(--border, #cbd5e1);
+}
+.planning-item__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.planning-item__chips li {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-weight: 500;
+}
+.planning-item__error {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: #b91c1c;
+}
+.planning-item__you {
+  font-weight: 400;
+  color: var(--text-muted, #64748b);
 }
