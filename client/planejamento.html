@@ -146,7 +146,12 @@
                 <section class="card card-planning-list">
                   <div class="card-planning-list__head">
                     <h3 class="card-planning-list__title">Agendamentos</h3>
-                    <button type="button" id="btn-refresh-schedules" class="btn btn-secondary btn-sm">Atualizar</button>
+                    <div class="card-planning-list__actions">
+                      <div class="jobs-refresh-slot">
+                        <span id="schedules-refresh-status" class="jobs-refresh-status jobs-refresh-status--empty" aria-live="polite"></span>
+                      </div>
+                      <button type="button" id="btn-refresh-schedules" class="btn btn-secondary btn-sm">Atualizar</button>
+                    </div>
                   </div>
                   <div id="schedules-list" class="planning-list">
                     <p class="empty">Carregando…</p>
@@ -188,7 +193,12 @@
                 <section class="card card-planning-list">
                   <div class="card-planning-list__head">
                     <h3 class="card-planning-list__title">Reservas ativas</h3>
-                    <button type="button" id="btn-refresh-reservations" class="btn btn-secondary btn-sm">Atualizar</button>
+                    <div class="card-planning-list__actions">
+                      <div class="jobs-refresh-slot">
+                        <span id="reservations-refresh-status" class="jobs-refresh-status jobs-refresh-status--empty" aria-live="polite"></span>
+                      </div>
+                      <button type="button" id="btn-refresh-reservations" class="btn btn-secondary btn-sm">Atualizar</button>
+                    </div>
                   </div>
                   <div id="reservations-list" class="planning-list">
                     <p class="empty">Carregando…</p>

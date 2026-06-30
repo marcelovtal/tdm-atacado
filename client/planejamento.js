@@ -223,6 +223,15 @@ function formatScheduleDateTime(value) {
   return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+function buildScheduleTitle(s, massTypes, showOwnerVt) {
+  const owner = showOwnerVt && s.createdByVt ? `${escapeHtml(s.createdByVt)} · ` : '';
+  if (massTypes.length > 1) {
+    return `${owner}${massTypes.length} tipos de massa`;
+  }
+  const single = massTypes[0]?.label || s.massType || '—';
+  return `${owner}${escapeHtml(single)}`;
+}
+
 function renderScheduleCard(s, showOwnerVt) {
   const status = (s.status || '').toLowerCase();
   const statusLabelText = SCHEDULE_STATUS_LABEL[status] || status;
@@ -231,19 +240,21 @@ function renderScheduleCard(s, showOwnerVt) {
     status === 'pending'
       ? `<button type="button" class="btn btn-secondary btn-sm schedule-cancel-btn" data-schedule-id="${escapeHtml(String(s.id))}">Cancelar</button>`
       : '';
-  const typeChips =
-    massTypes.length > 1
-      ? `<ul class="planning-item__chips">${massTypes.map((t) => `<li>${escapeHtml(t.label || t.id)}</li>`).join('')}</ul>`
-      : '';
+  const hasManyTypes = massTypes.length > 1;
+  const typeChips = hasManyTypes
+    ? `<div class="planning-item__chips-scroll"><ul class="planning-item__chips" aria-label="Tipos de massa agendados">${massTypes.map((t) => `<li>${escapeHtml(t.label || t.id)}</li>`).join('')}</ul></div>`
+    : '';
+  const itemClass = hasManyTypes
+    ? 'planning-item planning-item--schedule planning-item--multi'
+    : 'planning-item planning-item--schedule';
   return `
-    <article class="planning-item planning-item--schedule" data-schedule-id="${escapeHtml(String(s.id))}">
+    <article class="${itemClass}" data-schedule-id="${escapeHtml(String(s.id))}">
       <div class="planning-item__main">
         <div class="planning-item__top">
           <span class="planning-item__id">#${escapeHtml(String(s.id))}</span>
           <span class="job-status ${status}">${escapeHtml(statusLabelText)}</span>
         </div>
-        <p class="planning-item__title">${showOwnerVt && s.createdByVt ? `${escapeHtml(s.createdByVt)} · ` : ''}${escapeHtml(s.massType || massTypes[0]?.label || '—')}</p>
-        ${typeChips}
+        <p class="planning-item__title">${buildScheduleTitle(s, massTypes, showOwnerVt)}</p>
         <p class="planning-item__meta">
           <span>${escapeHtml((s.environment || '').toUpperCase())}</span>
           <span>${escapeHtml(String(s.quantity || 1))}x por tipo</span>
@@ -252,21 +263,61 @@ function renderScheduleCard(s, showOwnerVt) {
         ${s.lastError && status === 'error' ? `<p class="planning-item__error">${escapeHtml(s.lastError.length > 100 ? `${s.lastError.slice(0, 100)}…` : s.lastError)}</p>` : ''}
       </div>
       <div class="planning-item__aside">${cancelBtn}</div>
+      ${typeChips}
     </article>`;
 }
 
-async function loadSchedules() {
+let schedulesRefreshSeq = 0;
+let reservationsRefreshSeq = 0;
+
+function setListRefreshStatus(statusEl, text, { isEmpty = false, autoHideMs = 0 } = {}) {
+  if (!statusEl) return;
+  clearTimeout(statusEl._hideTimer);
+  statusEl._hideTimer = null;
+  statusEl.textContent = text;
+  statusEl.classList.toggle('jobs-refresh-status--empty', isEmpty);
+  if (autoHideMs > 0 && text) {
+    statusEl._hideTimer = setTimeout(() => {
+      statusEl.textContent = '';
+      statusEl.classList.add('jobs-refresh-status--empty');
+    }, autoHideMs);
+  }
+}
+
+async function loadSchedules({ fromUiRefresh = false } = {}) {
   const list = document.getElementById('schedules-list');
+  const btn = document.getElementById('btn-refresh-schedules');
+  const statusEl = document.getElementById('schedules-refresh-status');
   if (!list) return;
+
+  let mySeq = 0;
+  if (fromUiRefresh) {
+    mySeq = ++schedulesRefreshSeq;
+    if (btn) btn.disabled = true;
+    setListRefreshStatus(statusEl, 'Atualizando…');
+    list.classList.add('is-refreshing');
+  }
+
+  let ok = false;
   try {
     const { schedules, meta } = await api('/schedules');
     if (!schedules.length) {
       list.innerHTML = '<p class="empty">Nenhum agendamento. Crie um ao lado.</p>';
-      return;
+    } else {
+      list.innerHTML = `<div class="planning-list__items">${schedules.map((s) => renderScheduleCard(s, !!meta?.showOwnerVt)).join('')}</div>`;
     }
-    list.innerHTML = `<div class="planning-list__items">${schedules.map((s) => renderScheduleCard(s, !!meta?.showOwnerVt)).join('')}</div>`;
+    ok = true;
   } catch (err) {
     list.innerHTML = `<p class="empty error">${escapeHtml(err.message)}</p>`;
+  } finally {
+    if (fromUiRefresh && mySeq === schedulesRefreshSeq) {
+      list.classList.remove('is-refreshing');
+      if (btn) btn.disabled = false;
+      setListRefreshStatus(statusEl, ok ? 'Lista atualizada.' : 'Não foi possível atualizar.', {
+        autoHideMs: ok ? 2200 : 4000,
+      });
+      btn?.focus({ preventScroll: true });
+    }
   }
 }
 
@@ -311,20 +362,42 @@ function renderReservationCard(r, { isAdmin, today }) {
     </article>`;
 }
 
-async function loadReservations() {
+async function loadReservations({ fromUiRefresh = false } = {}) {
   const list = document.getElementById('reservations-list');
+  const btn = document.getElementById('btn-refresh-reservations');
+  const statusEl = document.getElementById('reservations-refresh-status');
   if (!list) return;
+
+  let mySeq = 0;
+  if (fromUiRefresh) {
+    mySeq = ++reservationsRefreshSeq;
+    if (btn) btn.disabled = true;
+    setListRefreshStatus(statusEl, 'Atualizando…');
+    list.classList.add('is-refreshing');
+  }
+
+  let ok = false;
   try {
     const { reservations, meta } = await api('/reservations');
     if (!reservations.length) {
       list.innerHTML = '<p class="empty">Nenhuma reserva ativa.</p>';
-      return;
+    } else {
+      list.innerHTML = `<div class="planning-list__items">${reservations
+        .map((r) => renderReservationCard(r, { isAdmin: !!meta?.isAdmin, today: meta?.today }))
+        .join('')}</div>`;
     }
-    list.innerHTML = `<div class="planning-list__items">${reservations
-      .map((r) => renderReservationCard(r, { isAdmin: !!meta?.isAdmin, today: meta?.today }))
-      .join('')}</div>`;
+    ok = true;
   } catch (err) {
     list.innerHTML = `<p class="empty error">${escapeHtml(err.message)}</p>`;
+  } finally {
+    if (fromUiRefresh && mySeq === reservationsRefreshSeq) {
+      list.classList.remove('is-refreshing');
+      if (btn) btn.disabled = false;
+      setListRefreshStatus(statusEl, ok ? 'Lista atualizada.' : 'Não foi possível atualizar.', {
+        autoHideMs: ok ? 2200 : 4000,
+      });
+      btn?.focus({ preventScroll: true });
+    }
   }
 }
 
@@ -395,13 +468,13 @@ document.querySelectorAll('.planning-tabs__btn').forEach((btn) => {
 document.getElementById('form-schedule')?.addEventListener('submit', submitScheduleForm);
 document.getElementById('schedule-environment')?.addEventListener('change', renderPlanningMassTypes);
 document.getElementById('schedule-mass-filter')?.addEventListener('input', applyMassTypeFilter);
-document.getElementById('btn-refresh-schedules')?.addEventListener('click', loadSchedules);
+document.getElementById('btn-refresh-schedules')?.addEventListener('click', () => loadSchedules({ fromUiRefresh: true }));
 document.getElementById('schedules-list')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.schedule-cancel-btn');
   if (btn) cancelSchedule(btn.dataset.scheduleId);
 });
 document.getElementById('btn-reserve')?.addEventListener('click', submitReservation);
-document.getElementById('btn-refresh-reservations')?.addEventListener('click', loadReservations);
+document.getElementById('btn-refresh-reservations')?.addEventListener('click', () => loadReservations({ fromUiRefresh: true }));
 document.getElementById('reservations-list')?.addEventListener('click', (e) => {
   const btn = e.target.closest('.reservation-cancel-btn');
   if (btn) cancelReservation(btn.dataset.reservationId);

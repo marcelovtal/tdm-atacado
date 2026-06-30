@@ -1852,18 +1852,21 @@ a.btn-secondary:hover {
 }
 .planning-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--border, #e2e8f0);
   border-radius: 8px;
   background: var(--surface, #fff);
+  max-width: 100%;
+  overflow: hidden;
 }
 .planning-item__main {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
+  flex: 1;
   min-width: 0;
 }
 .planning-item__aside {
@@ -2029,10 +2032,17 @@ a.btn-secondary:hover {
     top: 1rem;
   }
 }
+.planning-split > * {
+  min-width: 0;
+}
 
 .card-planning-form,
 .card-planning-list {
   padding: 1.15rem;
+}
+.card-planning-list {
+  min-width: 0;
+  overflow: hidden;
 }
 .card-planning-form__title,
 .card-planning-list__title {
@@ -2052,6 +2062,42 @@ a.btn-secondary:hover {
   justify-content: space-between;
   gap: 0.75rem;
   margin-bottom: 0.85rem;
+}
+.card-planning-list__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.planning-list.is-refreshing {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.planning-item--multi {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "main aside"
+    "chips chips";
+  column-gap: 0.75rem;
+  align-items: start;
+}
+.planning-item--multi .planning-item__main {
+  grid-area: main;
+}
+.planning-item--multi .planning-item__aside {
+  grid-area: aside;
+}
+.planning-item--multi .planning-item__chips-scroll {
+  grid-area: chips;
+  width: 100%;
+  min-width: 0;
+  max-height: 5.5rem;
+  margin: 0.35rem 0 0;
+  padding-right: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* Formulário de agendamento */
@@ -2231,6 +2277,9 @@ a.btn-secondary:hover {
   font-weight: 600;
   line-height: 1.35;
   color: var(--text, #1e293b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .planning-item__meta {
   display: flex;
@@ -2245,13 +2294,24 @@ a.btn-secondary:hover {
   margin-left: 0.65rem;
   color: var(--border, #cbd5e1);
 }
+.planning-item__chips-scroll {
+  width: 100%;
+  min-width: 0;
+  max-height: 5.5rem;
+  margin: 0.35rem 0 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
 .planning-item__chips {
   display: flex;
   flex-wrap: wrap;
+  align-content: flex-start;
   gap: 0.3rem;
-  margin: 0.35rem 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 .planning-item__chips li {
   font-size: 0.7rem;
@@ -2260,6 +2320,8 @@ a.btn-secondary:hover {
   background: #e0e7ff;
   color: #3730a3;
   font-weight: 500;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .planning-item__error {
   margin: 0.35rem 0 0;
