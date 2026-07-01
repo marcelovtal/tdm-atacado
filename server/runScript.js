@@ -269,10 +269,12 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
           environment,
           envVars,
         });
-        if (classified?.userError) {
-          userError = true;
-          userErrorCode = classified.code;
+        if (classified?.message) {
           error = classified.message;
+          if (classified.userError) {
+            userError = true;
+            userErrorCode = classified.code;
+          }
         }
       }
 

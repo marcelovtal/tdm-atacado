@@ -114,7 +114,7 @@ export const ENVIRONMENTS = ['ti', 'trg'];
 export const MASS_TYPES = [
   { id: 'lead-pedido', label: 'Lead → IP Connect → Pedido', script: 'gerar-pedido-ip-connect.js', envVars: {} },
   { id: 'lead-vpn-pedido', label: 'Lead → VPN → Pedido', script: 'gerar-pedido-vpn.js', envVars: {} },
-  { id: 'lead-link-dedicado-pedido', label: 'Lead → Link Dedicado → Pedido', script: 'gerar-pedido-link-dedicado.js', envVars: {} },
+  { id: 'lead-link-dedicado-pedido', label: 'Lead → Link Dedicado → Pedido', script: 'gerar-pedido-link-dedicado.js', envVars: { SKIP_PEGA: '1' } },
   { id: 'massa-pronta-opp-pedido', label: 'IP Connect (massa pronta)', script: 'gerar-pedido-massa-pronta-ip-connect.js', envVars: {} },
   {
     id: 'massa-pronta-opp-pedido-ip-connect-cpe',
@@ -157,24 +157,25 @@ export const MASS_TYPES = [
       INCLUDE_OFS_INSTALACAO: '1',
     },
   },
-  { id: 'massa-pronta-opp-pedido-link-dedicado', label: 'Link Dedicado (massa pronta)', script: 'gerar-pedido-massa-pronta-link-dedicado.js', envVars: {} },
+  { id: 'massa-pronta-opp-pedido-link-dedicado', label: 'Link Dedicado (massa pronta)', script: 'gerar-pedido-massa-pronta-link-dedicado.js', envVars: { SKIP_PEGA: '1' } },
   {
     id: 'massa-pronta-opp-pedido-link-dedicado-cpe',
     label: 'Link Dedicado Massa Pronta CPE',
     script: 'gerar-pedido-massa-pronta-link-dedicado-cpe.js',
-    envVars: { INCLUDE_LD_CPE: '1' },
+    envVars: { INCLUDE_LD_CPE: '1', SKIP_PEGA: '1' },
   },
   {
     id: 'massa-pronta-opp-pedido-link-dedicado-pega',
     label: 'Link Dedicado (massa pronta + Config PEGA)',
     script: 'gerar-pedido-massa-pronta-link-dedicado-config-pega.js',
-    envVars: {},
+    envVars: { INCLUDE_PEGA_LD: '1' },
   },
   {
     id: 'massa-pronta-opp-pedido-link-dedicado-pega-ofs',
     label: 'LD Massa Completa até Ativação',
     script: 'gerar-pedido-massa-pronta-link-dedicado-config-pega-ofs.js',
     envVars: {
+      INCLUDE_PEGA_LD: '1',
       INCLUDE_OFS_INSTALACAO: '1',
     },
   },

@@ -29,14 +29,27 @@ const { buildContactPayload } = require('../support/utils/salesforce/contactPayl
 const { buildContractMSAPayload, buildContractActivatePayload } = require('../support/utils/salesforce/contractMSAPayload.js');
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
+const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
 const { finalizePedidoLinkDedicadoWithOptionalPega } = require('../support/utils/finalizePedidoLinkDedicadoWithOptionalPega.js');
 const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
-const { extractLinkDedicadoSubpedidos } = require('../support/utils/extractLinkDedicadoSubpedidos.js');
+const { pollSubpedidosEmImplantacao } = require('../support/utils/salesforce/pollSubpedidosEmImplantacao.js');
 const { patchMassaProntaAccounts } = require('../support/utils/salesforce/patchMassaProntaAccounts.js');
 const { patchLinkDedicadoMasterOrder } = require('../support/utils/salesforce/patchLinkDedicadoMasterOrder.js');
 const { resolveTechnicalContactForBusiness } = require('../support/utils/salesforce/resolveTechnicalContactForBusiness.js');
 const { assertMassaProntaAccountsExist } = require('../support/utils/salesforce/assertMassaProntaAccounts.js');
 const { refreshLinkDedicadoSubpedidosForPega } = require('../support/utils/refreshLinkDedicadoSubpedidosForPega.js');
+const {
+  getAddressesToTry,
+  getOrderUf,
+  getOrderCity,
+  getRegionConfig,
+  buildDescriptionBlock,
+  buildFormattedAddress,
+  buildPointAddressFields,
+  findFillAddressRecord,
+  getDefaultAddressId,
+  getRegionLabel,
+} = require('../support/utils/salesforce/resolveMassTestAddress.js');
 const {
   isIpConnectCpeEnabled,
   resolveCpeProduct2Id,
@@ -111,11 +124,8 @@ const PRODUCT_NAME_LD = process.env.PRODUCT_NAME_LD || 'Link Dedicado';
 const VALOR_MENSAL_LD = process.env.VALOR_MENSAL_LD || '800';
 const VALOR_INSTALACAO_LD = process.env.VALOR_INSTALACAO_LD || '3000';
 
-// Endereços para testar viabilidade e geração de pedido. Av. Paulista (CEP 01310-917) e variações.
-const ADDRESSES_TO_TRY = [
-  { streetType: 'Avenida', streetName: 'Paulista', number: 500, neighborhood: 'Bela Vista', zipCode: '01310917', locationCode: '3550308', Latitude: '-23.5680106', Longitude: '-46.6482312' },
-  { streetType: 'Avenida', streetName: 'Paulista', number: 600, neighborhood: 'Bela Vista', zipCode: '01310917', locationCode: '3550308', Latitude: '-23.5664976', Longitude: '-46.6501995' }
-];
+// Endereços por região (MASS_ADDRESS_REGION=SP|RJ).
+const ADDRESSES_TO_TRY = getAddressesToTry({ linkDedicado: true });
 const VIABILITY_WAIT_MS = parseInt(process.env.VIABILITY_WAIT_MS || '25000', 10);
 
 async function resolveLdProduct(apiCall) {
@@ -177,62 +187,20 @@ async function resolveLdProduct(apiCall) {
 }
 
 function buildDescBlock(addr, addressInfo) {
-  const num = String(addr.number);
-
+  const block = buildDescriptionBlock(addr, addressInfo);
   return {
-    description: `${addr.streetType} ${addr.streetName} ${num}, ${addr.neighborhood} - São Paulo, SP (${addr.zipCode})`,
-
-    streetType: addr.streetType,
-    streetName: addr.streetName,
-    number: num,
-    neighborhood: addr.neighborhood,
-    city: 'São Paulo',
-    stateAbbreviation: 'SP',
-    zipCode: addr.zipCode,
-    country: 'Brasil',
-
-    locationCode: addressInfo.locationCode || '11000',
-
-    //  ESSENCIAL
-    Vtal_LXD_AddressId__c: String(addressInfo.id),
-
-    //  MUITO IMPORTANTE (alguns orgs exigem)
-    addressId: String(addressInfo.id)
+    ...block,
+    locationCode: addressInfo?.locationCode || block.locationCode,
+    Vtal_LXD_AddressId__c: String(addressInfo?.id ?? block.id ?? getDefaultAddressId(addr)),
+    addressId: String(addressInfo?.id ?? block.id ?? getDefaultAddressId(addr)),
   };
 }
 
 function extractAddressInfoFromFillAddressResponse(fillRes, fallbackToken = '', originalAddr = null) {
   if (fillRes?.status !== 200 || !Array.isArray(fillRes?.data)) return null;
-
-  const normalizeZip = (z) => String(z || '').replace(/\D/g, '');
-
-  let rec = null;
-
-  //  PRIORIDADE 1: CEP exato (normalizado)
-  rec = fillRes.data.find(r =>
-    normalizeZip(r.zipCode) === normalizeZip(originalAddr?.zipCode)
-  );
-
-  //  PRIORIDADE 2: Cidade + UF
-  if (!rec) {
-    rec = fillRes.data.find(r =>
-      r.city === 'São Paulo' &&
-      r.stateAbbreviation === 'SP'
-    );
-  }
-
-  //  PRIORIDADE 3: qualquer SP (fallback controlado)
-  if (!rec) {
-    rec = fillRes.data.find(r =>
-      r.stateAbbreviation === 'SP'
-    );
-  }
-
+  const rec = findFillAddressRecord(fillRes.data, originalAddr);
   console.log('ADDRESS ESCOLHIDO:', rec?.description);
-
-  // NÃO deixa passar sem id
   if (!rec || !rec.id) return null;
-
   return {
     id: rec.id,
     locationCode: rec.locationCode,
@@ -258,10 +226,7 @@ async function fillAddressInfoWithTokenFallback(apiCall, addr, tokenCandidates, 
     logStepTrace(`${traceBase}.cepSearch`, cepPayload, cepRes);
     
     if (cepRes.status === 200 && Array.isArray(cepRes.data) && cepRes.data.length > 0) {
-      // Encontrou o endereço base (sem número)
-      const baseAddress = cepRes.data.find(a => 
-        a.stateAbbreviation === 'SP' && a.city === 'São Paulo'
-      ) || cepRes.data[0];
+      const baseAddress = findFillAddressRecord(cepRes.data, addr) || cepRes.data[0];
       
       if (baseAddress) {
         console.log(`Endereço base encontrado:`, baseAddress.description);
@@ -270,7 +235,7 @@ async function fillAddressInfoWithTokenFallback(apiCall, addr, tokenCandidates, 
         return {
           addressInfo: {
             id: baseAddress.id || null,
-            locationCode: baseAddress.locationCode || '3550308',
+            locationCode: baseAddress.locationCode || addr.locationCode,
             Token: token,
             description: baseAddress.description,
             streetType: baseAddress.streetType,
@@ -294,8 +259,8 @@ async function fillAddressInfoWithTokenFallback(apiCall, addr, tokenCandidates, 
       description: `${addr.streetType} ${addr.streetName}, ${addr.number}`,
       endereco: `${addr.streetType} ${addr.streetName}, ${addr.number}`,
       zipCode: addr.zipCode,
-      city: 'São Paulo',
-      state: 'SP',
+      city: getOrderCity(),
+      state: getOrderUf(),
       number: String(addr.number),
       token
     };
@@ -310,21 +275,21 @@ async function fillAddressInfoWithTokenFallback(apiCall, addr, tokenCandidates, 
   }
   
   // Último fallback: forçar São Paulo
-  console.warn(' Forçando endereço padrão SP (fallback manual)');
+  console.warn(` Forçando endereço padrão ${getRegionLabel()} (fallback manual)`);
   return {
     addressInfo: {
-      id: null,
-      locationCode: '3550308',
+      id: addr.id ?? getDefaultAddressId(addr),
+      locationCode: addr.locationCode || getRegionConfig().addresses[0]?.locationCode,
       Token: uniqueTokens[0] || '',
-      description: `${addr.streetType} ${addr.streetName} ${addr.number}, ${addr.neighborhood} - São Paulo, SP (${addr.zipCode})`,
+      description: buildFormattedAddress(addr),
       streetType: addr.streetType,
       streetName: addr.streetName,
       number: String(addr.number),
       neighborhood: addr.neighborhood,
-      city: 'São Paulo',
-      stateAbbreviation: 'SP',
+      city: getOrderCity(),
+      stateAbbreviation: getOrderUf(),
       zipCode: addr.zipCode,
-      country: 'Brasil'
+      country: 'Brasil',
     },
     response: lastRes,
     usedToken: uniqueTokens[0] || ''
@@ -418,39 +383,8 @@ function buildCreateQuoteMembersBody(quoteId, addr, addrB, ldProduct = null, sel
   const speed = pickLdSpeed(selectedSpeed);
   const globalKey = `e2e-ld-${Date.now()}`;
   
-  // Construir objeto de endereço para Ponta A
-  const pointAAddress = {
-    description: `${addr.streetType} ${addr.streetName} ${addr.number}, ${addr.neighborhood} - São Paulo, SP (${addr.zipCode})`,
-    streetType: addr.streetType,
-    streetName: addr.streetName,
-    number: String(addr.number),
-    neighborhood: addr.neighborhood,
-    city: 'São Paulo',
-    stateAbbreviation: 'SP',
-    zipCode: addr.zipCode,
-    country: 'Brasil',
-    locationCode: addressInfoA.locationCode || '11000',
-    hasNumber: true,
-    hasNoNumber: false,
-    id: addressInfoA.id || null
-  };
-  
-  // Construir objeto de endereço para Ponta B
-  const pointBAddress = {
-    description: `${addrB.streetType} ${addrB.streetName} ${addrB.number}, ${addrB.neighborhood} - São Paulo, SP (${addrB.zipCode})`,
-    streetType: addrB.streetType,
-    streetName: addrB.streetName,
-    number: String(addrB.number),
-    neighborhood: addrB.neighborhood,
-    city: 'São Paulo',
-    stateAbbreviation: 'SP',
-    zipCode: addrB.zipCode,
-    country: 'Brasil',
-    locationCode: addressInfoB.locationCode || '11000',
-    hasNumber: true,
-    hasNoNumber: false,
-    id: addressInfoB.id || null
-  };
+  const pointAAddress = buildPointAddressFields(addr, addressInfoA);
+  const pointBAddress = buildPointAddressFields(addrB, addressInfoB);
 
   return {
     function: 'advance',
@@ -1610,7 +1544,7 @@ const getBusinessPayload = {
     accounts: [{
       recordTypeName: 'Business',
       accountId: accountBussinessId,
-      UF: 'SP',
+      UF: getOrderUf(),
       contacts: [{
         contactId: contactTecnicoId,
         value: contactTecnicoId,
@@ -1766,7 +1700,7 @@ try {
     let lastOrderRes = null;
     let didViabilityFix = false;
 
-    const uf = process.env.ORDER_UF || 'SP';
+    const uf = getOrderUf();
 
     const createOrderBody = {
       selectedAccounts: [{ Id: accountBussinessId, UF: uf }],
@@ -1899,64 +1833,19 @@ try {
       const validStatus = orderStatus === 'Activated' || orderStatus === 'Draft';
       if (!validStatus) console.log('   Order.Status:', orderStatus, '(esperado Activated ou Draft)');
 
-      const SUB_ORDER_STATUS_TARGETS = ['Em implantação', 'Em implementado', 'In Implementation', 'OS aberta'];
-      const SUB_ORDER_POLL_TIMEOUT_MS = 240000;
-      const SUB_ORDER_POLL_INTERVAL_MS = 5000;
-      
-      console.log(`[E2E] 20. Poll subpedidos até TODOS estarem com status = "${SUB_ORDER_STATUS_TARGETS.join('" ou "')}"...`);
-      
-      let allInTargetStatus = false;
-      let pollStartTime = Date.now();
-      let lastSubOrdersForPega = [];
-
-      while (!allInTargetStatus && (Date.now() - pollStartTime) < SUB_ORDER_POLL_TIMEOUT_MS) {
-        const subOrderQuery = `SELECT Id, OrderNumber, Status, vtal_LXD_Produto_do_pedido__c, Vtal_Seg_PointType__c FROM Order WHERE vlocity_cmt__ParentOrderId__c = '${orderId}'`;
-        const qRes = await apiCall('GET', `${QUERY_URL}?q=${encodeURIComponent(subOrderQuery)}`);
-        
-        if (qRes.status === 200 && qRes.data?.records?.length > 0) {
-          const subOrders = qRes.data.records;
-          lastSubOrdersForPega = subOrders;
-          
-          // Exibir status atual
-          console.log('   Status atual dos subpedidos:');
-          subOrders.forEach(sub => {
-            console.log(`     - ${sub.OrderNumber} (${sub.Vtal_Seg_PointType__c || 'N/A'}): ${sub.Status || 'Draft'}`);
-          });
-          
-          // Verificar se TODOS estão nos status alvo
-          const allReady = subOrders.every(sub => 
-            SUB_ORDER_STATUS_TARGETS.includes((sub.Status || '').trim())
-          );
-          
-          if (allReady) {
-            console.log('    TODOS os subpedidos estão com status OK!');
-            allInTargetStatus = true;
-            break;
-          } else {
-            const pendingCount = subOrders.filter(sub => 
-              !SUB_ORDER_STATUS_TARGETS.includes((sub.Status || '').trim())
-            ).length;
-            console.log(`Aguardando ${pendingCount} subpedido(s) concluírem...`);
-          }
-        }
-        
-        if (!allInTargetStatus) {
-          await delay(SUB_ORDER_POLL_INTERVAL_MS);
-        }
-      }
-      
-      if (!allInTargetStatus) {
-        console.log(`    Timeout: nem todos os subpedidos atingiram os status alvo após ${SUB_ORDER_POLL_TIMEOUT_MS / 1000}s`);
-      } else {
-        console.log('Todos os subpedidos processados com sucesso!');
-      }
+      const subPedidoInfo = await pollSubpedidosEmImplantacao({
+        apiCall,
+        queryUrl: QUERY_URL,
+        parentOrderId: orderId,
+        delay,
+        fail,
+      });
       return {
         quoteId,
         orderId,
         orderNumber,
         orderStatus,
-        subOrderEmImplantacao: allInTargetStatus,
-        ...extractLinkDedicadoSubpedidos(lastSubOrdersForPega),
+        ...subPedidoInfo,
       };
     }
 
@@ -1967,7 +1856,7 @@ try {
     if (!orderId) fail('Vtal_CreateOrderOnQuote não retornou MasterOrderId após ' + CREATE_ORDER_MAX_ATTEMPTS + ' tentativas', lastOrderRes);
   }
 
-  fail('Nenhum endereço viável após ' + ADDRESSES_TO_TRY.length + ' tentativas (CEPs Av. Paulista 01310-917)', { status: 0, data: null });
+  fail(`Nenhum endereço viável após ${ADDRESSES_TO_TRY.length} tentativa(s) em ${getRegionLabel()}`, { status: 0, data: null });
 }
 
 
@@ -1983,7 +1872,7 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
     console.log('   ValidateCreateOrder:', validateRes.status, validateRes.data?.error || validateRes.text?.slice(0, 200));
   }
 
-  const uf = process.env.ORDER_UF || 'SP';
+  const uf = getOrderUf();
   if (process.env.USE_MERGE_TECH_CONTACT === '1') {
     console.log('[E2E] 17e2. Vtal_Seg_MergeTechContacList (trace: antes de CreateOrderOnQuote)...');
     const mergeBody = { inputList2: '', inputList1: [{ recordTypeName: 'Business', ContactId: contactTecnicoId, accountId: accountBussinessId, UF: uf, contacts: [{ contactId: contactTecnicoId, value: contactTecnicoId, label: '', name: '' }] }] };
@@ -2065,47 +1954,33 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
   if (!orderNumber) fail('Order sem OrderNumber', orderGet);
   console.log('[E2E] Pedido criado — Número:', orderNumber, '| Id:', orderId, '| Status:', orderStatus);
 
-  const SUB_ORDER_STATUS_TARGETS = ['Em implantação', 'Em implementado', 'In Implementation', 'OS aberta'];
-  const SUB_ORDER_POLL_TIMEOUT_MS = 240000;
-  const SUB_ORDER_POLL_INTERVAL_MS = 5000;
-  console.log(`[E2E] 20. Poll subpedidos até TODOS estarem com status = "${SUB_ORDER_STATUS_TARGETS.join('" ou "')}"...`);
-  const subOrderQuery = `SELECT Id, OrderNumber, Status, vtal_LXD_Produto_do_pedido__c, Vtal_Seg_PointType__c FROM Order WHERE vlocity_cmt__ParentOrderId__c = '${orderId}'`;
-  let allInTargetStatus = false;
-  const pollStart = Date.now();
-  let lastSubOrdersForPega = [];
-  while (!allInTargetStatus && Date.now() - pollStart < SUB_ORDER_POLL_TIMEOUT_MS) {
-    const qRes = await apiCall('GET', `${QUERY_URL}?q=${encodeURIComponent(subOrderQuery)}`);
-    if (qRes.status === 200 && qRes.data?.records?.length > 0) {
-      const subOrders = qRes.data.records;
-      lastSubOrdersForPega = subOrders;
-      console.log('   Status atual dos subpedidos:');
-      subOrders.forEach((sub) => {
-        console.log(`     - ${sub.OrderNumber} (${sub.Vtal_Seg_PointType__c || 'N/A'}): ${sub.Status || 'Draft'}`);
-      });
-      allInTargetStatus = subOrders.every((sub) => SUB_ORDER_STATUS_TARGETS.includes((sub.Status || '').trim()));
-      if (allInTargetStatus) {
-        console.log('   TODOS os subpedidos estão com status OK!');
-        break;
-      }
-      console.log(`   Aguardando subpedidos (${subOrders.filter((s) => !SUB_ORDER_STATUS_TARGETS.includes((s.Status || '').trim())).length} pendente(s))...`);
-    }
-    await delay(SUB_ORDER_POLL_INTERVAL_MS);
-  }
-  if (!allInTargetStatus) {
-    console.log(`   (timeout após ${SUB_ORDER_POLL_TIMEOUT_MS / 1000}s ou ainda processando)`);
-  }
+  const subPedidoInfo = await pollSubpedidosEmImplantacao({
+    apiCall,
+    queryUrl: QUERY_URL,
+    parentOrderId: orderId,
+    delay,
+    fail,
+  });
 
   return {
     quoteId,
     orderId,
     orderNumber,
     orderStatus,
-    subOrderEmImplantacao: allInTargetStatus,
-    ...extractLinkDedicadoSubpedidos(lastSubOrdersForPega),
+    ...subPedidoInfo,
   };
 }
 
 const FULL_FLOW_MAX_RUNS = 3;
+
+/** Só scripts *-config-pega / *-config-pega-ofs (ou INCLUDE_PEGA_LD=1) entram em PEGA. */
+function isLinkDedicadoPegaFlowEnabled() {
+  return (
+    process.env.INCLUDE_PEGA_LD === '1' ||
+    process.env.INCLUDE_OFS_INSTALACAO === '1' ||
+    process.env.OFS_ENABLE === '1'
+  );
+}
 
 /** PEGA Link Dedicado + OFS opcional (Ponta A → Ponta B) + log painel. */
 async function finalizeConfigPegaPedido(result) {
@@ -2115,6 +1990,16 @@ async function finalizeConfigPegaPedido(result) {
     return finalizePedidoLinkDedicadoWithOptionalPegaAndOfs(result);
   }
   return finalizePedidoLinkDedicadoWithOptionalPega(result);
+}
+
+async function finalizePedidoLinkDedicadoResult(result, apiCall, accountIds = {}) {
+  const merged = mergeAccountIdsIntoPedidoResult(result, accountIds);
+  if (!isLinkDedicadoPegaFlowEnabled()) {
+    console.log('[E2E] Fluxo só pedido — PEGA omitido (use *-config-pega para configuração/agendamento).');
+    return finalizePedidoGerado(merged);
+  }
+  const forPega = await refreshLinkDedicadoSubpedidosForPega(result, apiCall, QUERY_URL);
+  return finalizeConfigPegaPedido(mergeAccountIdsIntoPedidoResult(forPega, accountIds));
 }
 
 /** Se START_FROM_QUOTE=1 e existirem ACCOUNT_ORGANIZATION_ID, ACCOUNT_BUSINESS_ID, ACCOUNT_BILLING_ID: massa já cadastrada até ativação BRM (contato técnico e primário já existem). Só executa Oportunidade → Cotação → Pedido. CONTACT_TECNICO_ID opcional; se ausente, busca um contato da conta Business. */
@@ -2300,12 +2185,13 @@ async function main() {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
           const apiCall = (method, path, body) => api(instanceUrl, accessToken, method, path, body, cookie);
-          const forPega = await refreshLinkDedicadoSubpedidosForPega(result, apiCall, QUERY_URL);
-          await finalizeConfigPegaPedido(
-            mergeAccountIdsIntoPedidoResult(forPega, {
+          await finalizePedidoLinkDedicadoResult(
+            result,
+            apiCall,
+            {
               ...readyQuote,
               accountBillingId: process.env.ACCOUNT_BILLING_ID?.trim() || readyQuote.accountBillingId,
-            }),
+            },
           );
           process.exit(0);
         }
@@ -2364,8 +2250,7 @@ async function main() {
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
         const apiCall = (method, path, body) => api(instanceUrl, accessToken, method, path, body, cookie);
-        const forPega = await refreshLinkDedicadoSubpedidosForPega(result, apiCall, QUERY_URL);
-        await finalizeConfigPegaPedido(mergeAccountIdsIntoPedidoResult(forPega, accountIds));
+        await finalizePedidoLinkDedicadoResult(result, apiCall, accountIds);
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

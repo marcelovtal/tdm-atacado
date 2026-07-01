@@ -197,7 +197,23 @@ function buildExtraEnvFromJobResult(r, jobData) {
   } else if (billing && !org && !business) {
     extraEnv.ACCOUNT_BILLING_ID = billing;
   }
+  const region = ev.MASS_ADDRESS_REGION || ev.ORDER_UF;
+  if (region) Object.assign(extraEnv, collectMassAddressEnvFromValue(region));
   return extraEnv;
+}
+
+function collectMassAddressEnvFromValue(region) {
+  const r = String(region || 'SP').trim().toUpperCase() === 'RJ' ? 'RJ' : 'SP';
+  return {
+    MASS_ADDRESS_REGION: r,
+    ORDER_UF: r,
+    ORDER_CITY: r === 'RJ' ? 'Rio De Janeiro' : 'São Paulo',
+  };
+}
+
+function collectMassAddressEnv(selectId = 'massAddressRegion') {
+  const region = document.getElementById(selectId)?.value?.trim().toUpperCase() || 'SP';
+  return collectMassAddressEnvFromValue(region);
 }
 
 async function rerunJobFromId(id) {
@@ -1090,7 +1106,7 @@ function collectMassSelection(msg) {
     return null;
   }
 
-  let extraEnv = {};
+  let extraEnv = { ...collectMassAddressEnv() };
   if (selectedMeta.formVariant === 'massa-pronta-triple') {
     const { org, business, billing } = resolveMassaProntaTripleEnv(environment);
     if (!org || !business || !billing) {
@@ -1098,6 +1114,7 @@ function collectMassSelection(msg) {
       return null;
     }
     extraEnv = {
+      ...extraEnv,
       START_FROM_QUOTE: '1',
       ACCOUNT_ORGANIZATION_ID: org,
       ACCOUNT_BUSINESS_ID: business,

@@ -5,6 +5,9 @@
 
 const SF_ACCOUNT_ID = /001[A-Za-z0-9]{12,15}/;
 
+const INTEGRATION_ORDER_STATUS_MESSAGE =
+  'Não foi alterado o status da ordem para "Em implantação". Erro no Salesforce ou no Pega.';
+
 function extractAccountIdFromLogs(text) {
   const fromUrl = text.match(/sobjects\/Account\/(001[A-Za-z0-9]{12,15})/i);
   if (fromUrl) return fromUrl[1];
@@ -95,6 +98,36 @@ export function classifyUserJobError({ stderr = '', stdout = '', environment = '
     };
   }
 
+  if (/\[FDL_INTEGRATION_ERROR\]/.test(combined)) {
+    return { userError: false, code: 'INTEGRATION_ERROR', message: INTEGRATION_ORDER_STATUS_MESSAGE };
+  }
+
+  if (
+    /Timeout: nem todos os subpedidos|nenhum subpedido com Status "Em implantação"/i.test(combined) ||
+    (/Status atual dos subpedidos:/i.test(combined) &&
+      /OS aberta/i.test(combined) &&
+      /PEGA LD EVC|Falha no fluxo PEGA|obterdadosordem/i.test(combined))
+  ) {
+    return {
+      userError: false,
+      code: 'SUB_ORDER_STATUS_TIMEOUT',
+      message: INTEGRATION_ORDER_STATUS_MESSAGE,
+    };
+  }
+
+  if (
+    /PEGA LD EVC|PEGA LD:|PEGA obterdadosordem|pyMemo|ChaveCaseOrdem|Pending-AguardarConfiguracaoEVC|Falha no fluxo PEGA/i.test(
+      combined,
+    ) &&
+    /ERRO \(run|\[PEGA\]|throw new Error/i.test(combined)
+  ) {
+    return {
+      userError: false,
+      code: 'SF_PEGA_INTEGRATION_ERROR',
+      message: INTEGRATION_ORDER_STATUS_MESSAGE,
+    };
+  }
+
   return null;
 }
 
@@ -117,6 +150,9 @@ export function resolveJobFailureDisplay({
     const classified = classifyUserJobError({ stderr, stdout, environment });
     if (classified?.userError) {
       return { status: 'user_error', error: classified.message };
+    }
+    if (classified?.message) {
+      return { status: 'failed', error: classified.message };
     }
   }
   return { status: status || 'failed', error: errorMessage || null };

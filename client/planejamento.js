@@ -1,4 +1,4 @@
-import { api, escapeHtml, showMessage } from './shared.js';
+import { api, escapeHtml, showMessage, collectMassAddressEnv } from './shared.js';
 
 let appConfig = { massCategories: [], user: null };
 
@@ -135,6 +135,7 @@ function buildExtraEnv(metas, msgEl) {
       return null;
     }
     return {
+      ...collectMassAddressEnv('schedule-mass-address-region'),
       START_FROM_QUOTE: '1',
       ACCOUNT_ORGANIZATION_ID: org,
       ACCOUNT_BUSINESS_ID: business,
@@ -147,9 +148,9 @@ function buildExtraEnv(metas, msgEl) {
       showMessage(msgEl, 'Informe o Id da conta Billing para ativar no BRM.', 'error');
       return null;
     }
-    return { ACCOUNT_BILLING_ID: billing };
+    return { ...collectMassAddressEnv('schedule-mass-address-region'), ACCOUNT_BILLING_ID: billing };
   }
-  return {};
+  return collectMassAddressEnv('schedule-mass-address-region');
 }
 
 async function submitScheduleForm(e) {

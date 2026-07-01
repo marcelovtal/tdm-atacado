@@ -104,6 +104,15 @@ const {
   fail,
 } = createSalesforceScriptClient();
 const { runLeadToBrm } = require('../support/utils/ativacao/runLeadToBrm.js');
+const {
+  getPrimaryAddress,
+  getOrderUf,
+  buildDescriptionBlock,
+  buildComplementoBlock,
+  buildFormattedAddress,
+  buildViabilityComplements,
+  getDefaultAddressId,
+} = require('../support/utils/salesforce/resolveMassTestAddress.js');
 const MAX_TRIES = 10;
 // Quote/Opportunity (ti sandbox) – user/collection
 const QUOTE_RECORD_TYPE_ID = process.env.QUOTE_RECORD_TYPE_ID || '012Hs000000l6VjIAI';
@@ -115,16 +124,7 @@ const VALOR_INSTALACAO_VPN = process.env.VALOR_INSTALACAO_VPN || process.env.VAL
 const VPN_DEFAULT_SPEED = process.env.VPN_DEFAULT_SPEED || '100';
 const VPN_DEFAULT_SPEED_LABEL = process.env.VPN_DEFAULT_SPEED_LABEL || '100 Mbps';
 
-const ADDRESS_FOR_QUOTE = {
-  streetType: 'Avenida',
-  streetName: 'Paulista',
-  number: 1530,
-  neighborhood: 'Bela Vista',
-  zipCode: '01310917',
-  locationCode: '3550308',
-  Latitude: '-23.5614',
-  Longitude: '-46.6562',
-};
+const ADDRESS_FOR_QUOTE = getPrimaryAddress();
 const VIABILITY_WAIT_MS = parseInt(process.env.VIABILITY_WAIT_MS || '25000', 10);
 
 async function resolveVpnProduct(apiCall) {
@@ -170,36 +170,9 @@ async function resolveVpnProduct(apiCall) {
 }
 
 function buildCreateQuoteMembersBodyVpn(quoteId, addr, addressInfo = null, vpnProduct) {
-  const num = String(addr.number);
-  const city = 'São Paulo';
-  const state = 'SP';
-  const zipFormatted = addr.zipCode.length >= 8 ? `${addr.zipCode.slice(0, 5)}-${addr.zipCode.slice(5, 8)}` : addr.zipCode;
-  const description = `${addr.streetType} ${addr.streetName} ${num}, ${addr.neighborhood} - ${city}, ${state} (${zipFormatted})`;
-  const descBlock = {
-    description,
-    streetType: addr.streetType,
-    streetName: addr.streetName,
-    number: num,
-    neighborhood: addr.neighborhood,
-    city,
-    stateAbbreviation: state,
-    zipCode: addr.zipCode,
-    country: 'Brasil',
-    locationCode: addr.locationCode,
-    Latitude: addr.Latitude,
-    Longitude: addr.Longitude,
-    hasNumber: true,
-    hasNoNumber: false,
-    id: addressInfo?.id ?? null,
-  };
-  return {
-    function: 'advance',
-    Token: addressInfo?.Token ?? '',
-    QuoteId: quoteId,
-    OppType: 'New opp',
-    CustomerCategory: 'Corporate',
-    GPONMaxDownloadSpeed: 10000,
-    QuoteMemberList: [{
+  const descBlock = buildDescriptionBlock(addr, addressInfo);
+  const complementoBlock = buildComplementoBlock(addr);
+  const quoteMember = {
       parentblock: 1,
       label: 'Block1',
       UnitPrice: Number(VALOR_INSTALACAO_VPN),
@@ -235,7 +208,16 @@ function buildCreateQuoteMembersBodyVpn(quoteId, addr, addressInfo = null, vpnPr
       selectedNetworkTypeValue: '',
       networkId: `QLI-${Date.now()}`,
       productCode: vpnProduct.productCode,
-    }],
+    };
+  if (complementoBlock) quoteMember['Complemento-Block'] = complementoBlock;
+  return {
+    function: 'advance',
+    Token: addressInfo?.Token ?? '',
+    QuoteId: quoteId,
+    OppType: 'New opp',
+    CustomerCategory: 'Corporate',
+    GPONMaxDownloadSpeed: 10000,
+    QuoteMemberList: [quoteMember],
     AssetToQuoteMemberList: [],
     deletedIds: [],
     obrigaComplemento: false,
@@ -567,21 +549,20 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
   const quoteMemberId = qmRes.status === 200 && qmRes.data?.records?.[0]?.Id ? qmRes.data.records[0].Id : null;
   if (quoteMemberId) {
     console.log('[E2E] 16b. Vtal_SF_GetQuoteAddressViability (pré-viabilidade com endereço)...');
-    const addressId = addressInfo?.id ?? 40373338;
-    const zipFmt = `${addr.zipCode.slice(0, 5)}-${addr.zipCode.slice(5, 8)}`;
-    const enderecoCompleto = `${addr.streetType} ${addr.streetName} ${addr.number}, ${addr.neighborhood} - São Paulo, SP (${zipFmt})`;
+    const addressId = addressInfo?.id ?? getDefaultAddressId(addr);
+    const enderecoCompleto = buildFormattedAddress(addr);
     const getViabilityBody = {
       items: [{
           nomeProduto: PRODUCT_CODE_VPN,
           enderecoCompleto,
           skipGpon: false,
           enableAdvance: true,
-          complements: [{ argComplemento: '', valorComplemento: '', tipoComplemento: '' }],
-          UF: 'SP',
+          complements: buildViabilityComplements(addr),
+          UF: getOrderUf(),
           idEnderecoExt: String(addressId),
           viability: 1,
           nFachada: String(addr.number),
-          codigoLogradouro: '2706',
+          codigoLogradouro: addr.codigoLogradouro || '2706',
           codigoLocalidade: addr.locationCode,
           isLatLong: false,
           codigoBairro: addr.neighborhood.toUpperCase().replace(/\s+/g, ' '),
@@ -701,7 +682,7 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
       console.log('   ValidateCreateOrder:', validateRes.status, validateRes.data?.error || validateRes.text?.slice(0, 200), '(continuando)');
     }
 
-    const uf = process.env.ORDER_UF || 'SP';
+    const uf = getOrderUf();
     if (process.env.USE_MERGE_TECH_CONTACT === '1') {
       console.log('[E2E] 17e2. Vtal_Seg_MergeTechContacList (trace: antes de CreateOrderOnQuote)...');
       const mergeBody = { inputList2: '', inputList1: [{ recordTypeName: 'Business', ContactId: contactTecnicoId, accountId: accountBussinessId, UF: uf, contacts: [{ contactId: contactTecnicoId, value: contactTecnicoId, label: '', name: '' }] }] };
@@ -890,7 +871,7 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
     console.log('   ValidateCreateOrder:', validateRes.status, validateRes.data?.error || validateRes.text?.slice(0, 200));
   }
 
-  const uf = process.env.ORDER_UF || 'SP';
+  const uf = getOrderUf();
   if (process.env.USE_MERGE_TECH_CONTACT === '1') {
     console.log('[E2E] 17e2. Vtal_Seg_MergeTechContacList (trace: antes de CreateOrderOnQuote)...');
     const mergeBody = { inputList2: '', inputList1: [{ recordTypeName: 'Business', ContactId: contactTecnicoId, accountId: accountBussinessId, UF: uf, contacts: [{ contactId: contactTecnicoId, value: contactTecnicoId, label: '', name: '' }] }] };
@@ -1067,14 +1048,15 @@ async function patchMassaProntaAccounts(instanceUrl, accessToken, cookie, accoun
     businessBody?.Vtal_SF_Email__c ||
     businessBody?.vlocity_cmt__BillingEmailAddress__c ||
     '';
+  const businessPatch = buildBusinessAccountPatchPayload({ accountName, email, environment: envName });
   await apiCall(
     'PATCH',
     `${SOBJECTS_ACCOUNT}/${accountBussinessId}`,
-    buildBusinessAccountPatchPayload({ accountName, email, environment: envName }),
+    businessPatch,
   );
 
   const accountNumber = businessBody?.Account_Number__c || '';
-  const ufOfClient = businessBody?.vtal_LXD_UF_OfClient__c || 'SP';
+  const ufOfClient = businessPatch.vtal_LXD_UF_OfClient__c || businessBody?.vtal_LXD_UF_OfClient__c || 'SP';
   await apiCall(
     'PATCH',
     `${SOBJECTS_ACCOUNT}/${accountBillingId}`,

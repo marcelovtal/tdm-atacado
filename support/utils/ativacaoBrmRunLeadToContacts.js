@@ -75,11 +75,12 @@ async function runLeadToContactsStep7(apiCall, fail, opts = {}) {
   const businessBody = businessGet.data;
   const accountName = getFieldValue(leadAfterPatch, 'Company') || businessBody?.Name || '';
   const email = getFieldValue(leadAfterPatch, 'Email') || businessBody?.vlocity_cmt__BillingEmailAddress__c || '';
-  await apiCall('PATCH', `${SOBJECTS_ACCOUNT}/${out.AccountBussinessId}`, buildBusinessAccountPatchPayload({ accountName, email, environment: envName }));
+  const businessPatch = buildBusinessAccountPatchPayload({ accountName, email, environment: envName });
+  await apiCall('PATCH', `${SOBJECTS_ACCOUNT}/${out.AccountBussinessId}`, businessPatch);
 
   console.log(`${p} 6. PATCH Billing...`);
   const accountNumber = businessBody?.Account_Number__c || '';
-  const ufOfClient = businessBody?.vtal_LXD_UF_OfClient__c || 'SP';
+  const ufOfClient = businessPatch.vtal_LXD_UF_OfClient__c || businessBody?.vtal_LXD_UF_OfClient__c || 'SP';
   await apiCall(
     'PATCH',
     `${SOBJECTS_ACCOUNT}/${out.AccountBillingId}`,

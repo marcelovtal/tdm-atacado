@@ -34,6 +34,16 @@ export function showMessage(el, text, type = 'info') {
   el.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
 }
 
+export function collectMassAddressEnv(selectId = 'massAddressRegion') {
+  const region = document.getElementById(selectId)?.value?.trim().toUpperCase() || 'SP';
+  const r = region === 'RJ' ? 'RJ' : 'SP';
+  return {
+    MASS_ADDRESS_REGION: r,
+    ORDER_UF: r,
+    ORDER_CITY: r === 'RJ' ? 'Rio De Janeiro' : 'São Paulo',
+  };
+}
+
 export function hideMessage(el) {
   if (!el) return;
   el.hidden = true;

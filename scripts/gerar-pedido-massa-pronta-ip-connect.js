@@ -108,6 +108,16 @@ const {
   fail,
 } = createSalesforceScriptClient();
 const { runLeadToBrm } = require('../support/utils/ativacao/runLeadToBrm.js');
+const {
+  getAddressesToTry,
+  getOrderUf,
+  buildDescriptionBlock,
+  buildComplementoBlock,
+  buildFormattedAddress,
+  buildViabilityComplements,
+  getDefaultAddressId,
+  getRegionLabel,
+} = require('../support/utils/salesforce/resolveMassTestAddress.js');
 const MAX_TRIES = 10;
 // Quote/Opportunity (ti sandbox) – user/collection
 const QUOTE_RECORD_TYPE_ID = process.env.QUOTE_RECORD_TYPE_ID || '012Hs000000l6VjIAI';
@@ -115,46 +125,14 @@ const QUOTE_PRICEBOOK2_ID = process.env.QUOTE_PRICEBOOK2_ID || '01sHs000001nMM3I
 const PRICEBOOK_ENTRY_ID = process.env.PRICEBOOK_ENTRY_ID || '01uU6000001jmRJIAY';
 const PRODUCT2_ID = process.env.PRODUCT2_ID || '01tU6000004z8nxIAA';
 
-// Endereços para testar viabilidade e geração de pedido. Av. Paulista (CEP 01310-917) e variações.
-const ADDRESSES_TO_TRY = [
-  { streetType: 'Avenida', streetName: 'Paulista', number: 1530, neighborhood: 'Bela Vista', zipCode: '01310917', locationCode: '3550308', Latitude: '-23.5614', Longitude: '-46.6562' },
-  { streetType: 'Avenida', streetName: 'Paulista', number: 1578, neighborhood: 'Bela Vista', zipCode: '01310917', locationCode: '3550308', Latitude: '-23.5614', Longitude: '-46.6562' },
-  { streetType: 'Avenida', streetName: 'Paulista', number: 1842, neighborhood: 'Bela Vista', zipCode: '01310917', locationCode: '3550308', Latitude: '-23.5614', Longitude: '-46.6562' },
-  { streetType: 'Avenida', streetName: 'Paulista', number: 2000, neighborhood: 'Bela Vista', zipCode: '01310917', locationCode: '3550308', Latitude: '-23.5614', Longitude: '-46.6562' },
-  { streetType: 'Avenida', streetName: 'Paulista', number: 2100, neighborhood: 'Bela Vista', zipCode: '01310917', locationCode: '3550308', Latitude: '-23.5614', Longitude: '-46.6562' },
-];
+// Endereços por região (MASS_ADDRESS_REGION=SP|RJ). Default: Av. Paulista.
+const ADDRESSES_TO_TRY = getAddressesToTry();
 const VIABILITY_WAIT_MS = parseInt(process.env.VIABILITY_WAIT_MS || '25000', 10);
 
 function buildCreateQuoteMembersBody(quoteId, addr, addressInfo = null) {
-  const num = String(addr.number);
-  const city = 'São Paulo';
-  const state = 'SP';
-  const zipFormatted = addr.zipCode.length >= 8 ? `${addr.zipCode.slice(0, 5)}-${addr.zipCode.slice(5, 8)}` : addr.zipCode;
-  const description = `${addr.streetType} ${addr.streetName} ${num}, ${addr.neighborhood} - ${city}, ${state} (${zipFormatted})`;
-  const descBlock = {
-    description,
-    streetType: addr.streetType,
-    streetName: addr.streetName,
-    number: num,
-    neighborhood: addr.neighborhood,
-    city,
-    stateAbbreviation: state,
-    zipCode: addr.zipCode,
-    country: 'Brasil',
-    locationCode: addr.locationCode,
-    Latitude: addr.Latitude,
-    Longitude: addr.Longitude,
-  };
-  if (addressInfo?.id != null) descBlock.id = addressInfo.id;
-  if (addressInfo?.hasNumber != null) descBlock.hasNumber = addressInfo.hasNumber;
-  if (addressInfo?.hasNoNumber != null) descBlock.hasNoNumber = addressInfo.hasNoNumber;
-  return {
-    function: 'advance',
-    Token: addressInfo?.Token ?? '',
-    QuoteId: quoteId,
-    OppType: 'New opp',
-    CustomerCategory: 'Corporate',
-    QuoteMemberList: [{
+  const descBlock = buildDescriptionBlock(addr, addressInfo);
+  const complementoBlock = buildComplementoBlock(addr);
+  const quoteMember = {
       parentblock: 1,
       label: 'Block1',
       UnitPrice: 8740.93,
@@ -179,7 +157,15 @@ function buildCreateQuoteMembersBody(quoteId, addr, addressInfo = null) {
       useTypeValue: 'Assinante Comum',
       isSharedDesignation: false,
       productCode: 'CONNECTIVITY_IP_CONNECT',
-    }],
+    };
+  if (complementoBlock) quoteMember['Complemento-Block'] = complementoBlock;
+  return {
+    function: 'advance',
+    Token: addressInfo?.Token ?? '',
+    QuoteId: quoteId,
+    OppType: 'New opp',
+    CustomerCategory: 'Corporate',
+    QuoteMemberList: [quoteMember],
   };
 }
 
@@ -572,21 +558,20 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
     const quoteMemberId = qmRes.status === 200 && qmRes.data?.records?.[0]?.Id ? qmRes.data.records[0].Id : null;
     if (quoteMemberId) {
       console.log('[E2E] 16b. Vtal_SF_GetQuoteAddressViability (pré-viabilidade com endereço)...');
-      const addressId = addressInfo?.id ?? 40373338;
-      const zipFmt = `${addr.zipCode.slice(0, 5)}-${addr.zipCode.slice(5, 8)}`;
-      const enderecoCompleto = `${addr.streetType} ${addr.streetName} ${addr.number}, ${addr.neighborhood} - São Paulo, SP (${zipFmt})`;
+      const addressId = addressInfo?.id ?? getDefaultAddressId(addr);
+      const enderecoCompleto = buildFormattedAddress(addr);
       const getViabilityBody = {
         items: [{
           nomeProduto: 'IP_CONNECT',
           enderecoCompleto,
           skipGpon: false,
           enableAdvance: true,
-          complements: [{ argComplemento: '', valorComplemento: '', tipoComplemento: '' }],
-          UF: 'SP',
+          complements: buildViabilityComplements(addr),
+          UF: getOrderUf(),
           idEnderecoExt: String(addressId),
           viability: 1,
           nFachada: String(addr.number),
-          codigoLogradouro: '2706',
+          codigoLogradouro: addr.codigoLogradouro || '2706',
           codigoLocalidade: addr.locationCode,
           isLatLong: false,
           codigoBairro: addr.neighborhood.toUpperCase().replace(/\s+/g, ' '),
@@ -752,7 +737,7 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
       console.log('   ValidateCreateOrder:', validateRes.status, validateRes.data?.error || validateRes.text?.slice(0, 200), '(continuando)');
     }
 
-    const uf = process.env.ORDER_UF || 'SP';
+    const uf = getOrderUf();
     if (process.env.USE_MERGE_TECH_CONTACT === '1') {
       console.log('[E2E] 17e2. Vtal_Seg_MergeTechContacList (trace: antes de CreateOrderOnQuote)...');
       const mergeBody = { inputList2: '', inputList1: [{ recordTypeName: 'Business', ContactId: contactTecnicoId, accountId: accountBussinessId, UF: uf, contacts: [{ contactId: contactTecnicoId, value: contactTecnicoId, label: '', name: '' }] }] };
@@ -926,7 +911,7 @@ async function runQuoteFlow(instanceUrl, accessToken, cookie, accountIds) {
     if (!orderId) fail('Vtal_CreateOrderOnQuote não retornou MasterOrderId após ' + CREATE_ORDER_MAX_ATTEMPTS + ' tentativas', lastOrderRes);
   }
 
-  fail('Nenhum endereço viável após ' + ADDRESSES_TO_TRY.length + ' tentativas (CEPs Av. Paulista 01310-917)', { status: 0, data: null });
+  fail(`Nenhum endereço viável após ${ADDRESSES_TO_TRY.length} tentativa(s) em ${getRegionLabel()}`, { status: 0, data: null });
 }
 
 /** Modo QUOTE_ID_READY: usa cotação pronta (Aprovada, viável) e vai direto para gerar pedido. */
@@ -941,7 +926,7 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
     console.log('   ValidateCreateOrder:', validateRes.status, validateRes.data?.error || validateRes.text?.slice(0, 200));
   }
 
-  const uf = process.env.ORDER_UF || 'SP';
+  const uf = getOrderUf();
   if (process.env.USE_MERGE_TECH_CONTACT === '1') {
     console.log('[E2E] 17e2. Vtal_Seg_MergeTechContacList (trace: antes de CreateOrderOnQuote)...');
     const mergeBody = { inputList2: '', inputList1: [{ recordTypeName: 'Business', ContactId: contactTecnicoId, accountId: accountBussinessId, UF: uf, contacts: [{ contactId: contactTecnicoId, value: contactTecnicoId, label: '', name: '' }] }] };
@@ -1108,14 +1093,15 @@ async function patchMassaProntaAccounts(instanceUrl, accessToken, cookie, accoun
     businessBody?.Vtal_SF_Email__c ||
     businessBody?.vlocity_cmt__BillingEmailAddress__c ||
     '';
+  const businessPatch = buildBusinessAccountPatchPayload({ accountName, email, environment: envName });
   await apiCall(
     'PATCH',
     `${SOBJECTS_ACCOUNT}/${accountBussinessId}`,
-    buildBusinessAccountPatchPayload({ accountName, email, environment: envName }),
+    businessPatch,
   );
 
   const accountNumber = businessBody?.Account_Number__c || '';
-  const ufOfClient = businessBody?.vtal_LXD_UF_OfClient__c || 'SP';
+  const ufOfClient = businessPatch.vtal_LXD_UF_OfClient__c || businessBody?.vtal_LXD_UF_OfClient__c || 'SP';
   await apiCall(
     'PATCH',
     `${SOBJECTS_ACCOUNT}/${accountBillingId}`,

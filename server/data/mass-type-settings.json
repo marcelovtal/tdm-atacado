@@ -20,25 +20,25 @@
     },
     "massa-pronta-opp-pedido": {
       "environments": {
-        "ti": true,
+        "ti": false,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido-ip-connect-cpe": {
       "environments": {
-        "ti": true,
+        "ti": false,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido-pega": {
       "environments": {
-        "ti": true,
+        "ti": false,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido-pega-ofs": {
       "environments": {
-        "ti": true,
+        "ti": false,
         "trg": true
       }
     },

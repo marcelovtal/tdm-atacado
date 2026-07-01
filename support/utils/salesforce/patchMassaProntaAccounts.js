@@ -42,14 +42,15 @@ async function patchMassaProntaAccounts(apiCall, accountIds, options = {}) {
     businessBody?.Vtal_SF_Email__c ||
     businessBody?.vlocity_cmt__BillingEmailAddress__c ||
     '';
+  const businessPatch = buildBusinessAccountPatchPayload({ accountName, email, environment });
   await apiCall(
     'PATCH',
     `${sobjectsAccount}/${accountBussinessId}`,
-    buildBusinessAccountPatchPayload({ accountName, email, environment }),
+    businessPatch,
   );
 
   const accountNumber = businessBody?.Account_Number__c || '';
-  const ufOfClient = businessBody?.vtal_LXD_UF_OfClient__c || 'SP';
+  const ufOfClient = businessPatch.vtal_LXD_UF_OfClient__c || businessBody?.vtal_LXD_UF_OfClient__c || 'SP';
   await apiCall(
     'PATCH',
     `${sobjectsAccount}/${accountBillingId}`,
