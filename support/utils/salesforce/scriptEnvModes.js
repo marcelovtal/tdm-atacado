@@ -9,9 +9,10 @@ function getAccountIdsFromEnv() {
   if (process.env.START_FROM_QUOTE !== '1') return null;
   const accountBussinessId = process.env.ACCOUNT_BUSINESS_ID?.trim();
   const accountOrganizationId = process.env.ACCOUNT_ORGANIZATION_ID?.trim();
+  const accountBillingId = process.env.ACCOUNT_BILLING_ID?.trim();
   const contactTecnicoId = process.env.CONTACT_TECNICO_ID?.trim();
   if (!accountBussinessId || !accountOrganizationId || !contactTecnicoId) return null;
-  return { accountBussinessId, accountOrganizationId, contactTecnicoId };
+  return { accountBussinessId, accountOrganizationId, accountBillingId, contactTecnicoId };
 }
 
 function getReadyQuoteFromEnv() {

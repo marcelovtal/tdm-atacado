@@ -45,15 +45,49 @@ function isTypeActiveInEnv(type, environment) {
   return type.activeEnvironments?.[environment] !== false;
 }
 
+function isTypeAutoDisabledInEnv(type, environment) {
+  return type.autoDisabledByEnv?.[environment] === true;
+}
+
+function formatInactiveBadge(type, environment, { isAdmin }) {
+  const envLabel = environment.toUpperCase();
+  if (isTypeAutoDisabledInEnv(type, environment)) {
+    const streak = type.failureStreakByEnv?.[environment] || 4;
+    return `<span class="mass-type-badge mass-type-badge--auto" title="${escapeHtml(type.autoDisableReasonByEnv?.[environment] || '')}">Inativo (${streak} falhas técnicas)</span>`;
+  }
+  if (isAdmin) {
+    return `<span class="mass-type-badge">Inativo em ${envLabel}</span>`;
+  }
+  return '';
+}
+
 function formatEnvSummary(activeEnvironments = {}) {
   return ['ti', 'trg']
     .map((env) => `${env.toUpperCase()}: ${activeEnvironments[env] !== false ? 'ativo' : 'off'}`)
     .join(' · ');
 }
 
+function flowStepClass(step) {
+  return `choice-flow-step choice-flow-step--${String(step)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')}`;
+}
+
+function renderFlowPath(steps) {
+  if (!Array.isArray(steps) || !steps.length) return '';
+  const parts = steps.map((step, index) => {
+    const arrow =
+      index > 0 ? '<span class="choice-flow-arrow" aria-hidden="true">→</span>' : '';
+    return `${arrow}<span class="${flowStepClass(step)}">${escapeHtml(step)}</span>`;
+  });
+  const label = escapeHtml(steps.join(' → '));
+  return `<div class="choice-flow-path" aria-label="Fluxo: ${label}">${parts.join('')}</div>`;
+}
+
 function renderMassTypeCard(type, { isAdmin, environment, checkFirstActive }) {
   const activeInEnv = isTypeActiveInEnv(type, environment);
-  if (!isAdmin && !activeInEnv) return '';
+  const autoDisabled = isTypeAutoDisabledInEnv(type, environment);
+  if (!isAdmin && !activeInEnv && !autoDisabled) return '';
 
   const envLabel = environment.toUpperCase();
   const cardClasses = ['choice-card', type.cardClass, !activeInEnv ? 'choice-card--inactive' : '']
@@ -65,7 +99,7 @@ function renderMassTypeCard(type, { isAdmin, environment, checkFirstActive }) {
   const toggleBtn = isAdmin
     ? `<button type="button" class="btn btn-secondary btn-sm mass-type-toggle" data-mass-type-id="${escapeHtml(type.id)}" data-mass-type-environment="${escapeHtml(environment)}" data-mass-type-active="${activeInEnv ? '1' : '0'}">${activeInEnv ? `Desativar em ${envLabel}` : `Ativar em ${envLabel}`}</button>`
     : '';
-  const badge = !activeInEnv && isAdmin ? `<span class="mass-type-badge">Inativo em ${envLabel}</span>` : '';
+  const badge = !activeInEnv ? formatInactiveBadge(type, environment, { isAdmin }) : '';
   const envSummary = isAdmin
     ? `<span class="mass-type-env-summary">${escapeHtml(formatEnvSummary(type.activeEnvironments))}</span>`
     : '';
@@ -73,6 +107,7 @@ function renderMassTypeCard(type, { isAdmin, environment, checkFirstActive }) {
   const envData = type.activeEnvironments || {};
   return `
     <label class="${cardClasses}" data-mass-type-id="${escapeHtml(type.id)}" data-form-variant="${escapeHtml(type.formVariant || '')}" data-active-ti="${envData.ti !== false ? 'true' : 'false'}" data-active-trg="${envData.trg !== false ? 'true' : 'false'}">
+      ${renderFlowPath(type.flowSteps)}
       <input type="radio" name="massType" value="${escapeHtml(type.id)}"${!activeInEnv ? ' disabled' : ''}${checked} />
       <span class="choice-title">${escapeHtml(type.label)}</span>
       ${badge}
@@ -91,7 +126,9 @@ function renderMassTypes(categories, isAdmin, environment = 'ti') {
   const visibleCategories = categories
     .map((cat) => ({
       ...cat,
-      types: cat.types.filter((t) => isAdmin || isTypeActiveInEnv(t, env)),
+      types: cat.types.filter(
+        (t) => isAdmin || isTypeActiveInEnv(t, env) || isTypeAutoDisabledInEnv(t, env),
+      ),
     }))
     .filter((cat) => cat.types.length > 0);
 
@@ -883,15 +920,20 @@ async function loadJobs({ fromUiRefresh = false } = {}) {
 
 function mergeJobResultFields(job) {
   const r = job.result || {};
+  const ev = job.data?.envVars || {};
   return {
     ...r,
     orderId: r.orderId ?? job.orderId ?? null,
     orderNumber: r.orderNumber ?? job.orderNumber ?? null,
     orderStatus: r.orderStatus ?? job.orderStatus ?? null,
-    accountOrganizationId: r.accountOrganizationId ?? job.accountOrganizationId ?? null,
-    accountBusinessId: r.accountBusinessId ?? job.accountBusinessId ?? null,
-    accountBillingId: r.accountBillingId ?? job.accountBillingId ?? null,
-    contactTecnicoId: r.contactTecnicoId ?? job.contactTecnicoId ?? null,
+    accountOrganizationId:
+      r.accountOrganizationId ?? job.accountOrganizationId ?? ev.ACCOUNT_ORGANIZATION_ID ?? null,
+    accountBusinessId:
+      r.accountBusinessId ?? job.accountBusinessId ?? ev.ACCOUNT_BUSINESS_ID ?? null,
+    accountBillingId:
+      r.accountBillingId ?? job.accountBillingId ?? ev.ACCOUNT_BILLING_ID ?? null,
+    contactTecnicoId:
+      r.contactTecnicoId ?? job.contactTecnicoId ?? ev.CONTACT_TECNICO_ID ?? null,
     pegaCaseId: r.pegaCaseId ?? job.pegaCaseId ?? null,
     pegaCaseIdPontaA: r.pegaCaseIdPontaA ?? job.pegaCaseIdPontaA ?? null,
     pegaCaseIdPontaB: r.pegaCaseIdPontaB ?? job.pegaCaseIdPontaB ?? null,

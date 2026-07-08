@@ -76,6 +76,22 @@
             <p id="mass-types-message" class="message" hidden></p>
           </form>
         </section>
+
+        <section class="card">
+          <h2>Fila de jobs (paralelismo)</h2>
+          <p class="card-hint">
+            Quantos testes podem rodar ao mesmo tempo na fila. Fluxos com Playwright (IP/VPN/LD Massa Completa até Ativação)
+            continuam sempre <strong>1 por vez</strong>, independente deste valor.
+          </p>
+          <form id="job-queue-form">
+            <div class="admin-toolbar">
+              <label for="parallel-jobs-select" class="admin-inline-label">Jobs simultâneos</label>
+              <select id="parallel-jobs-select" name="parallelJobs"></select>
+              <button type="submit" class="btn btn-primary">Salvar fila</button>
+            </div>
+            <p id="job-queue-message" class="message" hidden></p>
+          </form>
+        </section>
       </main>
     </div>
     <script src="/admin.js"></script>

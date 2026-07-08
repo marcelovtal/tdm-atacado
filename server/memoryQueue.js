@@ -31,10 +31,14 @@ function createMemoryJob(id, name, data, priority = 100) {
 /**
  * Cria uma fila em memória que processa jobs com o processor ao adicionar.
  * @param {(job: object) => Promise<object>} processor - função que processa o job e retorna o resultado
+ * @param {() => number | Promise<number>} [resolveMaxConcurrency] - limite de jobs simultâneos
  */
-export function createMemoryQueue(processor) {
+export function createMemoryQueue(processor, resolveMaxConcurrency) {
   const pendingJobIds = [];
-  let isProcessing = false;
+  let activeCount = 0;
+  const getMaxConcurrency =
+    resolveMaxConcurrency ||
+    (() => 1);
 
   /** Próximo job: menor `priority` primeiro (1 = reserva); empate mantém ordem de chegada (FIFO). */
   function shiftNextByPriority() {
@@ -51,18 +55,7 @@ export function createMemoryQueue(processor) {
     return pendingJobIds.splice(bestIdx, 1)[0];
   }
 
-  async function processNext() {
-    if (isProcessing) return;
-    const nextJobId = shiftNextByPriority();
-    if (!nextJobId) return;
-
-    const job = jobs.get(nextJobId);
-    if (!job) {
-      setImmediate(processNext);
-      return;
-    }
-
-    isProcessing = true;
+  async function runJob(job) {
     try {
       job.state = 'active';
       job.processedOn = Date.now();
@@ -84,8 +77,24 @@ export function createMemoryQueue(processor) {
       job.returnvalue = null;
       logRedisJob('failed', `Job falhou (fila memória): ${job.failedReason}`, job.id, job.data);
     } finally {
-      isProcessing = false;
-      setImmediate(processNext);
+      activeCount--;
+      setImmediate(pump);
+    }
+  }
+
+  async function pump() {
+    let max = await getMaxConcurrency();
+    if (!Number.isFinite(max) || max < 1) max = 1;
+
+    while (activeCount < max) {
+      const nextJobId = shiftNextByPriority();
+      if (!nextJobId) return;
+
+      const job = jobs.get(nextJobId);
+      if (!job) continue;
+
+      activeCount++;
+      runJob(job);
     }
   }
 
@@ -97,7 +106,7 @@ export function createMemoryQueue(processor) {
       jobs.set(job.id, job);
       pendingJobIds.push(job.id);
       logRedisJob('enqueue', `Job enfileirado: ${name}`, job.id, data, { backend: 'memory', priority });
-      setImmediate(processNext);
+      setImmediate(pump);
       return { id: job.id };
     },
 

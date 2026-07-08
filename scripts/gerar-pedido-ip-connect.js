@@ -22,6 +22,8 @@
  *
  * Uso: [ENVIRONMENT=dev] node scripts/gerar-pedido-ip-connect.js
  *
+ * Escopo: gera pedido no Salesforce e aguarda subpedido em implantação — **sem** etapa de configuração PEGA.
+ *
  * Modo cotação pronta:
  *   QUOTE_ID_READY=1 QUOTE_ID=0Q0xxx ACCOUNT_BUSINESS_ID=001xxx ACCOUNT_ORGANIZATION_ID=001xxx CONTACT_TECNICO_ID=003xxx node scripts/gerar-pedido-ip-connect.js
  *
@@ -29,7 +31,7 @@
  * Se o org não tiver o IP "XOMOnSubmitOrder" ativo, definir IP_XOM_SUBMIT_ORDER com o nome real do IP
  * (ex.: .../integrationprocedure/Vtal_SubmitOrderToOM) para o subpedido ir para "Em implantação".
  */
-const { finalizePedidoWithOptionalPega } = require('../support/utils/finalizePedidoWithOptionalPega.js');
+const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
 const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 const { createSalesforceScriptClient } = require('../support/utils/salesforce/scriptHttpClient.js');
@@ -949,14 +951,14 @@ async function main() {
       if (readyQuote) {
         const result = await runOrderOnlyFlow(instanceUrl, accessToken, cookie, readyQuote);
         if (result.orderNumber) {
-          await finalizePedidoWithOptionalPega(mergeAccountIdsIntoPedidoResult(result, readyQuote));
+          await finalizePedidoGerado(mergeAccountIdsIntoPedidoResult(result, readyQuote));
           return true;
         }
       }
       const accountIds = skipLead || (await runLeadFlow(instanceUrl, accessToken, cookie));
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        await finalizePedidoWithOptionalPega(mergeAccountIdsIntoPedidoResult(result, accountIds));
+        await finalizePedidoGerado(mergeAccountIdsIntoPedidoResult(result, accountIds));
         return true;
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

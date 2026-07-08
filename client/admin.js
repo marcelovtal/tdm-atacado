@@ -237,3 +237,50 @@ document.getElementById('mass-types-form')?.addEventListener('submit', async (e)
 });
 
 loadMassTypesAdmin().catch((err) => showMassTypesMsg(err.message, 'error'));
+
+function showJobQueueMsg(text, type) {
+  const el = document.getElementById('job-queue-message');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'message' + (type ? ` ${type}` : '');
+  el.hidden = !text;
+}
+
+function renderParallelJobsSelect(settings) {
+  const select = document.getElementById('parallel-jobs-select');
+  if (!select) return;
+  const min = settings.min ?? 1;
+  const max = settings.max ?? 10;
+  const current = settings.parallelJobs ?? 1;
+  select.innerHTML = '';
+  for (let n = min; n <= max; n++) {
+    const opt = document.createElement('option');
+    opt.value = String(n);
+    opt.textContent = n === 1 ? '1 (sequencial)' : String(n);
+    if (n === current) opt.selected = true;
+    select.appendChild(opt);
+  }
+}
+
+async function loadJobQueueAdmin() {
+  const data = await api('/auth/job-queue');
+  renderParallelJobsSelect(data);
+}
+
+document.getElementById('job-queue-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const select = document.getElementById('parallel-jobs-select');
+  const parallelJobs = parseInt(select?.value || '1', 10) || 1;
+  try {
+    const data = await api('/auth/job-queue', {
+      method: 'PUT',
+      body: JSON.stringify({ parallelJobs }),
+    });
+    renderParallelJobsSelect(data);
+    showJobQueueMsg(`Paralelismo atualizado: ${data.parallelJobs} job(s) simultâneo(s).`, 'success');
+  } catch (err) {
+    showJobQueueMsg(err.message || 'Erro ao salvar', 'error');
+  }
+});
+
+loadJobQueueAdmin().catch((err) => showJobQueueMsg(err.message, 'error'));

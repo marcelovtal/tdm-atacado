@@ -4,6 +4,7 @@
  */
 const { runLeadToContactsStep7 } = require('../ativacaoBrmRunLeadToContacts.js');
 const { runMsaContractStep, pollBrmActivation } = require('./runMsaAndBrm.js');
+const { logAccountsForPanel } = require('../mergeAccountIdsIntoPedidoResult.js');
 
 /**
  * @param {function} apiCall
@@ -15,12 +16,14 @@ async function runLeadToBrm(apiCall, fail, opts = {}) {
   const { out, contactTecnicoId, envName } = await runLeadToContactsStep7(apiCall, fail, { logPrefix });
   await runMsaContractStep(apiCall, fail, out.AccountOrganizationId, { logPrefix, step: 8 });
   await pollBrmActivation(apiCall, fail, out.AccountBillingId, { envName, logPrefix, step: 9 });
-  return {
+  const accountIds = {
     accountBillingId: out.AccountBillingId,
     accountBussinessId: out.AccountBussinessId,
     accountOrganizationId: out.AccountOrganizationId,
     contactTecnicoId,
   };
+  logAccountsForPanel(accountIds, logPrefix);
+  return accountIds;
 }
 
 module.exports = { runLeadToBrm };

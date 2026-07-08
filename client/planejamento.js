@@ -30,6 +30,10 @@ function isTypeActiveInEnv(type, environment) {
   return type.activeEnvironments?.[environment] !== false;
 }
 
+function isTypeAutoDisabledInEnv(type, environment) {
+  return type.autoDisabledByEnv?.[environment] === true;
+}
+
 function getSelectedMassTypeMetas() {
   const root = document.getElementById('schedule-mass-types-root');
   if (!root) return [];
@@ -52,7 +56,9 @@ function renderPlanningMassTypes() {
   const visibleCategories = (appConfig.massCategories || [])
     .map((cat) => ({
       ...cat,
-      types: cat.types.filter((t) => isAdmin || isTypeActiveInEnv(t, env)),
+      types: cat.types.filter(
+        (t) => isAdmin || isTypeActiveInEnv(t, env) || isTypeAutoDisabledInEnv(t, env),
+      ),
     }))
     .filter((cat) => cat.types.length > 0);
 
@@ -70,12 +76,17 @@ function renderPlanningMassTypes() {
         ${cat.types
           .map((type) => {
             const activeInEnv = isTypeActiveInEnv(type, env);
+            const autoDisabled = isTypeAutoDisabledInEnv(type, env);
             const checked = previouslyChecked.has(type.id);
+            const autoBadge = !activeInEnv && autoDisabled
+              ? `<span class="mass-type-badge mass-type-badge--auto">Inativo (${type.failureStreakByEnv?.[env] || 4} falhas técnicas)</span>`
+              : '';
             return `
           <label class="planning-mass-card${activeInEnv ? '' : ' planning-mass-card--inactive'}">
             <input type="checkbox" value="${escapeHtml(type.id)}" data-label="${escapeHtml(type.label)}" data-form-variant="${escapeHtml(type.formVariant || '')}"${activeInEnv ? '' : ' disabled'}${checked && activeInEnv ? ' checked' : ''} />
             <span class="planning-mass-card__body">
               <span class="planning-mass-card__title">${escapeHtml(type.label)}</span>
+              ${autoBadge}
               ${type.subtitle ? `<span class="planning-mass-card__sub">${escapeHtml(type.subtitle)}</span>` : ''}
             </span>
           </label>`;

@@ -5,8 +5,14 @@ import { normalizeVt } from './auth/vt.js';
 import { createRedisClient } from './redisConnection.js';
 import { createMemoryQueue } from './memoryQueue.js';
 import { logRedis, getRedisConnectionSummary } from './monitor.js';
+import { getParallelJobs, refreshParallelJobsCache } from './jobQueueSettings.js';
 
 export const JOB_QUEUE_NAME = 'fdl-vtal-mass';
+
+async function resolveMemoryQueueConcurrency() {
+  await refreshParallelJobsCache();
+  return getParallelJobs();
+}
 
 /**
  * Inicializa a fila: Redis se disponível, senão fila em memória (apenas perfil local).
@@ -15,7 +21,10 @@ export async function initQueue(processor) {
   if (config.useMemoryQueue || process.env.USE_MEMORY_QUEUE === '1') {
     console.log('[Fila] Modo memória (USE_MEMORY_QUEUE) — Redis não necessário.');
     logRedis('memory_mode', 'Fila em memória ativa (sem Redis)', getRedisConnectionSummary());
-    return { massQueue: createMemoryQueue(processor), isRedis: false };
+    return {
+      massQueue: createMemoryQueue(processor, resolveMemoryQueueConcurrency),
+      isRedis: false,
+    };
   }
 
   const connection = createRedisClient({
@@ -45,7 +54,10 @@ export async function initQueue(processor) {
       throw new Error(`Redis obrigatório no perfil QA: ${err.message}`);
     }
     console.warn('[Fila] Redis indisponível, usando fila em memória. Defina USE_MEMORY_QUEUE=1 para evitar tentativa.');
-    return { massQueue: createMemoryQueue(processor), isRedis: false };
+    return {
+      massQueue: createMemoryQueue(processor, resolveMemoryQueueConcurrency),
+      isRedis: false,
+    };
   }
 
   const massQueue = new Queue(JOB_QUEUE_NAME, {

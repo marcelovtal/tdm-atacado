@@ -98,6 +98,7 @@ async function pollBrmActivation(apiCall, fail, accountBillingId, opts = {}) {
   console.log(`${logPrefix} Aguardando 45s para conta Billing/Business ficar ativa no BRM...`);
   await delay(45000);
   console.log(`${logPrefix} Lead + BRM OK. AccountBillingId:`, accountBillingId);
+  console.log(`${logPrefix} AccountBillingId:`, accountBillingId);
 }
 
 module.exports = { runMsaContractStep, pollBrmActivation };

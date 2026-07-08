@@ -35,6 +35,8 @@
  *
  * Uso: [ENVIRONMENT=dev] node scripts/gerar-pedido-link-dedicado.js
  *
+ * Escopo: gera pedido no Salesforce e aguarda subpedido em implantação — **sem** etapa de configuração PEGA.
+ *
  * Opcionais: IP_XOM_SUBMIT_ORDER (URL do IP de submit OM), XOM_SUBMIT_MODE (Sync|Async).
  * Se o org não tiver o IP "XOMOnSubmitOrder" ativo, definir IP_XOM_SUBMIT_ORDER com o nome real do IP
  * (ex.: .../integrationprocedure/Vtal_SubmitOrderToOM) para o subpedido ir para "Em implantação".
@@ -49,7 +51,7 @@ const { buildContractMSAPayload, buildContractActivatePayload } = require('../su
 const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/contentVersionMSAPayload.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
-const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
+const { mergeAccountIdsIntoPedidoResult, buildPollPartialSnapshot } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
 const { pollSubpedidosEmImplantacao } = require('../support/utils/salesforce/pollSubpedidosEmImplantacao.js');
 
 const { createSalesforceScriptClient } = require('../support/utils/salesforce/scriptHttpClient.js');
@@ -1757,6 +1759,10 @@ try {
         parentOrderId: orderId,
         delay,
         fail,
+        partialSnapshot: buildPollPartialSnapshot(
+          { orderId, orderNumber, orderStatus },
+          accountIds,
+        ),
       });
       return {
         quoteId,
@@ -1868,6 +1874,13 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
     parentOrderId: orderId,
     delay,
     fail,
+    partialSnapshot: buildPollPartialSnapshot(
+      { orderId, orderNumber, orderStatus },
+      {
+        ...ready,
+        accountBillingId: process.env.ACCOUNT_BILLING_ID?.trim() || ready.accountBillingId,
+      },
+    ),
   });
 
   return {

@@ -120,12 +120,21 @@ const CREATE_ENV_RESERVATIONS_TABLE = `
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 `;
 
+const CREATE_APP_SETTINGS_TABLE = `
+  CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(64) NOT NULL PRIMARY KEY,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+`;
+
 export async function initMysqlDatabase() {
   await run(CREATE_TABLE);
   await run(CREATE_ACL_TABLE);
   await run(CREATE_MASS_TYPE_SETTINGS_TABLE);
   await run(CREATE_SCHEDULED_JOBS_TABLE);
   await run(CREATE_ENV_RESERVATIONS_TABLE);
+  await run(CREATE_APP_SETTINGS_TABLE);
   try {
     await run('ALTER TABLE job_executions ADD COLUMN result_json LONGTEXT NULL');
   } catch (err) {
@@ -389,6 +398,21 @@ export async function replaceMassTypeSettingsMysql(types) {
   } finally {
     conn.release();
   }
+}
+
+/* ===================== Configurações globais (app_settings) ===================== */
+
+export async function getAppSettingMysql(key) {
+  const row = await getRow(`SELECT setting_value FROM app_settings WHERE setting_key = ? LIMIT 1`, [key]);
+  return row?.setting_value ?? null;
+}
+
+export async function setAppSettingMysql(key, value) {
+  await run(
+    `INSERT INTO app_settings (setting_key, setting_value) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+    [key, String(value)],
+  );
 }
 
 /* ===================== Agendamentos (scheduled_jobs) ===================== */

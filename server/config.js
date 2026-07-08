@@ -87,6 +87,8 @@ export const config = {
     sqlitePath: process.env.SQLITE_PATH || path.join(__dirname, 'data', 'mass-generator.sqlite'),
   },
   workerConcurrency: envInt('WORKER_CONCURRENCY', profile === 'qa' ? 1 : 3),
+  /** Teto do paralelismo configurável pelo admin (jobs simultâneos). */
+  maxParallelJobs: envInt('MAX_PARALLEL_JOBS', 10),
   jobAttempts: envInt('JOB_ATTEMPTS', 2),
   auth: {
     /** Perfil local ignora AUTH_MODE do .env/terminal — nunca LDAP. */
@@ -112,8 +114,8 @@ export const config = {
 
 export const ENVIRONMENTS = ['ti', 'trg'];
 export const MASS_TYPES = [
-  { id: 'lead-pedido', label: 'Lead → IP Connect → Pedido', script: 'gerar-pedido-ip-connect.js', envVars: {} },
-  { id: 'lead-vpn-pedido', label: 'Lead → VPN → Pedido', script: 'gerar-pedido-vpn.js', envVars: {} },
+  { id: 'lead-pedido', label: 'Lead → IP Connect → Pedido', script: 'gerar-pedido-ip-connect.js', envVars: { SKIP_PEGA: '1' } },
+  { id: 'lead-vpn-pedido', label: 'Lead → VPN → Pedido', script: 'gerar-pedido-vpn.js', envVars: { SKIP_PEGA: '1' } },
   { id: 'lead-link-dedicado-pedido', label: 'Lead → Link Dedicado → Pedido', script: 'gerar-pedido-link-dedicado.js', envVars: { SKIP_PEGA: '1' } },
   { id: 'massa-pronta-opp-pedido', label: 'IP Connect (massa pronta)', script: 'gerar-pedido-massa-pronta-ip-connect.js', envVars: {} },
   {
@@ -185,6 +187,12 @@ export const MASS_TYPES = [
     id: 'conta-ativacao-brm-massa-pronta',
     label: 'BRM (massa pronta)',
     script: 'ativacao-brm-massa-pronta.js',
+    envVars: {},
+  },
+  {
+    id: 'test-falha-1-mais-1',
+    label: 'Teste: 1+1=3 (falha proposital)',
+    script: 'test-falha-1-mais-1.js',
     envVars: {},
   },
 ];

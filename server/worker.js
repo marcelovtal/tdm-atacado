@@ -8,6 +8,16 @@ import { persistJobExecution } from './jobPersistence.js';
 import { buildJobReturnPayload, jobStatusFromResult } from './jobOutcome.js';
 import { serializeJobResultSnapshot } from './jobResultSnapshot.js';
 import { createStdoutLiveSnapshotHandler } from './jobLiveSnapshot.js';
+import { initMassTypeSettings } from './massTypeSettings.js';
+import { initMassTypeFailureTracker } from './massTypeFailureTracker.js';
+import { afterMassTypeJobProcessed } from './massTypeJobOutcome.js';
+import { withPlaywrightOfsGate } from './jobConcurrencyGate.js';
+import {
+  initJobQueueSettings,
+  refreshParallelJobsCache,
+  registerBullWorker,
+  getParallelJobs,
+} from './jobQueueSettings.js';
 
 import { config } from './config.js';
 import { logRedis, logRedisJob, getRedisConnectionSummary } from './monitor.js';
@@ -31,44 +41,46 @@ connection.on('error', (err) => {
   console.error('[Worker] Redis:', err.message);
 });
 
-logRedis('worker_start', 'Worker BullMQ iniciado', {
-  ...getRedisConnectionSummary(),
-  concurrency: config.workerConcurrency,
-});
-
 const worker = new Worker(
   JOB_QUEUE_NAME,
   async (job) => {
+    await refreshParallelJobsCache();
     const { script, environment, envVars } = job.data;
-    const startedAt = Date.now();
-    logRedisJob('active', `Processando script ${script}`, job.id, job.data, { attempt: job.attemptsMade + 1 });
-    await job.updateProgress(10);
-    const result = await runVtalScript(script, environment, envVars, {
-      jobId: job.id,
-      onStdoutChunk: createStdoutLiveSnapshotHandler(job),
+    return withPlaywrightOfsGate(script, async () => {
+      const startedAt = Date.now();
+      logRedisJob('active', `Processando script ${script}`, job.id, job.data, { attempt: job.attemptsMade + 1 });
+      await job.updateProgress(10);
+      const result = await runVtalScript(script, environment, envVars, {
+        jobId: job.id,
+        onStdoutChunk: createStdoutLiveSnapshotHandler(job),
+      });
+      await job.updateProgress(100);
+      const dbSave = await persistJobExecution({
+        jobId: String(job.id ?? ''),
+        massTypeLabel: job.data?.massTypeLabel ?? null,
+        orderNumber: result.orderNumber ?? null,
+        environment: environment || 'ti',
+        executedAt: new Date(),
+        userCode: job.data?.createdByVt || null,
+        status: jobStatusFromResult(result),
+        durationMs: Date.now() - startedAt,
+        errorMessage: result.cancelled ? null : result.error ?? null,
+        stdout: result.stdout ?? null,
+        stderr: result.stderr ?? null,
+        resultJson: serializeJobResultSnapshot(result),
+      });
+      const payload = buildJobReturnPayload(result, dbSave);
+      await afterMassTypeJobProcessed(job, result);
+      return payload;
     });
-    await job.updateProgress(100);
-    const dbSave = await persistJobExecution({
-      jobId: String(job.id ?? ''),
-      massTypeLabel: job.data?.massTypeLabel ?? null,
-      orderNumber: result.orderNumber ?? null,
-      environment: environment || 'ti',
-      executedAt: new Date(),
-      userCode: job.data?.createdByVt || null,
-      status: jobStatusFromResult(result),
-      durationMs: Date.now() - startedAt,
-      errorMessage: result.cancelled ? null : result.error ?? null,
-      stdout: result.stdout ?? null,
-      stderr: result.stderr ?? null,
-      resultJson: serializeJobResultSnapshot(result),
-    });
-    return buildJobReturnPayload(result, dbSave);
   },
   {
     connection,
-    concurrency: config.workerConcurrency,
+    concurrency: 1,
   }
 );
+
+registerBullWorker(worker);
 
 worker.on('completed', (job, result) => {
   console.log(`[Worker] Job ${job.id} completed. Order: ${result?.orderNumber || 'N/A'}`);
@@ -97,10 +109,17 @@ worker.on('stalled', (jobId) => {
 });
 
 initDatabase()
+  .then(() => initMassTypeSettings())
+  .then(() => initMassTypeFailureTracker())
+  .then(() => initJobQueueSettings())
   .then(() => initJobCancelListener())
   .then(() => {
+    logRedis('worker_start', 'Worker BullMQ iniciado', {
+      ...getRedisConnectionSummary(),
+      concurrency: getParallelJobs(),
+    });
     console.log(
-      `[Worker] FDL VTAL worker started. Concurrency: ${config.workerConcurrency} (DB datetime MySQL format v2)`
+      `[Worker] FDL VTAL worker started. Concurrency: ${getParallelJobs()} (DB datetime MySQL format v2)`
     );
   })
   .catch((err) => {

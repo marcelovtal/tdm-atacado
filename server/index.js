@@ -15,6 +15,14 @@ import {
   getMassTypeActiveEnvironments,
   listMassTypeSettings,
 } from './massTypeSettings.js';
+import {
+  initMassTypeFailureTracker,
+  getMassTypeFailureDisplay,
+  buildMassTypeInactiveError,
+} from './massTypeFailureTracker.js';
+import { afterMassTypeJobProcessed } from './massTypeJobOutcome.js';
+import { withPlaywrightOfsGate } from './jobConcurrencyGate.js';
+import { initJobQueueSettings, refreshParallelJobsCache } from './jobQueueSettings.js';
 import { runVtalScript, parseScriptStdout } from './runScript.js';
 import {
   createStdoutLiveSnapshotHandler,
@@ -200,29 +208,34 @@ function getEffectiveJobError(job, bullState) {
 
 /** Processor usado pela fila em memória (e compatível com worker Redis) */
 async function processJob(job) {
+  await refreshParallelJobsCache();
   const { script, environment, envVars } = job.data;
-  const startedAt = Date.now();
-  if (job.updateProgress) await job.updateProgress(10);
-  const result = await runVtalScript(script, environment, envVars, {
-    jobId: job.id,
-    onStdoutChunk: createStdoutLiveSnapshotHandler(job),
+  return withPlaywrightOfsGate(script, async () => {
+    const startedAt = Date.now();
+    if (job.updateProgress) await job.updateProgress(10);
+    const result = await runVtalScript(script, environment, envVars, {
+      jobId: job.id,
+      onStdoutChunk: createStdoutLiveSnapshotHandler(job),
+    });
+    if (job.updateProgress) await job.updateProgress(100);
+    const dbSave = await persistJobExecution({
+      jobId: String(job.id ?? ''),
+      massTypeLabel: job.data?.massTypeLabel ?? null,
+      orderNumber: result.orderNumber ?? null,
+      environment: environment || 'ti',
+      executedAt: new Date(),
+      userCode: job.data?.createdByVt || null,
+      status: jobStatusFromResult(result),
+      durationMs: Date.now() - startedAt,
+      errorMessage: result.cancelled ? null : sanitizeJobErrorMessage(result.error),
+      stdout: result.stdout ?? null,
+      stderr: result.stderr ?? null,
+      resultJson: serializeJobResultSnapshot(result),
+    });
+    const payload = buildJobReturnPayload(result, dbSave);
+    await afterMassTypeJobProcessed(job, result);
+    return payload;
   });
-  if (job.updateProgress) await job.updateProgress(100);
-  const dbSave = await persistJobExecution({
-    jobId: String(job.id ?? ''),
-    massTypeLabel: job.data?.massTypeLabel ?? null,
-    orderNumber: result.orderNumber ?? null,
-    environment: environment || 'ti',
-    executedAt: new Date(),
-    userCode: job.data?.createdByVt || null,
-    status: jobStatusFromResult(result),
-    durationMs: Date.now() - startedAt,
-    errorMessage: result.cancelled ? null : sanitizeJobErrorMessage(result.error),
-    stdout: result.stdout ?? null,
-    stderr: result.stderr ?? null,
-    resultJson: serializeJobResultSnapshot(result),
-  });
-  return buildJobReturnPayload(result, dbSave);
 }
 
 /** Monitoramento: eventos Redis e banco (buffer local + lista compartilhada no Redis). */
@@ -285,12 +298,19 @@ app.get('/api/config', requireAuth, (req, res) => {
     .map((cat) => ({
       ...cat,
       types: cat.types
-        .map((t) => ({
-          ...t,
-          activeEnvironments: getMassTypeActiveEnvironments(t.id),
-        }))
+        .map((t) => {
+          const failure = getMassTypeFailureDisplay(t.id);
+          return {
+            ...t,
+            activeEnvironments: getMassTypeActiveEnvironments(t.id),
+            failureStreakByEnv: failure.streakByEnv,
+            autoDisabledByEnv: failure.autoDisabledByEnv,
+            autoDisableReasonByEnv: failure.autoDisableReasonByEnv,
+          };
+        })
         .filter((t) => {
           if (isAdmin) return true;
+          if (Object.values(t.autoDisabledByEnv || {}).some(Boolean)) return true;
           return Object.values(t.activeEnvironments).some(Boolean);
         }),
     }))
@@ -338,7 +358,7 @@ app.post('/api/jobs', requireAuth, async (req, res) => {
     }
     if (!isMassTypeActive(massType, environment)) {
       return res.status(403).json({
-        error: `Este tipo de massa está desativado no ambiente ${String(environment).toUpperCase()}. Escolha outro fluxo ou contate o admin.`,
+        error: buildMassTypeInactiveError(massType, environment),
       });
     }
     const allowedQty = [1, 3, 5];
@@ -787,7 +807,7 @@ app.post('/api/schedules', requireAuth, async (req, res) => {
       }
       if (!isMassTypeActive(id, environment)) {
         return res.status(403).json({
-          error: `"${massConfig.label}" está desativado no ambiente ${String(environment).toUpperCase()}.`,
+          error: buildMassTypeInactiveError(id, environment),
         });
       }
       const massaProntaError = validateMassaProntaJob(id, environment, extraEnv);
@@ -1026,6 +1046,7 @@ function formatJob(job) {
     orderStatusPollFailed: job.returnvalue?.orderStatusPollFailed === true,
     orderStatusPollError: job.returnvalue?.orderStatusPollError ?? null,
     ownerVt: job.data?.createdByVt || null,
+    data: job.data || null,
   };
   return mergeLiveFieldsIntoJobFields(base, extractLiveSnapshotFromProgress(job.progress));
 }
@@ -1033,6 +1054,8 @@ function formatJob(job) {
 initDatabase()
   .then(() => initAccessControl())
   .then(() => initMassTypeSettings())
+  .then(() => initMassTypeFailureTracker())
+  .then(() => initJobQueueSettings())
   .then(() => initJobCancelListener())
   .then(() => initQueue(processJob))
   .then(({ massQueue: q, isRedis }) => {

@@ -20,25 +20,25 @@
     },
     "massa-pronta-opp-pedido": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido-ip-connect-cpe": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido-pega": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
     "massa-pronta-opp-pedido-pega-ofs": {
       "environments": {
-        "ti": false,
+        "ti": true,
         "trg": true
       }
     },
@@ -105,6 +105,12 @@
     "conta-ativacao-brm-massa-pronta": {
       "environments": {
         "ti": true,
+        "trg": true
+      }
+    },
+    "test-falha-1-mais-1": {
+      "environments": {
+        "ti": false,
         "trg": true
       }
     }

@@ -6,6 +6,10 @@ import { isDevAuthBypassEnabled, tryAuthenticateDevBypass } from './devBypassAut
 import { createSession, destroySession, bearerFromReq } from './session.js';
 import { listAccessControl, updateAccessControl } from './accessControl.js';
 import { listMassTypeSettings, updateMassTypeSettings } from '../massTypeSettings.js';
+import {
+  getJobQueueSettingsForApi,
+  updateJobQueueSettings,
+} from '../jobQueueSettings.js';
 import { attachAuth, requireAuth, requirePermission, requireManageAccess, requirePlatformAdmin } from './middleware.js';
 import { normalizeVt } from './vt.js';
 
@@ -94,6 +98,20 @@ router.put('/mass-types', attachAuth, requireAuth, requireManageAccess, async (r
   } catch (err) {
     console.error('[MassTypes] Erro ao salvar:', err.message);
     res.status(500).json({ error: err.message || 'Erro ao salvar tipos de massa' });
+  }
+});
+
+router.get('/job-queue', attachAuth, requireAuth, requireManageAccess, (_req, res) => {
+  res.json(getJobQueueSettingsForApi());
+});
+
+router.put('/job-queue', attachAuth, requireAuth, requireManageAccess, async (req, res) => {
+  try {
+    const data = await updateJobQueueSettings(req.body || {});
+    res.json(data);
+  } catch (err) {
+    console.error('[JobQueue] Erro ao salvar:', err.message);
+    res.status(500).json({ error: err.message || 'Erro ao salvar fila de jobs' });
   }
 });
 

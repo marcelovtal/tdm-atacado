@@ -8,6 +8,8 @@ import {
 import { getJobDataSchema } from './queue.js';
 import { resolveJobPriority } from './jobPriority.js';
 import { logRedisJob } from './monitor.js';
+import { isMassTypeActive } from './massTypeSettings.js';
+import { buildMassTypeInactiveError } from './massTypeFailureTracker.js';
 
 const POLL_MS = Math.max(5000, parseInt(process.env.SCHEDULER_POLL_MS || '30000', 10) || 30000);
 const STUCK_MINUTES = Math.max(1, parseInt(process.env.SCHEDULER_STUCK_MINUTES || '10', 10) || 10);
@@ -35,9 +37,17 @@ async function triggerScheduledRow(row, queue) {
   const qty = Math.max(1, parseInt(row.quantity, 10) || 1);
   const priority = await resolveJobPriority(row.environment, row.created_by_vt);
   const jobIds = [];
+  const skippedInactive = [];
   for (const massType of massTypes) {
     const massTypeId = massType?.id || massType?.massTypeId;
     if (!massTypeId) continue;
+    if (!isMassTypeActive(massTypeId, row.environment)) {
+      skippedInactive.push(massTypeId);
+      console.warn(
+        `[Scheduler] Pulando "${massTypeId}" — inativo em ${String(row.environment).toUpperCase()}.`,
+      );
+      continue;
+    }
     const data = getJobDataSchema(massTypeId, row.environment, qty, extraEnv, row.created_by_vt);
     for (let i = 0; i < qty; i++) {
       const job = await queue.add(`mass-${massTypeId}-${row.environment}`, data, {
@@ -52,6 +62,14 @@ async function triggerScheduledRow(row, queue) {
         priority,
       });
     }
+  }
+  if (!jobIds.length) {
+    const firstSkipped = skippedInactive[0] || massTypes[0]?.id || massTypes[0]?.massTypeId;
+    throw new Error(
+      firstSkipped
+        ? buildMassTypeInactiveError(firstSkipped, row.environment)
+        : 'Nenhum tipo de massa válido no agendamento.',
+    );
   }
   return jobIds;
 }

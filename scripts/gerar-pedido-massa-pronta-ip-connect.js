@@ -1108,6 +1108,11 @@ async function patchMassaProntaAccounts(instanceUrl, accessToken, cookie, accoun
     buildBillingAccountPatchPayload({ accountNumber, ufOfClient, environment: envName }),
   );
   console.log('[E2E] PATCH contas (massa pronta) concluído.');
+  const { logAccountsForPanel } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
+  logAccountsForPanel({
+    ...accountIds,
+    accountBillingId: accountBillingId || process.env.ACCOUNT_BILLING_ID?.trim(),
+  });
 }
 
 /** Se QUOTE_ID_READY=1 com QUOTE_ID + account ids, pula Lead/BRM/Quote e vai direto para gerar pedido (ValidateCreateOrder, CreateOrderOnQuote, checkoutOrderOMBatch). */

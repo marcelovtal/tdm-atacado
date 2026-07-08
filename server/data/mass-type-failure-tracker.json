@@ -1,0 +1,270 @@
+{
+  "types": {
+    "lead-pedido": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 1,
+        "autoDisabled": false,
+        "lastError": "Erro no PEGA ou no OFS ao concluir agendamento/instalação (workzone ou integração com o OFS).",
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-ip-connect-cpe": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-pega": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-pega-ofs": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "lead-link-dedicado-pedido": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-link-dedicado": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-link-dedicado-cpe": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-link-dedicado-pega": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-link-dedicado-pega-ofs": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "lead-vpn-pedido": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-vpn": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 1,
+        "autoDisabled": false,
+        "lastError": "Erro no PEGA ou no OFS ao concluir agendamento/instalação (workzone ou integração com o OFS).",
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-vpn-cpe": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-vpn-pega": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "massa-pronta-opp-pedido-vpn-pega-ofs": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "conta-ativacao-brm": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "conta-ativacao-brm-msa": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "conta-ativacao-brm-massa-pronta": {
+      "ti": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    },
+    "test-falha-1-mais-1": {
+      "ti": {
+        "streak": 4,
+        "autoDisabled": true,
+        "lastError": "ERRO (run 1): Falha de teste: 1 + 1 = 2, mas a validação exige 3\n[TEST] Iniciando validação aritmética de teste...\n[TEST] Calculando: 1 + 1 = 2 (esperado incorreto: 3)",
+        "disabledAt": "2026-07-07T14:08:46.780Z"
+      },
+      "trg": {
+        "streak": 0,
+        "autoDisabled": false,
+        "lastError": null,
+        "disabledAt": null
+      }
+    }
+  }
+}

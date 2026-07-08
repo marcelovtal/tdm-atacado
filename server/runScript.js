@@ -68,8 +68,22 @@ function parsePegaLdConsoleLegFields(text) {
   return out;
 }
 
+/** Mescla envVars do job (massa pronta) quando stdout não emitiu snapshot completo. */
+export function mergeEnvAccountFields(parsed = {}, envVars = {}) {
+  if (!envVars || typeof envVars !== 'object') return { ...parsed };
+  return {
+    ...parsed,
+    accountOrganizationId:
+      parsed.accountOrganizationId || envVars.ACCOUNT_ORGANIZATION_ID || null,
+    accountBusinessId:
+      parsed.accountBusinessId || envVars.ACCOUNT_BUSINESS_ID || null,
+    accountBillingId: parsed.accountBillingId || envVars.ACCOUNT_BILLING_ID || null,
+    contactTecnicoId: parsed.contactTecnicoId || envVars.CONTACT_TECNICO_ID || null,
+  };
+}
+
 /** Parse stdout/stderr do script — reutilizado na fila e no histórico do banco. */
-export function parseScriptStdout(text) {
+export function parseScriptStdout(text, envVars = {}) {
   const enrichLegs = parsePegaEnrichLegFields(text);
   const ldConsoleLegs = parsePegaLdConsoleLegFields(text);
   const panelSnapshot = parsePanelSnapshotFromText(text) || {};
@@ -123,7 +137,7 @@ export function parseScriptStdout(text) {
   const rawOrderStatus = parseOrderStatus(text);
   const subOrderStatus = parseSubOrderStatus(text);
 
-  return {
+  const base = {
     orderId: panelSnapshot.orderId || parseOrderId(text),
     orderNumber: panelSnapshot.orderNumber || parseOrderNumber(text),
     orderStatus: resolvePedidoPanelStatus({
@@ -161,6 +175,7 @@ export function parseScriptStdout(text) {
     orderStatusPollFailed: panelSnapshot.orderStatusPollFailed === true || parseOrderStatusPollFailed(text),
     orderStatusPollError: panelSnapshot.orderStatusPollError || parseOrderStatusPollError(text),
   };
+  return mergeEnvAccountFields(base, envVars);
 }
 
 export function runVtalScript(scriptName, environment, envVars = {}, options = {}) {
@@ -253,7 +268,10 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
         wasJobCancelled(jobId) || signal === 'SIGTERM' || signal === 'SIGKILL';
       if (jobId) unregisterJobProcess(jobId);
       const success = !cancelled && code === 0;
-      const parsed = parseScriptStdout(`${stdout}\n${stderr}`);
+      const parsed = mergeEnvAccountFields(
+        parseScriptStdout(`${stdout}\n${stderr}`, envVars),
+        envVars,
+      );
 
       let error = cancelled
         ? null
@@ -324,12 +342,18 @@ function buildScriptFailureMessage(stderr, stdout, code) {
 }
 
 function parseOrderId(text) {
-  const m = text.match(/OrderId:\s*([A-Za-z0-9]{15,18})/);
+  let m = text.match(/OrderId:\s*([A-Za-z0-9]{15,18})/);
+  if (m) return m[1].trim();
+  m = text.match(/Pedido criado[^|\n]*\|\s*Id:\s*([A-Za-z0-9]{15,18})/i);
   return m ? m[1].trim() : null;
 }
 
 function parseOrderNumber(text) {
-  const m = text.match(/OrderNumber:\s*(\S+)/);
+  let m = text.match(/OrderNumber:\s*(\S+)/);
+  if (m) return m[1].trim();
+  m = text.match(/Pedido criado\s*—\s*Número:\s*(\S+)/i);
+  if (m) return m[1].trim();
+  m = text.match(/Pedido criado[^|\n]*Número:\s*(\S+)/i);
   return m ? m[1].trim() : null;
 }
 
@@ -365,7 +389,11 @@ function parseSubOrderEmImplantacao(text) {
 function parseOrderStatusPollFailed(text) {
   const block = extractPedidoGeradoBlock(text);
   const src = block || text;
-  return /^\s+ERRO status ordem:/m.test(src) || /\[E2E\] ERRO:.*status da ordem não foi alterado/i.test(text);
+  return (
+    /^\s+ERRO status ordem:/m.test(src) ||
+    /\[E2E\] ERRO:.*status da ordem não foi alterado/i.test(text) ||
+    /\[FDL_INTEGRATION_ERROR\]/i.test(text)
+  );
 }
 
 function parseOrderStatusPollError(text) {
@@ -373,27 +401,37 @@ function parseOrderStatusPollError(text) {
   const src = block || text;
   const fromBlock = src.match(/^\s+ERRO status ordem:\s*(.+)$/m);
   if (fromBlock) return fromBlock[1].trim();
+  const fromIntegration = text.match(/\[FDL_INTEGRATION_ERROR\]\s*(.+)$/m);
+  if (fromIntegration) return fromIntegration[1].trim();
   const fromLog = text.match(/\[E2E\] ERRO:\s*(.+)$/m);
   return fromLog ? fromLog[1].trim() : null;
 }
 
 function parseAccountBillingId(text) {
-  const m = text.match(/AccountBillingId:\s*([A-Za-z0-9]{15,18})/);
+  let m = text.match(/AccountBillingId:\s*([A-Za-z0-9]{15,18})/);
+  if (m) return m[1].trim();
+  m = text.match(/Lead \+ BRM OK\. AccountBillingId:\s*([A-Za-z0-9]{15,18})/i);
   return m ? m[1].trim() : null;
 }
 
 function parseAccountBusinessId(text) {
-  const m = text.match(/AccountBusinessId:\s*([A-Za-z0-9]{15,18})/);
+  let m = text.match(/AccountBusinessId:\s*([A-Za-z0-9]{15,18})/);
+  if (m) return m[1].trim();
+  m = text.match(/\[E2E\]\s+AccountBusinessId:\s*([A-Za-z0-9]{15,18})/i);
   return m ? m[1].trim() : null;
 }
 
 function parseAccountOrganizationId(text) {
-  const m = text.match(/AccountOrganizationId:\s*([A-Za-z0-9]{15,18})/);
+  let m = text.match(/AccountOrganizationId:\s*([A-Za-z0-9]{15,18})/);
+  if (m) return m[1].trim();
+  m = text.match(/\[E2E\]\s+AccountOrganizationId:\s*([A-Za-z0-9]{15,18})/i);
   return m ? m[1].trim() : null;
 }
 
 function parseContactTecnicoId(text) {
-  const m = text.match(/ContactTecnicoId:\s*([A-Za-z0-9]{15,18})/);
+  let m = text.match(/ContactTecnicoId:\s*([A-Za-z0-9]{15,18})/);
+  if (m) return m[1].trim();
+  m = text.match(/\[E2E\]\s+ContactTecnicoId:\s*([A-Za-z0-9]{15,18})/i);
   return m ? m[1].trim() : null;
 }
 

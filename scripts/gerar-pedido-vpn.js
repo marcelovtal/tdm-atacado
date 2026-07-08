@@ -13,11 +13,13 @@
  *
  * Uso: [ENVIRONMENT=dev] node scripts/gerar-pedido-vpn.js
  *
+ * Escopo: gera pedido no Salesforce e aguarda subpedido em implantação — **sem** etapa de configuração PEGA.
+ *
  * Opcionais: IP_XOM_SUBMIT_ORDER (URL do IP de submit OM), XOM_SUBMIT_MODE (Sync|Async).
  * Se o org não tiver o IP "XOMOnSubmitOrder" ativo, definir IP_XOM_SUBMIT_ORDER com o nome real do IP
  * (ex.: .../integrationprocedure/Vtal_SubmitOrderToOM) para o subpedido ir para "Em implantação".
  */
-const { finalizePedidoWithOptionalPega } = require('../support/utils/finalizePedidoWithOptionalPega.js');
+const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
 const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 
@@ -984,9 +986,7 @@ async function main() {
       const accountIds = await runLeadFlow(instanceUrl, accessToken, cookie);
       const result = await runQuoteFlow(instanceUrl, accessToken, cookie, accountIds);
       if (result.orderNumber) {
-        await finalizePedidoWithOptionalPega(mergeAccountIdsIntoPedidoResult(result, accountIds), {
-          flowVariant: 'vpn',
-        });
+        await finalizePedidoGerado(mergeAccountIdsIntoPedidoResult(result, accountIds));
         process.exit(0);
       }
       console.log('\n', result.message || 'Order não gerado', 'QuoteId:', result.quoteId);

@@ -8,6 +8,27 @@ const SF_ACCOUNT_ID = /001[A-Za-z0-9]{12,15}/;
 const INTEGRATION_ORDER_STATUS_MESSAGE =
   'Não foi alterado o status da ordem para "Em implantação". Erro no Salesforce ou no Pega.';
 
+const PEGA_OFS_INTEGRATION_MESSAGE =
+  'Erro no PEGA ou no OFS ao concluir agendamento/instalação (workzone ou integração com o OFS).';
+
+function isPegaOfsIntegrationError(combined) {
+  if (/Falta campo obrigatório de workzone.*envio ao OFS/i.test(combined)) return true;
+  if (/workzone.*envio ao OFS/i.test(combined) && /SelecaoDePeriodo|SelecaoDoSlot|PEGA PATCH/i.test(combined)) {
+    return true;
+  }
+  if (/SelecaoDePeriodo.*status:\s*422/i.test(combined) && /workzone|OFS|Validation fail/i.test(combined)) {
+    return true;
+  }
+  if (
+    /Validation fail/i.test(combined) &&
+    /SelecaoDePeriodo|SelecaoDoSlot/i.test(combined) &&
+    /PEGA PATCH|PEGA LD|PEGA VPN|\[PEGA\]/i.test(combined)
+  ) {
+    return true;
+  }
+  return false;
+}
+
 function extractAccountIdFromLogs(text) {
   const fromUrl = text.match(/sobjects\/Account\/(001[A-Za-z0-9]{12,15})/i);
   if (fromUrl) return fromUrl[1];
@@ -95,6 +116,14 @@ export function classifyUserJobError({ stderr = '', stdout = '', environment = '
       code: 'MISSING_TECHNICAL_CONTACT',
       message:
         'Contato técnico ausente na massa pronta. Informe CONTACT_TECNICO_ID ou use massa com contatos do fluxo Lead/BRM.',
+    };
+  }
+
+  if (isPegaOfsIntegrationError(combined)) {
+    return {
+      userError: false,
+      code: 'PEGA_OFS_INTEGRATION_ERROR',
+      message: PEGA_OFS_INTEGRATION_MESSAGE,
     };
   }
 

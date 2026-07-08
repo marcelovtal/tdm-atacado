@@ -31,7 +31,7 @@ const { buildContentVersionMSAPayload } = require('../support/utils/salesforce/c
 const { delay } = require('../support/utils/helpers/waitHelper.js');
 const { finalizePedidoGerado } = require('../support/utils/finalizePedidoGerado.js');
 const { finalizePedidoLinkDedicadoWithOptionalPega } = require('../support/utils/finalizePedidoLinkDedicadoWithOptionalPega.js');
-const { mergeAccountIdsIntoPedidoResult } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
+const { mergeAccountIdsIntoPedidoResult, buildPollPartialSnapshot } = require('../support/utils/mergeAccountIdsIntoPedidoResult.js');
 const { pollSubpedidosEmImplantacao } = require('../support/utils/salesforce/pollSubpedidosEmImplantacao.js');
 const { patchMassaProntaAccounts } = require('../support/utils/salesforce/patchMassaProntaAccounts.js');
 const { patchLinkDedicadoMasterOrder } = require('../support/utils/salesforce/patchLinkDedicadoMasterOrder.js');
@@ -1839,6 +1839,10 @@ try {
         parentOrderId: orderId,
         delay,
         fail,
+        partialSnapshot: buildPollPartialSnapshot(
+          { orderId, orderNumber, orderStatus },
+          accountIds,
+        ),
       });
       return {
         quoteId,
@@ -1960,6 +1964,13 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
     parentOrderId: orderId,
     delay,
     fail,
+    partialSnapshot: buildPollPartialSnapshot(
+      { orderId, orderNumber, orderStatus },
+      {
+        ...ready,
+        accountBillingId: process.env.ACCOUNT_BILLING_ID?.trim() || ready.accountBillingId,
+      },
+    ),
   });
 
   return {

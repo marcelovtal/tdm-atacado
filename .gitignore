@@ -10,6 +10,7 @@ client/dist/
 # Credenciais e dados locais (não versionar)
 support/fixtures/user.json
 server/data/*.sqlite
+support/server/mass-generator.sqlite
 .auth/
 
 # OFS — scripts/HTML de debug local (não versionar)

@@ -1,4 +1,5 @@
 const { extractLinkDedicadoSubpedidos } = require('../extractLinkDedicadoSubpedidos.js');
+const { emitPanelSnapshot } = require('../panelSnapshot.js');
 
 /** Status aceitos como subpedido pronto para PEGA / OM. "OS aberta" não é suficiente. */
 const SUB_ORDER_IMPLANTACAO_STATUSES = ['Em implantação', 'Em implementado', 'In Implementation'];
@@ -39,6 +40,7 @@ async function pollSubpedidosEmImplantacao({
   logPrefix = '[E2E]',
   timeoutMs = 240000,
   intervalMs = 5000,
+  partialSnapshot = null,
 }) {
   console.log(`${logPrefix} 20. Poll subpedidos até TODOS estarem com status "Em implantação"...`);
   const subOrderQuery =
@@ -69,7 +71,16 @@ async function pollSubpedidosEmImplantacao({
   }
 
   if (!allReady) {
-    fail(buildSubOrderTimeoutIntegrationError(lastSubOrders, timeoutMs / 1000));
+    const pollError = buildSubOrderTimeoutIntegrationError(lastSubOrders, timeoutMs / 1000);
+    if (partialSnapshot) {
+      emitPanelSnapshot({
+        ...partialSnapshot,
+        orderStatusPollFailed: true,
+        orderStatusPollError:
+          'Não foi alterado o status da ordem para "Em implantação". Erro no Salesforce ou no Pega.',
+      });
+    }
+    fail(pollError);
   }
 
   return {

@@ -1,6 +1,7 @@
 const { buildOrganizationPatchPayload } = require('./organizationPatchPayload.js');
 const { buildBusinessAccountPatchPayload } = require('./businessAccountPatchPayload.js');
 const { buildBillingAccountPatchPayload } = require('./billingAccountPatchPayload.js');
+const { logAccountsForPanel } = require('../mergeAccountIdsIntoPedidoResult.js');
 
 /**
  * Mesmos PATCH de Organization / Business / Billing que runLeadFlow após conversão.
@@ -10,6 +11,7 @@ const { buildBillingAccountPatchPayload } = require('./billingAccountPatchPayloa
 async function patchMassaProntaAccounts(apiCall, accountIds, options = {}) {
   if (process.env.SKIP_MASSA_ACCOUNT_PATCH === '1') {
     console.log('[E2E] SKIP_MASSA_ACCOUNT_PATCH=1 — pulando PATCH Organization/Business/Billing.');
+    logAccountsForPanel(accountIds);
     return;
   }
   const fail = options.fail || ((msg, res) => {
@@ -57,6 +59,7 @@ async function patchMassaProntaAccounts(apiCall, accountIds, options = {}) {
     buildBillingAccountPatchPayload({ accountNumber, ufOfClient, environment }),
   );
   console.log('[E2E] PATCH contas (massa pronta) concluído.');
+  logAccountsForPanel(accountIds);
 }
 
 module.exports = { patchMassaProntaAccounts };

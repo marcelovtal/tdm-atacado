@@ -7,6 +7,10 @@ import {
   replaceMassTypeSettingsMysql,
 } from './database/mysqlStore.js';
 import { listMassTypeDefinitions } from './massTypeCatalog.js';
+import {
+  clearMassTypeFailureState,
+  getMassTypeFailureDisplay,
+} from './massTypeFailureTracker.js';
 
 const useMysql = config.database.driver === 'mysql';
 
@@ -158,12 +162,16 @@ export function listMassTypeSettings() {
   const map = getActiveMap();
   return listMassTypeDefinitions().map((t) => {
     const environments = getMassTypeActiveEnvironments(t.id);
+    const failure = getMassTypeFailureDisplay(t.id);
     return {
       id: t.id,
       label: t.label,
       script: t.script,
       activeEnvironments: environments,
       active: ENVIRONMENTS.some((env) => environments[env]),
+      failureStreakByEnv: failure.streakByEnv,
+      autoDisabledByEnv: failure.autoDisabledByEnv,
+      autoDisableReasonByEnv: failure.autoDisableReasonByEnv,
     };
   });
 }
@@ -178,7 +186,9 @@ function applyTypeUpdate(next, row) {
     const environments = { ...current.environments };
     for (const env of ENVIRONMENTS) {
       if (row.activeEnvironments[env] !== undefined) {
-        environments[env] = row.activeEnvironments[env] !== false;
+        const enabled = row.activeEnvironments[env] !== false;
+        environments[env] = enabled;
+        if (enabled) clearMassTypeFailureState(id, env);
       }
     }
     next[id] = { environments };
@@ -193,6 +203,9 @@ function applyTypeUpdate(next, row) {
         [env]: row.active !== false,
       },
     };
+    if (row.active !== false) {
+      clearMassTypeFailureState(id, env);
+    }
     return;
   }
 
@@ -201,6 +214,11 @@ function applyTypeUpdate(next, row) {
     next[id] = {
       environments: Object.fromEntries(ENVIRONMENTS.map((env) => [env, active])),
     };
+    if (active && row.environment != null) {
+      clearMassTypeFailureState(id, normalizeEnvironment(row.environment));
+    } else if (active) {
+      for (const env of ENVIRONMENTS) clearMassTypeFailureState(id, env);
+    }
   }
 }
 
