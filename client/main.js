@@ -664,7 +664,7 @@ function renderJobCard(j, { showOwnerVt = false } = {}) {
     typeof window !== 'undefined' &&
     window.fdlVtalAuth &&
     window.fdlVtalAuth.isPlatformAdmin();
-  const isWaiting = status === 'waiting';
+  const isWaiting = status === 'waiting' || status === 'prioritized' || status === 'delayed';
   const isActive = status === 'active';
   const cancelBtn =
     canCancel && (isWaiting || isActive)
@@ -720,11 +720,11 @@ function renderJobsList(jobs, meta = cachedJobsMeta) {
 
   const inFlight = liveJobs.filter((j) => {
     const s = (j.status || '').toLowerCase();
-    return s === 'waiting' || s === 'active';
+    return s === 'waiting' || s === 'prioritized' || s === 'delayed' || s === 'active';
   });
   let recentDone = liveJobs.filter((j) => {
     const s = (j.status || '').toLowerCase();
-    return s !== 'waiting' && s !== 'active';
+    return s !== 'waiting' && s !== 'prioritized' && s !== 'delayed' && s !== 'active';
   });
 
   /** Usuário comum: jobs persistidos entram na mesma lista de executados (sem seção Histórico). */
@@ -822,6 +822,8 @@ async function cancelQueuedJob(jobId) {
 function statusLabel(s) {
   const map = {
     waiting: 'Na fila',
+    prioritized: 'Na fila',
+    delayed: 'Na fila',
     active: 'Executando',
     completed: 'Sucesso',
     failed: 'Falha',
@@ -960,7 +962,7 @@ function stopJobDetailPoll() {
 
 function isJobInFlight(job) {
   const s = (job?.status || '').toLowerCase();
-  return s === 'waiting' || s === 'active';
+  return s === 'waiting' || s === 'prioritized' || s === 'delayed' || s === 'active';
 }
 
 function isJobTerminal(job) {
@@ -1016,7 +1018,15 @@ function renderJobDetailBody(job, id) {
     r.pegaCaseId ||
     r.pegaOrdemServicoOs ||
     jobHasLinkDedicadoPegaLegs(r);
-  const isRunning = job.state === 'active' || job.state === 'waiting';
+  const isRunning =
+    job.state === 'active' ||
+    job.state === 'waiting' ||
+    job.state === 'prioritized' ||
+    job.state === 'delayed' ||
+    job.status === 'active' ||
+    job.status === 'waiting' ||
+    job.status === 'prioritized' ||
+    job.status === 'delayed';
   const statusPollFailed = hasOrderStatusPollFailed(job, r);
   const progressHint = statusPollFailed
     ? orderStatusPollErrorText(job, r)
@@ -1112,8 +1122,8 @@ async function openJobDetail(id) {
         )}`;
       }
       body.innerHTML = renderJobDetailBody(job, id);
-      const state = (job.state || '').toLowerCase();
-      if (state !== 'active' && state !== 'waiting') {
+      const state = (job.state || job.status || '').toLowerCase();
+      if (state !== 'active' && state !== 'waiting' && state !== 'prioritized' && state !== 'delayed') {
         stopJobDetailPoll();
         loadJobs({ fromUiRefresh: true });
       }

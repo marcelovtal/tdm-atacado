@@ -184,6 +184,8 @@ function getEffectiveJobState(job, bullState) {
     if (job.returnvalue.userError) return 'user_error';
     return 'failed';
   }
+  /** BullMQ 5: jobs com `priority` ficam em `prioritized`, não em `waiting`. */
+  if (bullState === 'prioritized' || bullState === 'wait') return 'waiting';
   return bullState;
 }
 
@@ -409,14 +411,21 @@ app.get('/api/jobs', requireAuth, async (req, res) => {
     const ownerFilterRaw = String(req.query.ownerVt || '').trim();
     const ownerFilter = isAdmin && ownerFilterRaw ? normalizeVt(ownerFilterRaw) : null;
 
-    const [waiting, active, completed, failed] = await Promise.all([
-      queue.getJobs(['waiting']),
-      queue.getJobs(['active']),
+    const [waiting, prioritized, delayed, active, completed, failed] = await Promise.all([
+      queue.getJobs(['waiting'], 0, 199),
+      /** BullMQ 5: add() com priority → estado `prioritized` (não aparece em `waiting`). */
+      typeof queue.getJobs === 'function' ? queue.getJobs(['prioritized'], 0, 199) : Promise.resolve([]),
+      queue.getJobs(['delayed'], 0, 99),
+      queue.getJobs(['active'], 0, 99),
       queue.getJobs(['completed'], 0, 99),
       queue.getJobs(['failed'], 0, 99),
     ]);
 
-    const inFlightRaw = [...waiting, ...active];
+    const inFlightById = new Map();
+    for (const job of [...waiting, ...prioritized, ...delayed, ...active]) {
+      if (job?.id != null) inFlightById.set(String(job.id), job);
+    }
+    const inFlightRaw = Array.from(inFlightById.values());
     const terminalRaw = [...completed, ...failed];
 
     const mapQueueJob = async (job) => {
@@ -515,7 +524,7 @@ app.post('/api/jobs/:id/cancel', requireAuth, requirePlatformAdmin, async (req, 
     }
     const state = await job.getState();
 
-    if (state === 'waiting') {
+    if (state === 'waiting' || state === 'prioritized' || state === 'delayed' || state === 'wait') {
       await job.remove();
       return res.json({ ok: true, id, message: 'Job removido da fila.' });
     }
