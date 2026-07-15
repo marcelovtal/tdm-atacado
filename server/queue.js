@@ -27,16 +27,18 @@ export async function initQueue(processor) {
     };
   }
 
-  const connection = createRedisClient({
+  /** Probe com retry desligado — falha rápido no startup. Não reutilizar na Queue. */
+  const probe = createRedisClient({
     connectTimeout: 5000,
     retryStrategy: () => null,
+    maxRetriesPerRequest: 1,
   });
 
   try {
     await Promise.race([
-      connection.ping(),
+      probe.ping(),
       new Promise((_, reject) => {
-        connection.once('error', reject);
+        probe.once('error', reject);
         setTimeout(() => reject(new Error('timeout')), 5000);
       }),
     ]);
@@ -48,7 +50,7 @@ export async function initQueue(processor) {
   } catch (err) {
     logRedis('connect_failed', `Falha ao conectar Redis: ${err.message}`, getRedisConnectionSummary());
     try {
-      connection.disconnect();
+      probe.disconnect();
     } catch (_) {}
     if (config.profile === 'qa') {
       throw new Error(`Redis obrigatório no perfil QA: ${err.message}`);
@@ -59,6 +61,32 @@ export async function initQueue(processor) {
       isRedis: false,
     };
   }
+
+  try {
+    probe.disconnect();
+  } catch (_) {}
+
+  /**
+   * Conexão longeva da Queue: precisa reconectar após ECONNRESET / blip de Sentinel.
+   * (Antes reutilizávamos o probe com retryStrategy: () => null → Connection is closed para sempre.)
+   */
+  const connection = createRedisClient({
+    connectTimeout: 10000,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true,
+    retryStrategy(times) {
+      const delay = Math.min(times * 200, 5000);
+      return delay;
+    },
+  });
+  connection.on('error', (err) => {
+    logRedis('queue_redis_error', err.message, { queue: JOB_QUEUE_NAME });
+  });
+  connection.on('ready', () => {
+    logRedis('queue_redis_ready', 'Redis da fila pronto (reconectado ou inicial)', {
+      queue: JOB_QUEUE_NAME,
+    });
+  });
 
   const massQueue = new Queue(JOB_QUEUE_NAME, {
     connection,
@@ -91,5 +119,12 @@ export function getJobDataSchema(massTypeId, environment, quantity = 1, extraEnv
 
 export function createConnection() {
   if (config.useMemoryQueue || process.env.USE_MEMORY_QUEUE === '1') return null;
-  return createRedisClient();
+  return createRedisClient({
+    connectTimeout: 10000,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: true,
+    retryStrategy(times) {
+      return Math.min(times * 200, 5000);
+    },
+  });
 }
