@@ -198,10 +198,23 @@ oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker -n qualidade-a
 | `PEGA_TI_CLIENT_ID` / `PEGA_TI_CLIENT_SECRET` | Sim*** | PEGA TI |
 | `SF_TRG_CLIENT_ID` / `SF_TRG_CLIENT_SECRET` | Sim** | Salesforce TRG |
 | `PEGA_TRG_CLIENT_ID` / `PEGA_TRG_CLIENT_SECRET` | Sim*** | PEGA TRG |
+| `OFS_USERNAME` / `OFS_PASSWORD` | Sim**** | Supervisor OFS (UI dispatcher) |
 
 \* Se o Redis QA **não usa senha**, omita `REDIS_PASSWORD` do `oc create` (não use o placeholder `alterar_senha_redis` do `.env.qa.example`).  
 \** Ou `SF_ACCESS_TOKEN` / legado `SF_CONSUMER_KEY` + `SF_CONSUMER_SECRET`.  
-\*** Obrigatório para tipos de massa com fluxo PEGA.
+\*** Obrigatório para tipos de massa com fluxo PEGA.  
+\**** Obrigatório para fluxos **Massa Completa até Ativação** (Playwright/OFS). Mesmo par vale para TI e TRG (env global). Localmente use `user.json` → `ofs.ui_password`; no cluster use o Secret.
+
+### Adicionar / atualizar só OFS (secret já existe)
+
+```cmd
+oc set data secret/tdm-qa-secrets ^
+  --from-literal=OFS_USERNAME=<usuario_supervisor> ^
+  --from-literal=OFS_PASSWORD=<senha_supervisor> ^
+  -n qualidade-automation-tdm-qa
+
+oc rollout restart deployment/tdm-qa-api deployment/tdm-qa-worker -n qualidade-automation-tdm-qa
+```
 
 Template: `secret.example.yaml` (somente placeholders).
 
@@ -542,14 +555,34 @@ Ver seção **[8. Site fora do ar](#8-site-fora-do-ar-application-is-not-availab
 
 **Sintoma:** `oc get builds` mostra `Failed (DockerBuildFailed)`; `deploy.cmd` termina mas o código no ar **não muda** (imagem `latest` antiga).
 
-**Solução:** o Dockerfile **não** roda `playwright install` no build. Confira:
+**Solução (opção A — empacotar Chromium no build binário):**
+
+1. No PC (Docker Desktop ligado, com internet):
 
 ```cmd
-oc get builds -n qualidade-automation-tdm-qa
-oc logs build/tdm-qa-13 -n qualidade-automation-tdm-qa --tail=30
+deploy\prepare-playwright-browsers.cmd
 ```
 
-Depois rode `deploy\openshift\deploy.cmd` de novo. Tipos de massa que usam login OFS via Playwright no worker precisam de sessão manual (`.auth/...`) ou rede liberada para o CDN.
+Isso baixa a imagem `mcr.microsoft.com/playwright:v1.58.0-jammy` e copia `/ms-playwright` para `deploy/playwright-browsers/` (não versionar — está no `.gitignore`).
+
+2. Deploy normal:
+
+```cmd
+deploy\openshift\deploy.cmd
+```
+
+O `deploy.cmd` chama o prepare automaticamente se a pasta estiver vazia. O Dockerfile copia `deploy/playwright-browsers` → `/ms-playwright` e define `PLAYWRIGHT_BROWSERS_PATH`.
+
+3. Conferir no worker:
+
+```cmd
+oc exec deploy/tdm-qa-worker -n qualidade-automation-tdm-qa -- sh -c "ls /ms-playwright | head"
+oc exec deploy/tdm-qa-worker -n qualidade-automation-tdm-qa -- printenv PLAYWRIGHT_BROWSERS_PATH
+```
+
+**Importante:** `support/fixtures/user.json` **não** entra mais na imagem (`.dockerignore`). Use Secret `OFS_USERNAME` / `OFS_PASSWORD` no cluster.
+
+Se o prepare falhar no PC (sem Docker / sem pull do MCR), peça liberação de `mcr.microsoft.com` na máquina de build ou use VPN com internet.
 
 ---
 
@@ -559,6 +592,7 @@ Depois rode `deploy\openshift\deploy.cmd` de novo. Tipos de massa que usam login
 |------|--------|
 | `support/fixtures/user.json` | Credenciais locais |
 | `.env`, `.env.qa` | Senhas |
+| `deploy/playwright-browsers/` | Chromium Linux (~centenas de MB) gerado localmente |
 | Secrets OpenShift com valores reais | Usar `oc create secret` |
 | Tokens `oc login` | Acesso ao cluster |
 
@@ -575,7 +609,8 @@ Depois rode `deploy\openshift\deploy.cmd` de novo. Tipos de massa que usam login
 | `deploy/openshift/deployment-worker.yaml` | Worker BullMQ |
 | `deploy/openshift/route.yaml` | URL HTTPS |
 | `deploy/openshift/keepalive-cronjob.yaml` | Repõe réplicas se ficarem em 0 |
-| `deploy/openshift/deploy.cmd` | Deploy completo (apply + build) |
+| `deploy/openshift/deploy.cmd` | Deploy completo (prepare Chromium + apply + build) |
+| `deploy/prepare-playwright-browsers.cmd` | Baixa Chromium Linux para empacotar na imagem |
 | `deploy/openshift/wake-up.cmd` | Sobe pods imediatamente |
 | `Dockerfile` | Imagem de produção |
 | `.env.qa.example` | Referência de variáveis para QA |

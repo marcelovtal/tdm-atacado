@@ -1,9 +1,24 @@
 @echo off
-REM Deploy completo: apply + build + garante pods no ar.
+REM Deploy completo: prepare Playwright (se preciso) + apply + build + pods.
 REM Executar na raiz do repo: deploy\openshift\deploy.cmd
 
 cd /d %~dp0\..\..
 if errorlevel 1 exit /b 1
+
+echo === Chromium Playwright ^(OpenShift^) ===
+dir /b deploy\playwright-browsers 2>nul | findstr /I "chromium" >nul
+if errorlevel 1 (
+  echo Pasta deploy\playwright-browsers sem Chromium.
+  echo Rodando deploy\prepare-playwright-browsers.cmd ...
+  call deploy\prepare-playwright-browsers.cmd
+  if errorlevel 1 (
+    echo.
+    echo FALHOU preparar Chromium. Sem isso o build OpenShift quebra e OFS nao roda.
+    exit /b 1
+  )
+) else (
+  echo Chromium ja presente em deploy\playwright-browsers — ok.
+)
 
 oc project qualidade-automation-tdm-qa
 if errorlevel 1 exit /b 1

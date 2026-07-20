@@ -13,6 +13,9 @@ server/data/*.sqlite
 support/server/mass-generator.sqlite
 .auth/
 
+# Chromium Linux empacotado para OpenShift (gerado por deploy/prepare-playwright-browsers.cmd)
+deploy/playwright-browsers/
+
 # OFS — scripts/HTML de debug local (não versionar)
 scripts/_debug-*
 scripts/_grep-*

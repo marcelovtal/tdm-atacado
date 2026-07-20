@@ -7,3 +7,7 @@ docs
 .env
 .env.*
 npm-debug.log*
+.auth
+support/fixtures/user.json
+server/data/*.sqlite
+*.log

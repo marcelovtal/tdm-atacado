@@ -22,9 +22,9 @@
         "disabledAt": null
       },
       "trg": {
-        "streak": 1,
+        "streak": 0,
         "autoDisabled": false,
-        "lastError": "Erro no PEGA ou no OFS ao concluir agendamento/instalação (workzone ou integração com o OFS).",
+        "lastError": null,
         "disabledAt": null
       }
     },
