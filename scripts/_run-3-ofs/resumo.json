@@ -1,0 +1,14 @@
+[
+    {
+        "script":  "ip",
+        "code":  0
+    },
+    {
+        "script":  "vpn",
+        "code":  0
+    },
+    {
+        "script":  "ld",
+        "code":  0
+    }
+]

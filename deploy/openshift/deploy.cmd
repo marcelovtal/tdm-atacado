@@ -1,23 +1,51 @@
 @echo off
-REM Deploy completo: prepare Playwright (se preciso) + apply + build + pods.
+REM Deploy completo: prepare Playwright (obrigatorio) + apply + build + pods.
+REM No notebook da empresa rode SEMPRE este script (nao rode oc start-build sozinho).
 REM Executar na raiz do repo: deploy\openshift\deploy.cmd
 
 cd /d %~dp0\..\..
 if errorlevel 1 exit /b 1
 
 echo === Chromium Playwright ^(OpenShift^) ===
-dir /b deploy\playwright-browsers 2>nul | findstr /I "chromium" >nul
+dir /b deploy\playwright-browsers 2>nul | findstr /I /B /C:"chromium-" >nul
 if errorlevel 1 (
-  echo Pasta deploy\playwright-browsers sem Chromium.
+  echo.
+  echo ************************************************************
+  echo  FALTA o Chromium em deploy\playwright-browsers
+  echo  Isso NAO vem do GitHub — precisa gerar no notebook.
+  echo ************************************************************
+  echo.
   echo Rodando deploy\prepare-playwright-browsers.cmd ...
   call deploy\prepare-playwright-browsers.cmd
   if errorlevel 1 (
     echo.
-    echo FALHOU preparar Chromium. Sem isso o build OpenShift quebra e OFS nao roda.
+    echo ************************************************************
+    echo  FALHOU preparar Chromium.
+    echo  Sem isso o build OpenShift quebra ^(COPY playwright-browsers^).
+    echo.
+    echo  Opcoes:
+    echo  1^) Rode de novo: deploy\prepare-playwright-browsers.cmd
+    echo  2^) Ou copie a pasta deploy\playwright-browsers do PC pessoal
+    echo     ^(zip^) para este notebook no mesmo caminho.
+    echo ************************************************************
     exit /b 1
   )
 ) else (
   echo Chromium ja presente em deploy\playwright-browsers — ok.
+)
+
+REM Remove headless/ffmpeg/.links — quebram o tar do oc no Windows
+call deploy\prune-playwright-browsers.cmd
+if errorlevel 1 (
+  echo [ERRO] Limpeza do Playwright falhou. Rode: deploy\prepare-playwright-browsers.cmd
+  exit /b 1
+)
+
+REM Garante que nao vamos subir build sem chromium
+dir /b deploy\playwright-browsers 2>nul | findstr /I /B /C:"chromium-" >nul
+if errorlevel 1 (
+  echo [ERRO] Ainda sem chromium-*. Abortando antes do oc start-build.
+  exit /b 1
 )
 
 oc project qualidade-automation-tdm-qa
@@ -39,8 +67,8 @@ oc start-build tdm-qa --from-dir=. --wait
 if errorlevel 1 (
   echo.
   echo BUILD FALHOU — pods continuam com imagem antiga.
-  echo Ver logs: oc logs build/tdm-qa-13 -n qualidade-automation-tdm-qa --tail=50
-  echo         oc get builds -n qualidade-automation-tdm-qa
+  echo Ver builds: oc get builds -n qualidade-automation-tdm-qa
+  echo Ver log:    oc logs -n qualidade-automation-tdm-qa build/NOME_DO_BUILD --tail=80
   exit /b 1
 )
 

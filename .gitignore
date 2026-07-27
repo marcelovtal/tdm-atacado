@@ -5,6 +5,8 @@ client/dist/
 .env.qa
 .env.*.local
 *.log
+logs/
+!logs/README.md
 .DS_Store
 
 # Credenciais e dados locais (não versionar)
@@ -14,7 +16,12 @@ support/server/mass-generator.sqlite
 .auth/
 
 # Chromium Linux empacotado para OpenShift (gerado por deploy/prepare-playwright-browsers.cmd)
-deploy/playwright-browsers/
+# Mantém a pasta no Git; não versiona os binários (~280MB). NÃO commitar — GitHub limita a 100MB.
+deploy/playwright-browsers/**
+!deploy/playwright-browsers/.gitkeep
+!deploy/playwright-browsers/README.md
+# pasta errada na raiz (bug antigo do prepare) — nunca versionar
+/playwright-browsers/
 
 # OFS — scripts/HTML de debug local (não versionar)
 scripts/_debug-*

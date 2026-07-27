@@ -1,6 +1,14 @@
 import fs from 'fs';
 import path from 'path';
+import { createRequire } from 'module';
 import { config } from './config.js';
+
+const require = createRequire(import.meta.url);
+const {
+  OFS_UI_ORG_BY_ENV,
+  OFS_UI_DEFAULTS_BY_ENV,
+  OFS_TECH_CANDIDATES_BY_ENV,
+} = require('../support/utils/ofs/ofsConstants.js');
 
 const ROOT = config.vtalPath;
 
@@ -64,23 +72,50 @@ export function getMassaProntaDefaultsForApi() {
 }
 
 function getOfsUiEnvVars(environment) {
-  const block = envBlock(environment);
+  const envName = String(environment || 'ti').toLowerCase();
+  const block = envBlock(envName);
   const ofs = block.ofs && typeof block.ofs === 'object' ? block.ofs : {};
+  const uiDefaults = OFS_UI_DEFAULTS_BY_ENV[envName] || OFS_UI_DEFAULTS_BY_ENV.ti;
   const vars = {};
   const uiUser = pick(process.env.OFS_UI_USERNAME, process.env.OFS_USERNAME, ofs.ui_username);
   const uiPass = pick(process.env.OFS_UI_PASSWORD, process.env.OFS_PASSWORD, ofs.ui_password);
   if (uiUser) vars.OFS_USERNAME = uiUser;
   if (uiPass) vars.OFS_PASSWORD = uiPass;
-  const org = pick(process.env.OFS_UI_ORGANIZATION, ofs.ui_organization);
+  // Escopo por ambiente antes do global: OFS_TECH_PID único no Secret quebra TI≠TRG.
+  const org = pick(
+    process.env[`OFS_${envName.toUpperCase()}_UI_ORGANIZATION`],
+    ofs.ui_organization,
+    OFS_UI_ORG_BY_ENV[envName],
+    process.env.OFS_UI_ORGANIZATION,
+  );
   if (org) vars.OFS_UI_ORGANIZATION = org;
-  const techPid = pick(process.env.OFS_TECH_PID, ofs.tech_pid);
-  const techSearch = pick(process.env.OFS_TECH_SEARCH, ofs.tech_search);
-  const bucketPid = pick(process.env.OFS_BUCKET_PID, ofs.bucket_pid);
+  const techPid = pick(
+    process.env[`OFS_${envName.toUpperCase()}_TECH_PID`],
+    ofs.tech_pid,
+    uiDefaults.tech_pid,
+    process.env.OFS_TECH_PID,
+  );
+  const techSearch = pick(
+    process.env[`OFS_${envName.toUpperCase()}_TECH_SEARCH`],
+    ofs.tech_search,
+    uiDefaults.tech_search,
+    process.env.OFS_TECH_SEARCH,
+  );
+  const bucketPid = pick(
+    process.env[`OFS_${envName.toUpperCase()}_BUCKET_PID`],
+    ofs.bucket_pid,
+    uiDefaults.bucket_pid,
+    process.env.OFS_BUCKET_PID,
+  );
   if (techPid) vars.OFS_TECH_PID = techPid;
   if (techSearch) vars.OFS_TECH_SEARCH = techSearch;
   if (bucketPid) vars.OFS_BUCKET_PID = bucketPid;
-  if (Array.isArray(ofs.tech_candidates) && ofs.tech_candidates.length) {
-    vars.OFS_TECH_CANDIDATES = JSON.stringify(ofs.tech_candidates);
+  const candidates =
+    (Array.isArray(ofs.tech_candidates) && ofs.tech_candidates.length
+      ? ofs.tech_candidates
+      : OFS_TECH_CANDIDATES_BY_ENV[envName]) || [];
+  if (candidates.length) {
+    vars.OFS_TECH_CANDIDATES = JSON.stringify(candidates);
   }
   return vars;
 }

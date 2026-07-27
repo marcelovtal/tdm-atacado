@@ -54,15 +54,13 @@ function mergeOfsCredentials(fileOfs, envName) {
   );
   const username = pickFirst(
     envTrim('OFS_API_USERNAME'),
-    envTrim('OFS_USERNAME'),
-    envScopedKey('OFS', name, 'USERNAME'),
+    envScopedKey('OFS', name, 'API_USERNAME'),
     file.username,
     defaults.username,
   );
   const password = pickFirst(
     envTrim('OFS_API_PASSWORD'),
-    envTrim('OFS_PASSWORD'),
-    envScopedKey('OFS', name, 'PASSWORD'),
+    envScopedKey('OFS', name, 'API_PASSWORD'),
     file.password,
     defaults.password,
   );
@@ -80,25 +78,46 @@ function mergeOfsCredentials(fileOfs, envName) {
     username,
     password,
     resource_id: resourceId,
+    /** Supervisor UI (dispatcher) — NÃO confundir com Basic Auth da API REST. */
     ui_username: pickFirst(
       envTrim('OFS_UI_USERNAME'),
+      envTrim('OFS_USERNAME'),
       file.ui_username,
       '',
     ),
     ui_password: pickFirst(
       envTrim('OFS_UI_PASSWORD'),
+      envTrim('OFS_PASSWORD'),
       file.ui_password,
       '',
     ),
     ui_organization: pickFirst(
-      envTrim('OFS_UI_ORGANIZATION'),
       envScopedKey('OFS', name, 'UI_ORGANIZATION'),
       file.ui_organization,
       OFS_UI_ORG_BY_ENV[name] || '',
+      envTrim('OFS_UI_ORGANIZATION'),
     ),
-    tech_pid: pickFirst(envTrim('OFS_TECH_PID'), file.tech_pid, uiDefaults.tech_pid, ''),
-    tech_search: pickFirst(envTrim('OFS_TECH_SEARCH'), file.tech_search, uiDefaults.tech_search, ''),
-    bucket_pid: pickFirst(envTrim('OFS_BUCKET_PID'), file.bucket_pid, uiDefaults.bucket_pid, ''),
+    tech_pid: pickFirst(
+      envScopedKey('OFS', name, 'TECH_PID'),
+      file.tech_pid,
+      uiDefaults.tech_pid,
+      envTrim('OFS_TECH_PID'),
+      '',
+    ),
+    tech_search: pickFirst(
+      envScopedKey('OFS', name, 'TECH_SEARCH'),
+      file.tech_search,
+      uiDefaults.tech_search,
+      envTrim('OFS_TECH_SEARCH'),
+      '',
+    ),
+    bucket_pid: pickFirst(
+      envScopedKey('OFS', name, 'BUCKET_PID'),
+      file.bucket_pid,
+      uiDefaults.bucket_pid,
+      envTrim('OFS_BUCKET_PID'),
+      '',
+    ),
     tech_candidates: Array.isArray(file.tech_candidates) ? file.tech_candidates : [],
   };
 }

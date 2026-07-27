@@ -209,6 +209,8 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
       ENVIRONMENT: environment || 'ti',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
       NODE_NO_WARNINGS: '1',
+      FDL_SCRIPT_NAME: scriptName,
+      ...(jobId ? { FDL_JOB_ID: jobId } : {}),
       ...envVars,
     };
 

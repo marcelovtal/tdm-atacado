@@ -5,6 +5,7 @@ const {
   PEGA_TOTAL_STEPS,
   PEGA_TOTAL_STEPS_VPN,
 } = require('./runPegaDesignacaoConfiguracao.js');
+const { logFlowPhase, PHASE } = require('../runFileLogger.js');
 
 const PEGA_ENV_DEFAULTS = getPegaDefaults();
 
@@ -53,6 +54,13 @@ async function runPegaAfterSuborderIfConfigured(subOrderOrderNumber, options = {
     );
     return null;
   }
+
+  logFlowPhase(
+    PHASE.PEGA,
+    flowVariant === 'vpn'
+      ? `VPN | ORDEMSERVICO=${ordemServico}`
+      : `IP Connect | ORDEMSERVICO=${ordemServico}`,
+  );
 
   let token;
   try {

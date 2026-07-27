@@ -3,6 +3,7 @@ const { getOfsFixture } = require('./getOfsConfig.js');
 const { runOfsInstalacaoCompleta } = require('./runOfsInstalacaoCompleta.js');
 const { runOfsInstalacaoCompletaUi } = require('./runOfsInstalacaoCompletaUi.js');
 const { loadCachedSession } = require('./ofsUiLogin.js');
+const { logFlowPhase, PHASE } = require('../runFileLogger.js');
 
 function envTrim(name) {
   const v = process.env[name];
@@ -150,6 +151,7 @@ async function runOfsAfterPegaIfConfigured(result = {}) {
     return null;
   }
 
+  logFlowPhase(PHASE.OFS, `ativar rota + mover + iniciar + concluir | ordem=${numeroOrdem}`);
   return runOfsInstalacaoForOrdem(numeroOrdem);
 }
 
@@ -173,6 +175,8 @@ async function runOfsLinkDedicadoAfterPegaIfConfigured(result = {}) {
   }
 
   console.log(`[E2E] OFS Link Dedicado — sequência Ponta A (${ordemA}) → Ponta B (${ordemB})…`);
+
+  logFlowPhase(PHASE.OFS, `Link Dedicado | Ponta A=${ordemA} → Ponta B=${ordemB}`);
 
   const pontaA = await runOfsInstalacaoForOrdem(ordemA, { legLabel: 'Ponta A' });
   const pularB =

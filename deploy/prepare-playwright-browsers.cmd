@@ -4,7 +4,7 @@ REM Preferencia: download via npx (sem Docker). Fallback: Docker Desktop.
 REM Uso: deploy\prepare-playwright-browsers.cmd
 
 setlocal EnableExtensions
-cd /d %~dp0\..\..
+cd /d %~dp0\..
 if errorlevel 1 exit /b 1
 
 REM Manter alinhado com package-lock.json (playwright 1.58.0)
@@ -12,7 +12,8 @@ set PW_VERSION=1.58.0
 set OUT_DIR=deploy\playwright-browsers
 
 echo === Preparando Chromium Playwright %PW_VERSION% ^(Linux^) ===
-echo Destino: %OUT_DIR%
+echo Pasta do projeto: %CD%
+echo Destino: %CD%\%OUT_DIR%
 echo.
 
 REM --- Caminho 1: npx (funciona no Windows com override de plataforma) ---
@@ -26,12 +27,13 @@ if not errorlevel 1 (
   set "NODE_OPTIONS=--use-system-ca"
   call npx playwright install chromium
   REM Exit code pode ser !=0 por causa do winldd; chromium ja basta.
-  dir /b "%OUT_DIR%" 2>nul | findstr /I "chromium-" >nul
+  dir /b "%OUT_DIR%" 2>nul | findstr /I /B /C:"chromium-" >nul
   if not errorlevel 1 (
+    call deploy\prune-playwright-browsers.cmd
+    if errorlevel 1 exit /b 1
     echo.
     echo === OK ^(npx^) ===
     echo Chromium pronto em %OUT_DIR%
-    dir /b "%OUT_DIR%"
     echo.
     echo Agora rode: deploy\openshift\deploy.cmd
     endlocal
@@ -83,16 +85,18 @@ if errorlevel 1 (
 )
 docker rm -f %CONTAINER_NAME% >nul 2>&1
 
-dir /b "%OUT_DIR%" | findstr /I "chromium" >nul
+dir /b "%OUT_DIR%" | findstr /I /B /C:"chromium-" >nul
 if errorlevel 1 (
-  echo [ERRO] Pasta %OUT_DIR% sem chromium apos extracao.
+  echo [ERRO] Pasta %OUT_DIR% sem chromium- apos extracao.
   exit /b 1
 )
+
+call deploy\prune-playwright-browsers.cmd
+if errorlevel 1 exit /b 1
 
 echo.
 echo === OK ^(Docker^) ===
 echo Chromium pronto em %OUT_DIR%
-dir /b "%OUT_DIR%"
 echo.
 echo Agora rode: deploy\openshift\deploy.cmd
 endlocal

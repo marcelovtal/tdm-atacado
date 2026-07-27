@@ -4,6 +4,7 @@
  */
 const { loadEnv, getTokenUrl, getUserFixture } = require('../../../config/env.js');
 const { fail, logCurl, logResponse } = require('./scriptLogging.js');
+const { installRunFileLogger, logFlowPhase, PHASE } = require('../runFileLogger.js');
 
 function getEnvName() {
   return process.env.ENVIRONMENT || process.env.ENV || 'ti';
@@ -30,6 +31,9 @@ function getSalesforceUser() {
 }
 
 function createSalesforceScriptClient() {
+  installRunFileLogger();
+  logFlowPhase(PHASE.SALESFORCE, 'OAuth + Opportunity/Quote/Order (CRM)');
+
   const env = loadEnv();
   const baseUrl = env?.urls?.salesforce?.replace(/\/$/, '') || '';
   const tokenUrl = getTokenUrl(env) || (baseUrl ? `${baseUrl}/services/oauth2/token` : '');

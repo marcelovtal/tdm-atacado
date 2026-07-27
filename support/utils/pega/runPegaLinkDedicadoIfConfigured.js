@@ -1,6 +1,7 @@
 const { getPegaFixture, getPegaDefaults } = require('../../../config/env.js');
 const { getPegaAccessToken } = require('./getPegaAccessToken.js');
 const { runPegaLinkDedicadoDuasPontas, PEGA_TOTAL_STEPS } = require('./runPegaDesignacaoConfiguracao.js');
+const { logFlowPhase, PHASE } = require('../runFileLogger.js');
 
 function getNodeFetch() {
   return global.fetch;
@@ -74,6 +75,11 @@ async function runPegaLinkDedicadoIfConfigured(
   const evcPart = ordemEvc
     ? ` + EVC (${ordemEvc}${overrideEvc ? ' override' : ''})`
     : ' (EVC omitido — sem subpedido / PEGA_ORDEM_SERVICO_EVC)';
+
+  logFlowPhase(
+    PHASE.PEGA,
+    `Link Dedicado | Ponta A=${ordemA} | Ponta B=${ordemB}${ordemEvc ? ` | EVC=${ordemEvc}` : ''}`,
+  );
 
   console.log(
     `[E2E] PEGA Link Dedicado — Ponta A (${ordemA}${overrideA ? ' override' : ''}) + Ponta B (${ordemB}${overrideB ? ' override' : ''})${evcPart} | base:`,
