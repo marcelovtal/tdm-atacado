@@ -28,6 +28,8 @@ function buildLeadPayload(overrides = {}) {
     MobilePhone: mobilePhone,
     LeadSource: 'Anuncio',
     vtal_LXD_CNPJ__c: cnpj,
+    /** Obrigatório no Lead (UI/API) — Categoria LPU. */
+    Vtal_Categoria_LPU__c: 'Premium',
     ...overrides,
   };
 

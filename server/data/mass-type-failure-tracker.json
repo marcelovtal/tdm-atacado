@@ -2,9 +2,9 @@
   "types": {
     "lead-pedido": {
       "ti": {
-        "streak": 0,
+        "streak": 3,
         "autoDisabled": false,
-        "lastError": null,
+        "lastError": "ERRO (run 3): BRM não preenchido no timeout\nStatus: 0\nBody: {\n\"attributes\": {\n\"type\": \"Account\",\n\"url\": \"/services/data/v62.0/sobjects/Account/001HZ00000w2sXgYAI\"\n},\n\"Id\": \"001HZ00000w2sXgYAI\",\n\"IsDeleted\": false,\n\"MasterRecordId\": null,\n\"Name\": \"Pfeffer, Funk and Gleason\",\n\"Type\": null,\n\"RecordTypeId\": \"012Hs000000l6USIAY\",\n\"ParentId\": \"001HZ00000w2sXfYAI\",\n\"BillingStreet\": null,\n\"BillingCity\": null,\n\"BillingState\": null,\n\"BillingPostalCode\": null,\n\"BillingCountry\": null,\n\"BillingLatitude\": nul",
         "disabledAt": null
       },
       "trg": {
