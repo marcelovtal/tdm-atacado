@@ -2,7 +2,7 @@
   "types": {
     "lead-pedido": {
       "environments": {
-        "ti": true,
+        "ti": false,
         "trg": true
       }
     },

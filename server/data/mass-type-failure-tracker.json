@@ -2,10 +2,10 @@
   "types": {
     "lead-pedido": {
       "ti": {
-        "streak": 3,
-        "autoDisabled": false,
-        "lastError": "ERRO (run 3): BRM não preenchido no timeout\nStatus: 0\nBody: {\n\"attributes\": {\n\"type\": \"Account\",\n\"url\": \"/services/data/v62.0/sobjects/Account/001HZ00000w2sXgYAI\"\n},\n\"Id\": \"001HZ00000w2sXgYAI\",\n\"IsDeleted\": false,\n\"MasterRecordId\": null,\n\"Name\": \"Pfeffer, Funk and Gleason\",\n\"Type\": null,\n\"RecordTypeId\": \"012Hs000000l6USIAY\",\n\"ParentId\": \"001HZ00000w2sXfYAI\",\n\"BillingStreet\": null,\n\"BillingCity\": null,\n\"BillingState\": null,\n\"BillingPostalCode\": null,\n\"BillingCountry\": null,\n\"BillingLatitude\": nul",
-        "disabledAt": null
+        "streak": 4,
+        "autoDisabled": true,
+        "lastError": "ERRO (run 3): BRM não preenchido no timeout\nStatus: 0\nBody: {\n\"attributes\": {\n\"type\": \"Account\",\n\"url\": \"/services/data/v62.0/sobjects/Account/001HZ00000w3tORYAY\"\n},\n\"Id\": \"001HZ00000w3tORYAY\",\n\"IsDeleted\": false,\n\"MasterRecordId\": null,\n\"Name\": \"Tremblay - Rosenbaum\",\n\"Type\": null,\n\"RecordTypeId\": \"012Hs000000l6USIAY\",\n\"ParentId\": \"001HZ00000w3tOQYAY\",\n\"BillingStreet\": null,\n\"BillingCity\": null,\n\"BillingState\": null,\n\"BillingPostalCode\": null,\n\"BillingCountry\": null,\n\"BillingLatitude\": null,\n\"B",
+        "disabledAt": "2026-08-10T12:31:18.608Z"
       },
       "trg": {
         "streak": 0,
