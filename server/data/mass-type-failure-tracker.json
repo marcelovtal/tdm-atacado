@@ -134,9 +134,9 @@
         "disabledAt": null
       },
       "trg": {
-        "streak": 0,
+        "streak": 1,
         "autoDisabled": false,
-        "lastError": null,
+        "lastError": "Não foi alterado o status da ordem para \"Em implantação\". Erro no Salesforce ou no Pega.",
         "disabledAt": null
       }
     },
