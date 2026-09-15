@@ -26,11 +26,11 @@
     "bullmq": "5.34.0",
     "cors": "2.8.5",
     "dotenv": "16.4.5",
-    "express": "^4.22.1",
+    "express": "4.22.1",
     "ioredis": "5.4.1",
-    "ldapjs": "^3.0.7",
-    "mysql2": "^3.22.4",
-    "playwright": "^1.58.0"
+    "ldapjs": "3.0.7",
+    "mysql2": "3.22.4",
+    "playwright": "1.58.0"
   },
   "devDependencies": {
     "concurrently": "9.1.0",
