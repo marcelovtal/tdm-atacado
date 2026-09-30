@@ -8,6 +8,7 @@ export const JOB_EXECUTION_STATUSES = [
   'completed',
   'failed',
   'user_error',
+  'env_error',
   'cancelled',
   'unknown',
 ];
@@ -30,12 +31,12 @@ export const JOB_EXECUTIONS_COLUMNS = [
 
 const REQUIRED_COLUMN_NAMES = JOB_EXECUTIONS_COLUMNS.map((c) => c.name).filter((n) => n !== 'id');
 
-/** SQL manual para conferir MySQL em produção (sem migration obrigatória para user_error). */
+/** SQL manual para conferir MySQL em produção (sem migration obrigatória para user_error/env_error). */
 export const MYSQL_VERIFY_QUERIES = `
 -- Colunas esperadas
 SHOW COLUMNS FROM job_executions;
 
--- Distribuição de status (inclui user_error após deploy do código novo)
+-- Distribuição de status (inclui user_error / env_error após deploy do código novo)
 SELECT status, COUNT(*) AS total FROM job_executions GROUP BY status ORDER BY total DESC;
 
 -- Jobs antigos failed que o dashboard reclassifica como erro do usuário
@@ -46,6 +47,12 @@ WHERE status = 'failed'
     error_message LIKE '%Conta da massa pronta%não existe%'
     OR error_message LIKE '%GET Org (massa pronta)%'
   );
+
+-- Jobs antigos failed que o dashboard reclassifica como erro de ambiente
+SELECT COUNT(*) AS legacy_env_errors
+FROM job_executions
+WHERE status = 'failed'
+  AND error_message LIKE '%Não foi alterado o status da ordem para "Em implantação"%';
 `.trim();
 
 export async function verifyJobExecutionsSchema({ driver, getColumns }) {

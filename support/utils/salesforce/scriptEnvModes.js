@@ -5,6 +5,19 @@ const { delay } = require('../helpers/waitHelper.js');
 
 const FULL_FLOW_MAX_RUNS = parseInt(process.env.FULL_FLOW_MAX_RUNS || '3', 10) || 3;
 
+/**
+ * Erros de ambiente (SF/Pega/OFS) — não adianta retry do fluxo completo.
+ */
+function isNonRetryableEnvError(err) {
+  const msg = String(err?.message || err || '');
+  if (!msg) return false;
+  if (/\[FDL_ENV_ERROR\]|\[FDL_INTEGRATION_ERROR\]/i.test(msg)) return true;
+  if (/Não foi alterado o status da ordem para ["']?Em implantação["']?/i.test(msg)) return true;
+  if (/nenhum subpedido com Status ["']?Em implantação["']?/i.test(msg)) return true;
+  if (/Erro no PEGA ou no OFS ao concluir agendamento/i.test(msg)) return true;
+  return false;
+}
+
 function getAccountIdsFromEnv() {
   if (process.env.START_FROM_QUOTE !== '1') return null;
   const accountBussinessId = process.env.ACCOUNT_BUSINESS_ID?.trim();
@@ -55,6 +68,10 @@ async function runPedidoScriptWithRetries({ getToken, cookie = '', skipLead = nu
           err.response.data ? JSON.stringify(err.response.data, null, 2) : err.response.text,
         );
       }
+      if (isNonRetryableEnvError(err)) {
+        console.error('Erro de ambiente (Salesforce/Pega/OFS) — sem retry.');
+        process.exit(1);
+      }
       if (run < FULL_FLOW_MAX_RUNS) {
         console.log(
           skipLead
@@ -75,5 +92,6 @@ module.exports = {
   getAccountIdsFromEnv,
   getReadyQuoteFromEnv,
   logPedidoEnvModes,
+  isNonRetryableEnvError,
   runPedidoScriptWithRetries,
 };

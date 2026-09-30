@@ -1,7 +1,13 @@
 /** Estados em que o job já terminou — único momento em que erro deve ir ao painel. */
 export function isTerminalJobState(state) {
   const s = String(state || '').toLowerCase();
-  return s === 'failed' || s === 'user_error' || s === 'completed' || s === 'cancelled';
+  return (
+    s === 'failed' ||
+    s === 'user_error' ||
+    s === 'env_error' ||
+    s === 'completed' ||
+    s === 'cancelled'
+  );
 }
 
 export function stripAnsi(text) {
@@ -17,6 +23,7 @@ export function sanitizeJobErrorMessage(msg) {
     .map((line) => line.trim())
     .filter((line) => line && !/NODE_TLS_REJECT_UNAUTHORIZED/i.test(line))
     .filter((line) => !/^\(node:\d+\)\s*Warning:/i.test(line))
+    .filter((line) => !/^\[RUN-LOG\]/i.test(line))
     .join('\n')
     .trim();
   return s || null;

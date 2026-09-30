@@ -1667,6 +1667,15 @@ a.btn-secondary:hover {
   color: #f59e0b;
 }
 
+.job-status.env_error {
+  background: rgba(14, 165, 233, 0.18);
+  color: #0ea5e9;
+}
+
+.job-result--env-error {
+  color: #0ea5e9;
+}
+
 .job-status.cancelled {
   background: rgba(113, 113, 122, 0.15);
   color: var(--text-muted);

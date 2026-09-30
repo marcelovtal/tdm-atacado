@@ -165,7 +165,7 @@ export async function recordMassTypeJobOutcome({
   const typeState = ensureTypeState(massTypeId);
   const row = typeState[env];
 
-  if (status === 'user_error' || status === 'cancelled') {
+  if (status === 'user_error' || status === 'env_error' || status === 'cancelled') {
     return { action: 'ignored_user_or_cancelled' };
   }
 

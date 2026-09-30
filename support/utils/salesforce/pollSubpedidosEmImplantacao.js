@@ -22,7 +22,7 @@ function formatPendingSubOrders(subOrders) {
 function buildSubOrderTimeoutIntegrationError(subOrders, timeoutSec) {
   const detail = formatPendingSubOrders(subOrders);
   return (
-    `[FDL_INTEGRATION_ERROR] Não foi alterado o status da ordem para "Em implantação" após ${Math.round(timeoutSec)}s. ` +
+    `[FDL_ENV_ERROR] Não foi alterado o status da ordem para "Em implantação" após ${Math.round(timeoutSec)}s. ` +
     'Erro no Salesforce ou no Pega.' +
     (detail ? ` Sub-pedidos: ${detail}.` : '')
   );

@@ -282,6 +282,8 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
           : buildScriptFailureMessage(stderr, stdout, code);
       let userError = false;
       let userErrorCode = null;
+      let envError = false;
+      let envErrorCode = null;
       if (!cancelled && !success) {
         const classified = classifyUserJobError({
           stderr,
@@ -294,6 +296,9 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
           if (classified.userError) {
             userError = true;
             userErrorCode = classified.code;
+          } else if (classified.envError) {
+            envError = true;
+            envErrorCode = classified.code;
           }
         }
       }
@@ -308,6 +313,8 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
         error,
         userError,
         userErrorCode,
+        envError,
+        envErrorCode,
         ...parsed,
       });
     });
@@ -394,7 +401,7 @@ function parseOrderStatusPollFailed(text) {
   return (
     /^\s+ERRO status ordem:/m.test(src) ||
     /\[E2E\] ERRO:.*status da ordem não foi alterado/i.test(text) ||
-    /\[FDL_INTEGRATION_ERROR\]/i.test(text)
+    /\[FDL_INTEGRATION_ERROR\]|\[FDL_ENV_ERROR\]/i.test(text)
   );
 }
 
@@ -403,6 +410,8 @@ function parseOrderStatusPollError(text) {
   const src = block || text;
   const fromBlock = src.match(/^\s+ERRO status ordem:\s*(.+)$/m);
   if (fromBlock) return fromBlock[1].trim();
+  const fromEnv = text.match(/\[FDL_ENV_ERROR\]\s*(.+)$/m);
+  if (fromEnv) return fromEnv[1].trim();
   const fromIntegration = text.match(/\[FDL_INTEGRATION_ERROR\]\s*(.+)$/m);
   if (fromIntegration) return fromIntegration[1].trim();
   const fromLog = text.match(/\[E2E\] ERRO:\s*(.+)$/m);

@@ -47,8 +47,14 @@ RUN test -d /ms-playwright \
       && exit 1) \
   && chmod -R a+rx /ms-playwright
 
+# OpenShift roda com UID arbitrário — /app/logs precisa ser gravável (runFileLogger)
+RUN mkdir -p /app/logs \
+  && chmod 777 /app/logs \
+  && chmod 777 /tmp
+
 ENV NODE_ENV=production
 ENV PORT=3333
+ENV FDL_RUN_LOG_DIR=/app/logs
 
 EXPOSE 3333
 

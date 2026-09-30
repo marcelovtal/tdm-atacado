@@ -62,6 +62,7 @@ function chartOptions(extra = {}) {
 function renderDashboard(stats) {
   const results = stats.results || {};
   const userError = Number(results.userError) || 0;
+  const envError = Number(results.envError) || 0;
   const scopeHint =
     stats.scope === 'all'
       ? 'Visão geral de todos os QAs (histórico no banco).'
@@ -87,6 +88,8 @@ function renderDashboard(stats) {
   document.getElementById('kpi-user-errors').textContent = formatNumber(userError);
   document.getElementById('kpi-user-error-rate').textContent =
     results.total > 0 ? `${results.userErrorRate ?? 0}%` : '—';
+  const kpiEnvErrors = document.getElementById('kpi-env-errors');
+  if (kpiEnvErrors) kpiEnvErrors.textContent = formatNumber(envError);
   document.getElementById('kpi-results-avg').textContent = formatDuration(stats.results.avgDurationMs);
   document.getElementById('kpi-results-total').textContent = formatNumber(stats.results.total);
   document.getElementById('kpi-critical').textContent = formatNumber(stats.results.criticalFailures);

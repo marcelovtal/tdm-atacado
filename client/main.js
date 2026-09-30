@@ -377,7 +377,7 @@ function paginateSlice(items, page, pageSize) {
 function renderPaginationNav(sectionKey, meta) {
   const { page, totalPages, total } = meta;
   if (totalPages <= 1) return '';
-  const label = sectionKey === 'current' ? 'Execuções atuais' : 'Histórico';
+  const label = sectionKey === 'current' ? 'Na fila / executando' : 'Executados';
   return `
     <nav class="jobs-pagination" aria-label="Paginação: ${label}">
       <button type="button" class="btn btn-secondary jobs-pagination__btn" data-jobs-paginate="${sectionKey}" data-jobs-action="prev" ${page <= 1 ? 'disabled' : ''}>Anterior</button>
@@ -435,6 +435,7 @@ function formatTime(ts) {
   return d.toLocaleString('pt-BR', {
     day: '2-digit',
     month: '2-digit',
+    year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -603,23 +604,8 @@ function sortJobsByExecutionDate(jobs) {
 }
 
 function formatJobCardTime(j, showOwnerVt = false) {
-  const ts = j.finishedOn || j.timestamp;
-  const isHistory = String(j.id).startsWith('hist-');
-  let text = '—';
-  if (ts) {
-    const d = new Date(ts);
-    if (isHistory) {
-      text = d.toLocaleString('pt-BR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-    } else {
-      text = formatTime(ts);
-    }
-  }
+  const ts = j.finishedOn || j.executedAt || j.timestamp;
+  let text = ts ? formatTime(ts) : '—';
   if (showOwnerVt && j.ownerVt) {
     text += ` · ${j.ownerVt}`;
   }
@@ -690,8 +676,8 @@ function renderJobCard(j, { showOwnerVt = false } = {}) {
           }
           return null;
         })() ||
-        ((j.status === 'failed' || j.status === 'user_error') && j.error
-            ? `<span class="job-result job-result--error${j.status === 'user_error' ? ' job-result--user-error' : ''}">${escapeHtml(j.error.length > 72 ? `${j.error.slice(0, 72)}…` : j.error)}</span>`
+        ((j.status === 'failed' || j.status === 'user_error' || j.status === 'env_error') && j.error
+            ? `<span class="job-result job-result--error${j.status === 'user_error' ? ' job-result--user-error' : ''}${j.status === 'env_error' ? ' job-result--env-error' : ''}">${escapeHtml(j.error.length > 72 ? `${j.error.slice(0, 72)}…` : j.error)}</span>`
             : j.status === 'cancelled'
               ? `<span class="job-result job-result--muted">Cancelado</span>`
               : j.accountBillingId
@@ -701,6 +687,11 @@ function renderJobCard(j, { showOwnerVt = false } = {}) {
       <span class="job-actions">${rerunBtn}${cancelBtn}</span>
     </article>
   `;
+}
+
+function isInFlightJob(j) {
+  const s = (j.status || '').toLowerCase();
+  return s === 'waiting' || s === 'prioritized' || s === 'delayed' || s === 'active';
 }
 
 function renderJobsList(jobs, meta = cachedJobsMeta) {
@@ -714,48 +705,25 @@ function renderJobsList(jobs, meta = cachedJobsMeta) {
     return;
   }
 
-  const showHistoryPanel = !!meta?.showHistoryPanel;
-  const liveJobs = jobs.filter((j) => !String(j.id).startsWith('hist-'));
-  const historyJobs = jobs.filter((j) => String(j.id).startsWith('hist-'));
-
-  const inFlight = liveJobs.filter((j) => {
-    const s = (j.status || '').toLowerCase();
-    return s === 'waiting' || s === 'prioritized' || s === 'delayed' || s === 'active';
-  });
-  let recentDone = liveJobs.filter((j) => {
-    const s = (j.status || '').toLowerCase();
-    return s !== 'waiting' && s !== 'prioritized' && s !== 'delayed' && s !== 'active';
+  const inFlight = jobs.filter(isInFlightJob);
+  inFlight.sort((a, b) => {
+    const aActive = (a.status || '').toLowerCase() === 'active' ? 0 : 1;
+    const bActive = (b.status || '').toLowerCase() === 'active' ? 0 : 1;
+    if (aActive !== bActive) return aActive - bActive;
+    return jobExecutedAtMs(b) - jobExecutedAtMs(a);
   });
 
-  /** Usuário comum: jobs persistidos entram na mesma lista de executados (sem seção Histórico). */
-  if (!showHistoryPanel && historyJobs.length) {
-    const seen = new Set(recentDone.map((j) => String(j.id)));
-    const merged = [...recentDone];
-    for (const j of historyJobs) {
-      const id = String(j.id);
-      if (!seen.has(id)) {
-        seen.add(id);
-        merged.push(j);
-      }
-    }
-    merged.sort((a, b) => jobExecutedAtMs(b) - jobExecutedAtMs(a));
-    recentDone = merged;
-  }
+  /** Uma única lista de finalizados, sempre do mais recente para o mais antigo. */
+  const finished = jobs.filter((j) => !isInFlightJob(j));
+  sortJobsByExecutionDate(finished);
 
-  const historyForPanel = showHistoryPanel ? [...historyJobs] : [];
-  if (showHistoryPanel && historyForPanel.length > 1) {
-    if (!meta?.ownerFilter) {
-      sortJobsByExecutionDate(historyForPanel);
-    } else {
-      historyForPanel.sort((a, b) => (b.displayNumber || 0) - (a.displayNumber || 0));
-    }
-  }
-  const histMeta = paginateSlice(historyForPanel, jobsListPages.history, JOBS_PAGE_SIZE);
-  jobsListPages.history = histMeta.page;
+  const doneMeta = paginateSlice(finished, jobsListPages.history, JOBS_PAGE_SIZE);
+  jobsListPages.history = doneMeta.page;
 
-  const doneTitle = showHistoryPanel
-    ? 'Concluídos recentes <span class="jobs-section__hint">Detalhes completos (pedido, PEGA, contas)</span>'
-    : 'Executados <span class="jobs-section__hint">Seus jobs finalizados (pedido, PEGA, contas)</span>';
+  const periodHint =
+    meta?.historyDays === 30
+      ? 'mais recentes primeiro · últimos 30 dias'
+      : `mais recentes primeiro · últimos ${meta?.historyDays || 7} dias`;
 
   const sections = [];
   if (inFlight.length) {
@@ -766,24 +734,12 @@ function renderJobsList(jobs, meta = cachedJobsMeta) {
       </div>
     `);
   }
-  if (recentDone.length) {
+  if (finished.length) {
     sections.push(`
       <div class="jobs-section">
-        <p class="jobs-section__title">${doneTitle}</p>
-        ${recentDone.map((j) => renderJobCard(j, cardOpts)).join('')}
-      </div>
-    `);
-  }
-  if (historyForPanel.length) {
-    const historyHint =
-      meta?.historyDays === 30
-        ? 'Últimos 30 dias (todas as execuções)'
-        : `Últimos ${meta?.historyDays || 7} dias`;
-    sections.push(`
-      <div class="jobs-section">
-        <p class="jobs-section__title">Histórico <span class="jobs-section__hint">${escapeHtml(historyHint)}</span></p>
-        ${histMeta.slice.map((j) => renderJobCard(j, cardOpts)).join('')}
-        ${renderPaginationNav('history', histMeta)}
+        <p class="jobs-section__title">Executados <span class="jobs-section__hint">${escapeHtml(periodHint)}</span></p>
+        ${doneMeta.slice.map((j) => renderJobCard(j, cardOpts)).join('')}
+        ${renderPaginationNav('history', doneMeta)}
       </div>
     `);
   }
@@ -828,6 +784,7 @@ function statusLabel(s) {
     completed: 'Sucesso',
     failed: 'Falha',
     user_error: 'Erro do usuário',
+    env_error: 'Erro de ambiente',
     cancelled: 'Cancelado',
   };
   return map[s?.toLowerCase()] || s || '—';
@@ -843,7 +800,10 @@ function escapeHtml(s) {
 /** Erro só após o job terminar em falha — nunca durante execução ou na fila. */
 function showJobError(job, result) {
   const state = (job.state || '').toLowerCase();
-  return (state === 'failed' || state === 'user_error') && !!(result?.error || job.failedReason);
+  return (
+    (state === 'failed' || state === 'user_error' || state === 'env_error') &&
+    !!(result?.error || job.failedReason)
+  );
 }
 
 function hasOrderStatusPollFailed(job, result) {
@@ -967,7 +927,13 @@ function isJobInFlight(job) {
 
 function isJobTerminal(job) {
   const s = (job?.status || '').toLowerCase();
-  return s === 'completed' || s === 'failed' || s === 'user_error' || s === 'cancelled';
+  return (
+    s === 'completed' ||
+    s === 'failed' ||
+    s === 'user_error' ||
+    s === 'env_error' ||
+    s === 'cancelled'
+  );
 }
 
 /** Job saiu de fila/executando → estado final (refresh da lista, não durante poll SF). */
@@ -1070,8 +1036,20 @@ function renderJobDetailBody(job, id) {
       </div>
       ` : showJobError(job, r) ? `
       <div class="detail-row">
-        <div class="detail-label">${(job.state || '').toLowerCase() === 'user_error' ? 'Erro do usuário' : 'Erro'}</div>
-        <div class="detail-value" style="color: ${(job.state || '').toLowerCase() === 'user_error' ? 'var(--warning, #f59e0b)' : 'var(--error)'};">${escapeHtml(jobErrorText(job, r))}</div>
+        <div class="detail-label">${
+          (job.state || '').toLowerCase() === 'user_error'
+            ? 'Erro do usuário'
+            : (job.state || '').toLowerCase() === 'env_error'
+              ? 'Erro de ambiente'
+              : 'Erro'
+        }</div>
+        <div class="detail-value" style="color: ${
+          (job.state || '').toLowerCase() === 'user_error'
+            ? 'var(--warning, #f59e0b)'
+            : (job.state || '').toLowerCase() === 'env_error'
+              ? '#0ea5e9'
+              : 'var(--error)'
+        };">${escapeHtml(jobErrorText(job, r))}</div>
       </div>
       ` : statusPollFailed ? `
       <div class="detail-row">

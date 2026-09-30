@@ -182,6 +182,7 @@ function getEffectiveJobState(job, bullState) {
   if (job.returnvalue?.cancelled) return 'cancelled';
   if (bullState === 'completed' && job.returnvalue && job.returnvalue.success === false) {
     if (job.returnvalue.userError) return 'user_error';
+    if (job.returnvalue.envError) return 'env_error';
     return 'failed';
   }
   /** BullMQ 5: jobs com `priority` ficam em `prioritized`, não em `waiting`. */
@@ -473,7 +474,11 @@ app.get('/api/jobs', requireAuth, async (req, res) => {
 
     const merged = [...inFlight, ...terminal, ...historyJobs]
       .filter((j) => isAdmin || jobBelongsToUser({ createdByVt: j.ownerVt }, req.user.vt));
-    merged.sort((a, b) => (b.finishedOn || b.timestamp || 0) - (a.finishedOn || a.timestamp || 0));
+    merged.sort((a, b) => {
+      const aMs = a.finishedOn || a.executedAt || a.timestamp || 0;
+      const bMs = b.finishedOn || b.executedAt || b.timestamp || 0;
+      return bMs - aMs;
+    });
 
     const historyOwners = isAdmin
       ? (await listJobExecutionOwnersForPanel({ days: historyDays }))
@@ -601,7 +606,9 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
           ...fields,
           orderNumber: fields.orderNumber,
           failedReason:
-            failure.status === 'failed' || failure.status === 'user_error'
+            failure.status === 'failed' ||
+            failure.status === 'user_error' ||
+            failure.status === 'env_error'
               ? failure.error || 'Falha registrada no histórico.'
               : null,
         })
@@ -702,7 +709,9 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
       result.failedReason = sanitizeJobErrorMessage(job.failedReason);
     }
     if (
-      (effectiveState === 'failed' || effectiveState === 'user_error') &&
+      (effectiveState === 'failed' ||
+        effectiveState === 'user_error' ||
+        effectiveState === 'env_error') &&
       state === 'completed' &&
       job.returnvalue?.success === false
     ) {

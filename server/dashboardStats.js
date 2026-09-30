@@ -65,16 +65,20 @@ export async function buildDashboardStats(viewer) {
   const success = Number(raw.statusCounts?.completed) || 0;
   const failedRaw = Number(raw.statusCounts?.failed) || 0;
   const userErrorStatus = Number(raw.statusCounts?.user_error) || 0;
+  const envErrorStatus = Number(raw.statusCounts?.env_error) || 0;
   const legacyUserErrors = Number(raw.legacyUserErrors) || 0;
+  const legacyEnvErrors = Number(raw.legacyEnvErrors) || 0;
   const userError = userErrorStatus + legacyUserErrors;
-  const failed = Math.max(0, failedRaw - legacyUserErrors);
+  const envError = envErrorStatus + legacyEnvErrors;
+  const failed = Math.max(0, failedRaw - legacyUserErrors - legacyEnvErrors);
   const cancelled = Number(raw.statusCounts?.cancelled) || 0;
   const total = Number(raw.total) || 0;
 
   const technicalMeasured = success + failed;
   const successRate = technicalMeasured > 0 ? Math.round((success / technicalMeasured) * 100) : 0;
-  const terminalMeasured = success + failed + userError;
+  const terminalMeasured = success + failed + userError + envError;
   const userErrorRate = terminalMeasured > 0 ? Math.round((userError / terminalMeasured) * 100) : 0;
+  const envErrorRate = terminalMeasured > 0 ? Math.round((envError / terminalMeasured) * 100) : 0;
 
   const byMassType = groupByMassFamily(raw.byMassType || []);
 
@@ -102,9 +106,11 @@ export async function buildDashboardStats(viewer) {
       success,
       failed,
       userError,
+      envError,
       cancelled,
       successRate,
       userErrorRate,
+      envErrorRate,
       avgDurationMs: raw.avgDurationMs != null ? Number(raw.avgDurationMs) : null,
       total,
       criticalFailures: failed,
@@ -112,7 +118,9 @@ export async function buildDashboardStats(viewer) {
     quality: {
       technicalSuccessRate: successRate,
       userErrorRate,
+      envErrorRate,
       userErrors: userError,
+      envErrors: envError,
       technicalFailures: failed,
       automationHealth:
         technicalMeasured > 0

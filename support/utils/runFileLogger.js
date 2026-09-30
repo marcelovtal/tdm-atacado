@@ -2,12 +2,16 @@
  * Tee de console → arquivo por execução.
  *
  * Layout:
- *   logs/YYYY-MM-DD/<script>-HHmmss-pid[-jobId].log
+ *   <logRoot>/YYYY-MM-DD/<script>-HHmmss-pid[-jobId].log
  *
  * Opt-out: SKIP_RUN_FILE_LOG=1
+ * Override: FDL_RUN_LOG_DIR=/caminho/gravavel
  * Prefixo máquina (painel/fila): FDL_RUN_LOG:<caminho absoluto>
+ *
+ * No OpenShift o UID é arbitrário e /app não é gravável — usa fallback em os.tmpdir().
  */
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const RUN_LOG_PREFIX = 'FDL_RUN_LOG:';
@@ -51,6 +55,43 @@ function resolveProjectRoot() {
   return process.cwd();
 }
 
+/** Testa se dá para criar subpastas/arquivos neste diretório. */
+function ensureWritableDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const probe = path.join(dir, `.fdl-write-probe-${process.pid}`);
+  fs.writeFileSync(probe, 'ok', 'utf8');
+  try {
+    fs.unlinkSync(probe);
+  } catch (_) {
+    /* ignore */
+  }
+  return dir;
+}
+
+/**
+ * Resolve raiz gravável para logs.
+ * Ordem: FDL_RUN_LOG_DIR → <cwd>/logs → <tmpdir>/fdl-logs
+ */
+function resolveWritableLogRoot(preferredRoot) {
+  const envDir = String(process.env.FDL_RUN_LOG_DIR || '').trim();
+  const candidates = [
+    envDir || null,
+    path.join(preferredRoot || resolveProjectRoot(), 'logs'),
+    path.join(os.tmpdir(), 'fdl-logs'),
+  ].filter(Boolean);
+
+  let lastErr = null;
+  for (const dir of candidates) {
+    try {
+      return ensureWritableDir(dir);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  const msg = lastErr?.message || 'nenhum diretório gravável';
+  throw new Error(msg);
+}
+
 function resolveScriptBaseName() {
   const fromEnv = String(process.env.FDL_SCRIPT_NAME || '').trim();
   if (fromEnv) return path.basename(fromEnv, '.js');
@@ -88,7 +129,9 @@ function tee(method, args) {
 }
 
 function buildLogFilePath(options = {}) {
-  const root = options.root || resolveProjectRoot();
+  const logRoot =
+    options.logRoot ||
+    resolveWritableLogRoot(options.root || resolveProjectRoot());
   const { dateFolder, time } = stampParts();
   const script = String(options.scriptName || resolveScriptBaseName())
     .replace(/[^\w.-]+/g, '_')
@@ -98,8 +141,8 @@ function buildLogFilePath(options = {}) {
   const name = jobId
     ? `${script}-${time}-pid${pid}-job${jobId}.log`
     : `${script}-${time}-pid${pid}.log`;
-  const dir = path.join(root, 'logs', dateFolder);
-  return { dir, filePath: path.join(dir, name), dateFolder, script };
+  const dir = path.join(logRoot, dateFolder);
+  return { dir, filePath: path.join(dir, name), dateFolder, script, logRoot };
 }
 
 /**
@@ -110,12 +153,14 @@ function installRunFileLogger(options = {}) {
   if (process.env.SKIP_RUN_FILE_LOG === '1') return null;
   if (installed) return { logPath, dateFolder: path.basename(path.dirname(logPath)) };
 
-  const built = buildLogFilePath(options);
+  let built;
   try {
+    built = buildLogFilePath(options);
     fs.mkdirSync(built.dir, { recursive: true });
     fs.writeFileSync(built.filePath, '', 'utf8');
   } catch (err) {
-    orig.error('[RUN-LOG] não foi possível criar arquivo de log:', err.message);
+    // Aviso só — não deve ser tratado como falha do teste no painel
+    orig.warn(`[RUN-LOG] log em arquivo desabilitado (${err.message})`);
     return null;
   }
 

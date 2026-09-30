@@ -1,6 +1,6 @@
 /**
- * Erros causados por entrada/configuração do usuário (massa de outro ambiente, IDs inválidos, etc.).
- * Distinguídos de falhas técnicas do script/integração.
+ * Erros causados por entrada/configuração do usuário (massa de outro ambiente, IDs inválidos, etc.)
+ * e erros de ambiente/integração (Salesforce/Pega/OFS) — distintos de falhas técnicas do script.
  */
 
 const SF_ACCOUNT_ID = /001[A-Za-z0-9]{12,15}/;
@@ -10,6 +10,10 @@ const INTEGRATION_ORDER_STATUS_MESSAGE =
 
 const PEGA_OFS_INTEGRATION_MESSAGE =
   'Erro no PEGA ou no OFS ao concluir agendamento/instalação (workzone ou integração com o OFS).';
+
+function envErrorResult(code, message) {
+  return { userError: false, envError: true, code, message };
+}
 
 function isPegaOfsIntegrationError(combined) {
   if (/Falta campo obrigatório de workzone.*envio ao OFS/i.test(combined)) return true;
@@ -58,10 +62,16 @@ function isMassaProntaContext(text, envVars = {}) {
 }
 
 /**
- * @returns {{ userError: true, code: string, message: string } | null}
+ * @returns {{ userError?: boolean, envError?: boolean, code: string, message: string } | null}
  */
-export function classifyUserJobError({ stderr = '', stdout = '', environment = 'ti', envVars = {} } = {}) {
-  const combined = `${stderr}\n${stdout}`;
+export function classifyUserJobError({
+  stderr = '',
+  stdout = '',
+  errorMessage = '',
+  environment = 'ti',
+  envVars = {},
+} = {}) {
+  const combined = `${stderr}\n${stdout}\n${errorMessage}`;
   const envUpper = String(environment || 'ti').toUpperCase();
   const massaPronta = isMassaProntaContext(combined, envVars);
 
@@ -74,6 +84,18 @@ export function classifyUserJobError({ stderr = '', stdout = '', environment = '
     const message = line.replace(/^\[FDL_USER_ERROR\]\s*/, '').trim();
     if (message) {
       return { userError: true, code: 'FDL_USER_ERROR', message };
+    }
+  }
+
+  if (/^\s*\[FDL_ENV_ERROR\]/m.test(combined)) {
+    const line =
+      combined
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => l.startsWith('[FDL_ENV_ERROR]')) || '';
+    const message = line.replace(/^\[FDL_ENV_ERROR\]\s*/, '').trim();
+    if (message) {
+      return envErrorResult('FDL_ENV_ERROR', message);
     }
   }
 
@@ -120,28 +142,21 @@ export function classifyUserJobError({ stderr = '', stdout = '', environment = '
   }
 
   if (isPegaOfsIntegrationError(combined)) {
-    return {
-      userError: false,
-      code: 'PEGA_OFS_INTEGRATION_ERROR',
-      message: PEGA_OFS_INTEGRATION_MESSAGE,
-    };
+    return envErrorResult('PEGA_OFS_INTEGRATION_ERROR', PEGA_OFS_INTEGRATION_MESSAGE);
   }
 
-  if (/\[FDL_INTEGRATION_ERROR\]/.test(combined)) {
-    return { userError: false, code: 'INTEGRATION_ERROR', message: INTEGRATION_ORDER_STATUS_MESSAGE };
+  if (/\[FDL_INTEGRATION_ERROR\]|\[FDL_ENV_ERROR\]/.test(combined)) {
+    return envErrorResult('INTEGRATION_ERROR', INTEGRATION_ORDER_STATUS_MESSAGE);
   }
 
   if (
+    /Não foi alterado o status da ordem para ["']?Em implantação["']?/i.test(combined) ||
     /Timeout: nem todos os subpedidos|nenhum subpedido com Status "Em implantação"/i.test(combined) ||
     (/Status atual dos subpedidos:/i.test(combined) &&
       /OS aberta/i.test(combined) &&
       /PEGA LD EVC|Falha no fluxo PEGA|obterdadosordem/i.test(combined))
   ) {
-    return {
-      userError: false,
-      code: 'SUB_ORDER_STATUS_TIMEOUT',
-      message: INTEGRATION_ORDER_STATUS_MESSAGE,
-    };
+    return envErrorResult('SUB_ORDER_STATUS_TIMEOUT', INTEGRATION_ORDER_STATUS_MESSAGE);
   }
 
   if (
@@ -150,11 +165,7 @@ export function classifyUserJobError({ stderr = '', stdout = '', environment = '
     ) &&
     /ERRO \(run|\[PEGA\]|throw new Error/i.test(combined)
   ) {
-    return {
-      userError: false,
-      code: 'SF_PEGA_INTEGRATION_ERROR',
-      message: INTEGRATION_ORDER_STATUS_MESSAGE,
-    };
+    return envErrorResult('SF_PEGA_INTEGRATION_ERROR', INTEGRATION_ORDER_STATUS_MESSAGE);
   }
 
   return null;
@@ -168,6 +179,7 @@ export function resolveJobFailureDisplay({
   stdout,
   environment,
   userError,
+  envError,
 } = {}) {
   if (status === 'user_error' || userError) {
     return {
@@ -175,10 +187,19 @@ export function resolveJobFailureDisplay({
       error: errorMessage || null,
     };
   }
+  if (status === 'env_error' || envError) {
+    return {
+      status: 'env_error',
+      error: errorMessage || INTEGRATION_ORDER_STATUS_MESSAGE,
+    };
+  }
   if (status === 'failed') {
-    const classified = classifyUserJobError({ stderr, stdout, environment });
+    const classified = classifyUserJobError({ stderr, stdout, errorMessage, environment });
     if (classified?.userError) {
       return { status: 'user_error', error: classified.message };
+    }
+    if (classified?.envError) {
+      return { status: 'env_error', error: classified.message };
     }
     if (classified?.message) {
       return { status: 'failed', error: classified.message };

@@ -962,6 +962,7 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
   };
 }
 
+const { isNonRetryableEnvError } = require('../support/utils/salesforce/scriptEnvModes.js');
 const FULL_FLOW_MAX_RUNS = 3;
 
 async function main() {
@@ -995,6 +996,10 @@ async function main() {
       if (err.response) {
         console.error('Status:', err.response.status);
         console.error('Body:', err.response.data ? JSON.stringify(err.response.data, null, 2) : err.response.text);
+      }
+      if (isNonRetryableEnvError(err)) {
+        console.error('Erro de ambiente (Salesforce/Pega/OFS) — sem retry.');
+        process.exit(1);
       }
       if (run < FULL_FLOW_MAX_RUNS) {
         console.log('Nova tentativa em 25s (novo Lead, nova conta)...');

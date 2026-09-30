@@ -7,6 +7,7 @@ import {
   buildUserExecutionSeqSelectMysql,
 } from './jobsPanelHistory.js';
 import { LEGACY_USER_ERROR_WHERE } from '../dashboardUserErrorSql.js';
+import { LEGACY_ENV_ERROR_WHERE } from '../dashboardEnvErrorSql.js';
 import { verifyJobExecutionsSchema } from './jobExecutionsSchema.js';
 
 let pool = null;
@@ -556,8 +557,17 @@ function userFilter(userCode) {
 export async function getDashboardAggregatesMysql(userCode = null) {
   const { clause, params } = userFilter(userCode);
 
-  const [totalRow, avgRow, byDay, byMassType, topUsers, statusRows, criticalRow, legacyUserErrorRow] =
-    await Promise.all([
+  const [
+    totalRow,
+    avgRow,
+    byDay,
+    byMassType,
+    topUsers,
+    statusRows,
+    criticalRow,
+    legacyUserErrorRow,
+    legacyEnvErrorRow,
+  ] = await Promise.all([
     getRow(`SELECT COUNT(*) AS total FROM job_executions WHERE 1=1 ${clause}`, params),
     getRow(
       `
@@ -629,6 +639,15 @@ export async function getDashboardAggregatesMysql(userCode = null) {
       `,
       params
     ),
+    getRow(
+      `
+        SELECT COUNT(*) AS legacyEnvErrors
+        FROM job_executions
+        WHERE status = 'failed' ${clause}
+          AND ${LEGACY_ENV_ERROR_WHERE}
+      `,
+      params
+    ),
   ]);
 
   const statusCounts = {};
@@ -646,5 +665,6 @@ export async function getDashboardAggregatesMysql(userCode = null) {
     statusCounts,
     criticalFailures: Number(criticalRow?.criticalFailures) || 0,
     legacyUserErrors: Number(legacyUserErrorRow?.legacyUserErrors) || 0,
+    legacyEnvErrors: Number(legacyEnvErrorRow?.legacyEnvErrors) || 0,
   };
 }

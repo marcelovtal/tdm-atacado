@@ -1028,6 +1028,7 @@ async function runOrderOnlyFlow(instanceUrl, accessToken, cookie, ready) {
   };
 }
 
+const { isNonRetryableEnvError } = require('../support/utils/salesforce/scriptEnvModes.js');
 const FULL_FLOW_MAX_RUNS = 3;
 
 /** Se START_FROM_QUOTE=1 e existirem ACCOUNT_ORGANIZATION_ID, ACCOUNT_BUSINESS_ID, ACCOUNT_BILLING_ID: massa já cadastrada (BRM ok). Só Opp → Cotação → Pedido. CONTACT_TECNICO_ID opcional. */
@@ -1203,6 +1204,10 @@ async function main() {
       if (err.response) {
         console.error('Status:', err.response.status);
         console.error('Body:', err.response.data ? JSON.stringify(err.response.data, null, 2) : err.response.text);
+      }
+      if (isNonRetryableEnvError(err)) {
+        console.error('Erro de ambiente (Salesforce/Pega/OFS) — sem retry.');
+        process.exit(1);
       }
       if (run < FULL_FLOW_MAX_RUNS) {
         console.log(skipLead ? 'Nova tentativa em 25s (nova cotação)...' : 'Nova tentativa em 25s (novo Lead, nova conta)...');

@@ -4,6 +4,7 @@ export function jobStatusFromResult(result) {
   if (result?.cancelled) return 'cancelled';
   if (result?.success) return 'completed';
   if (result?.userError) return 'user_error';
+  if (result?.envError) return 'env_error';
   return 'failed';
 }
 
@@ -22,6 +23,8 @@ export function buildJobReturnPayload(result, dbSave) {
     error: cancelled ? null : result.error,
     userError: result.userError === true,
     userErrorCode: result.userErrorCode ?? null,
+    envError: result.envError === true,
+    envErrorCode: result.envErrorCode ?? null,
     orderId: result.orderId,
     orderNumber: result.orderNumber,
     orderStatus: result.orderStatus,

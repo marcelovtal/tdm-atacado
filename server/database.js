@@ -36,6 +36,7 @@ import {
   buildUserExecutionSeqSelectSqlite,
 } from './database/jobsPanelHistory.js';
 import { LEGACY_USER_ERROR_WHERE } from './dashboardUserErrorSql.js';
+import { LEGACY_ENV_ERROR_WHERE } from './dashboardEnvErrorSql.js';
 import { verifyJobExecutionsSchema } from './database/jobExecutionsSchema.js';
 
 const useMysql = config.database.driver === 'mysql';
@@ -462,6 +463,16 @@ async function getDashboardAggregatesSqlite(userCode = null) {
     params
   );
 
+  const legacyEnvErrorRow = await get(
+    `
+      SELECT COUNT(*) AS legacyEnvErrors
+      FROM job_executions
+      WHERE status = 'failed' ${clause}
+        AND ${LEGACY_ENV_ERROR_WHERE}
+    `,
+    params
+  );
+
   const statusCounts = {};
   for (const row of statusRows) {
     statusCounts[row.status] = Number(row.count) || 0;
@@ -477,6 +488,7 @@ async function getDashboardAggregatesSqlite(userCode = null) {
     statusCounts,
     criticalFailures: Number(criticalRow?.criticalFailures) || 0,
     legacyUserErrors: Number(legacyUserErrorRow?.legacyUserErrors) || 0,
+    legacyEnvErrors: Number(legacyEnvErrorRow?.legacyEnvErrors) || 0,
   };
 }
 

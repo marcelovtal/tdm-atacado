@@ -208,13 +208,13 @@
 
           <h2>Resultado dos testes</h2>
 
-          <p class="card-hint">Sucesso, falha técnica e erro do usuário (configuração/massa incorreta) — erros do usuário não entram na taxa de sucesso técnica.</p>
+          <p class="card-hint">Sucesso, falha técnica, erro do usuário (configuração/massa incorreta) e erro de ambiente (Salesforce/Pega/OFS) — estes últimos não entram na taxa de sucesso técnica.</p>
 
           <div class="dashboard-results">
 
             <div class="dashboard-chart-card">
 
-              <h3 class="dashboard-chart-card__title">Sucesso x Falha técnica x Erro do usuário</h3>
+              <h3 class="dashboard-chart-card__title">Sucesso x Falha técnica x Erro do usuário x Erro de ambiente</h3>
 
               <div class="dashboard-chart-wrap dashboard-chart-wrap--result">
 
@@ -247,6 +247,14 @@
                 <p class="dashboard-result-kpi__label">Taxa erro do usuário</p>
 
                 <p class="dashboard-result-kpi__value dashboard-result-kpi__value--warning" id="kpi-user-error-rate">—</p>
+
+              </article>
+
+              <article class="dashboard-result-kpi">
+
+                <p class="dashboard-result-kpi__label">Erros de ambiente</p>
+
+                <p class="dashboard-result-kpi__value" id="kpi-env-errors" style="color:#0ea5e9">—</p>
 
               </article>
 
