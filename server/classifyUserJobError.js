@@ -15,7 +15,51 @@ function envErrorResult(code, message) {
   return { userError: false, envError: true, code, message };
 }
 
+/** Extrai texto após [FDL_ENV_ERROR] mesmo quando vem em "ERRO (run N): ...". */
+function extractTaggedEnvErrorMessage(combined) {
+  const lines = String(combined || '')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+  for (const line of lines) {
+    const idx = line.indexOf('[FDL_ENV_ERROR]');
+    if (idx === -1) continue;
+    const message = line.slice(idx + '[FDL_ENV_ERROR]'.length).trim();
+    if (message) return message;
+  }
+  const m = String(combined || '').match(/\[FDL_ENV_ERROR\]\s*([^\n]+)/);
+  return m ? m[1].trim() : null;
+}
+
+/** Se o log já traz Status final / Sub-pedidos, usa isso em vez da mensagem genérica. */
+function enrichEmImplantacaoMessage(combined, fallback = INTEGRATION_ORDER_STATUS_MESSAGE) {
+  const tagged = extractTaggedEnvErrorMessage(combined);
+  if (tagged) return tagged;
+
+  const statusFinal = combined.match(/Status final(?: dos subpedidos)?:\s*([^\n.]+)/i);
+  const subPedidos = combined.match(/Sub-pedidos:\s*([^\n]+)/i);
+  let msg = fallback;
+  if (statusFinal && !/Status final:/i.test(msg)) {
+    msg += ` Status final: ${statusFinal[1].trim()}.`;
+  }
+  if (subPedidos && !/Sub-pedidos:/i.test(msg)) {
+    msg += ` Sub-pedidos: ${subPedidos[1].trim()}`;
+    if (!msg.endsWith('.')) msg += '.';
+  }
+  // Fallback: últimas linhas do poll "00007232 (Ponta A): OS aberta"
+  if (!statusFinal && !subPedidos) {
+    const rows = [...String(combined).matchAll(/^\s*-\s*(\S+)\s*\(([^)]+)\):\s*(.+)$/gm)];
+    if (rows.length) {
+      const detail = rows.map((r) => `${r[1]} (${r[2]}): ${r[3].trim()}`).join('; ');
+      const statuses = [...new Set(rows.map((r) => r[3].trim()))];
+      msg += ` Status final: ${statuses.join(', ')}. Sub-pedidos: ${detail}.`;
+    }
+  }
+  return msg;
+}
+
 function isPegaOfsIntegrationError(combined) {
+  if (/Não foi possível efetuar agendamento no OFS/i.test(combined)) return true;
   if (/Falta campo obrigatório de workzone.*envio ao OFS/i.test(combined)) return true;
   if (/workzone.*envio ao OFS/i.test(combined) && /SelecaoDePeriodo|SelecaoDoSlot|PEGA PATCH/i.test(combined)) {
     return true;
@@ -87,16 +131,9 @@ export function classifyUserJobError({
     }
   }
 
-  if (/^\s*\[FDL_ENV_ERROR\]/m.test(combined)) {
-    const line =
-      combined
-        .split('\n')
-        .map((l) => l.trim())
-        .find((l) => l.startsWith('[FDL_ENV_ERROR]')) || '';
-    const message = line.replace(/^\[FDL_ENV_ERROR\]\s*/, '').trim();
-    if (message) {
-      return envErrorResult('FDL_ENV_ERROR', message);
-    }
+  const taggedEnvMsg = extractTaggedEnvErrorMessage(combined);
+  if (taggedEnvMsg) {
+    return envErrorResult('FDL_ENV_ERROR', taggedEnvMsg);
   }
 
   const massaAccountGet =
@@ -145,8 +182,11 @@ export function classifyUserJobError({
     return envErrorResult('PEGA_OFS_INTEGRATION_ERROR', PEGA_OFS_INTEGRATION_MESSAGE);
   }
 
-  if (/\[FDL_INTEGRATION_ERROR\]|\[FDL_ENV_ERROR\]/.test(combined)) {
-    return envErrorResult('INTEGRATION_ERROR', INTEGRATION_ORDER_STATUS_MESSAGE);
+  if (/\[FDL_INTEGRATION_ERROR\]/.test(combined)) {
+    return envErrorResult(
+      'INTEGRATION_ERROR',
+      enrichEmImplantacaoMessage(combined, INTEGRATION_ORDER_STATUS_MESSAGE),
+    );
   }
 
   if (
@@ -156,7 +196,10 @@ export function classifyUserJobError({
       /OS aberta/i.test(combined) &&
       /PEGA LD EVC|Falha no fluxo PEGA|obterdadosordem/i.test(combined))
   ) {
-    return envErrorResult('SUB_ORDER_STATUS_TIMEOUT', INTEGRATION_ORDER_STATUS_MESSAGE);
+    return envErrorResult(
+      'SUB_ORDER_STATUS_TIMEOUT',
+      enrichEmImplantacaoMessage(combined, INTEGRATION_ORDER_STATUS_MESSAGE),
+    );
   }
 
   if (
@@ -188,9 +231,14 @@ export function resolveJobFailureDisplay({
     };
   }
   if (status === 'env_error' || envError) {
+    const combined = `${stderr || ''}\n${stdout || ''}\n${errorMessage || ''}`;
+    const enriched = enrichEmImplantacaoMessage(
+      combined,
+      errorMessage || INTEGRATION_ORDER_STATUS_MESSAGE,
+    );
     return {
       status: 'env_error',
-      error: errorMessage || INTEGRATION_ORDER_STATUS_MESSAGE,
+      error: enriched,
     };
   }
   if (status === 'failed') {

@@ -15,6 +15,12 @@ function isNonRetryableEnvError(err) {
   if (/Não foi alterado o status da ordem para ["']?Em implantação["']?/i.test(msg)) return true;
   if (/nenhum subpedido com Status ["']?Em implantação["']?/i.test(msg)) return true;
   if (/Erro no PEGA ou no OFS ao concluir agendamento/i.test(msg)) return true;
+  // PEGA/OFS — retry do fluxo completo não resolve (workzone / agendamento)
+  if (/Não foi possível efetuar agendamento no OFS/i.test(msg)) return true;
+  if (/Falta campo obrigatório de workzone.*envio ao OFS/i.test(msg)) return true;
+  if (/PEGA SelecaoDoSlot|PEGA SelecaoDePeriodo/i.test(msg) && /422|Validation fail|workzone|OFS/i.test(msg)) {
+    return true;
+  }
   return false;
 }
 

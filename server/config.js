@@ -117,12 +117,18 @@ export const MASS_TYPES = [
   { id: 'lead-pedido', label: 'Lead → IP Connect → Pedido', script: 'gerar-pedido-ip-connect.js', envVars: { SKIP_PEGA: '1' } },
   { id: 'lead-vpn-pedido', label: 'Lead → VPN → Pedido', script: 'gerar-pedido-vpn.js', envVars: { SKIP_PEGA: '1' } },
   { id: 'lead-link-dedicado-pedido', label: 'Lead → Link Dedicado → Pedido', script: 'gerar-pedido-link-dedicado.js', envVars: { SKIP_PEGA: '1' } },
-  { id: 'massa-pronta-opp-pedido', label: 'IP Connect (massa pronta)', script: 'gerar-pedido-massa-pronta-ip-connect.js', envVars: {} },
+  {
+    id: 'massa-pronta-opp-pedido',
+    label: 'IP Connect (massa pronta)',
+    script: 'gerar-pedido-massa-pronta-ip-connect.js',
+    /** Para em "Em implantação" — PEGA só nos cards "+ Config PEGA" / "até Ativação". */
+    envVars: { SKIP_PEGA: '1' },
+  },
   {
     id: 'massa-pronta-opp-pedido-ip-connect-cpe',
     label: 'IP Connect Massa Pronta CPE',
     script: 'gerar-pedido-massa-pronta-ip-connect-cpe.js',
-    envVars: { INCLUDE_IP_CONNECT_CPE: '1' },
+    envVars: { INCLUDE_IP_CONNECT_CPE: '1', SKIP_PEGA: '1' },
   },
   {
     id: 'massa-pronta-opp-pedido-pega',
@@ -138,12 +144,18 @@ export const MASS_TYPES = [
       INCLUDE_OFS_INSTALACAO: '1',
     },
   },
-  { id: 'massa-pronta-opp-pedido-vpn', label: 'VPN (massa pronta)', script: 'gerar-pedido-massa-pronta-vpn.js', envVars: {} },
+  {
+    id: 'massa-pronta-opp-pedido-vpn',
+    label: 'VPN (massa pronta)',
+    script: 'gerar-pedido-massa-pronta-vpn.js',
+    /** Para em "Em implantação" — PEGA só nos cards "+ Config PEGA" / "até Ativação". */
+    envVars: { SKIP_PEGA: '1' },
+  },
   {
     id: 'massa-pronta-opp-pedido-vpn-cpe',
     label: 'VPN Massa Pronta CPE',
     script: 'gerar-pedido-massa-pronta-vpn-connect-cpe.js',
-    envVars: { INCLUDE_VPN_CPE: '1' },
+    envVars: { INCLUDE_VPN_CPE: '1', SKIP_PEGA: '1' },
   },
   {
     id: 'massa-pronta-opp-pedido-vpn-pega',

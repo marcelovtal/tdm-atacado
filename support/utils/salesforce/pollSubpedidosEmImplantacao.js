@@ -11,21 +11,51 @@ function isSubOrderEmImplantacao(status) {
   return SUB_ORDER_IMPLANTACAO_STATUSES.includes(String(status || '').trim());
 }
 
+function pointLabelForSubOrder(sub, allSubOrders) {
+  const typed = String(sub?.Vtal_Seg_PointType__c || '').trim();
+  if (typed) return typed;
+  const extracted = extractLinkDedicadoSubpedidos(allSubOrders || []);
+  const num = String(sub?.OrderNumber || '');
+  if (num && num === String(extracted.subOrderOrderNumberPontaA || '')) return 'Ponta A';
+  if (num && num === String(extracted.subOrderOrderNumberPontaB || '')) return 'Ponta B';
+  if (num && num === String(extracted.subOrderOrderNumberEVC || '')) return 'EVC';
+  return String(sub?.vtal_LXD_Produto_do_pedido__c || '').trim() || 'N/A';
+}
+
 function formatPendingSubOrders(subOrders) {
   const pending = (subOrders || []).filter((s) => !isSubOrderEmImplantacao(s.Status));
   const list = pending.length ? pending : subOrders || [];
   return list
-    .map((s) => `${s.OrderNumber || s.Id} (${s.Vtal_Seg_PointType__c || 'N/A'}): ${s.Status || '—'}`)
+    .map((s) => `${s.OrderNumber || s.Id} (${pointLabelForSubOrder(s, subOrders)}): ${s.Status || '—'}`)
     .join('; ');
 }
 
-function buildSubOrderTimeoutIntegrationError(subOrders, timeoutSec) {
+/** Status único quando todos iguais (ex.: "OS aberta"); senão lista distinta. */
+function summarizeFinalStatuses(subOrders) {
+  const statuses = [
+    ...new Set(
+      (subOrders || [])
+        .map((s) => String(s.Status || '').trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (!statuses.length) return '';
+  return statuses.join(', ');
+}
+
+function buildPanelEnvErrorMessage(subOrders) {
+  const finalStatus = summarizeFinalStatuses(subOrders);
   const detail = formatPendingSubOrders(subOrders);
-  return (
-    `[FDL_ENV_ERROR] Não foi alterado o status da ordem para "Em implantação" após ${Math.round(timeoutSec)}s. ` +
-    'Erro no Salesforce ou no Pega.' +
-    (detail ? ` Sub-pedidos: ${detail}.` : '')
-  );
+  let msg =
+    'Não foi alterado o status da ordem para "Em implantação". Erro no Salesforce ou no Pega.';
+  if (finalStatus) msg += ` Status final: ${finalStatus}.`;
+  if (detail) msg += ` Sub-pedidos: ${detail}.`;
+  return msg;
+}
+
+function buildSubOrderTimeoutIntegrationError(subOrders, timeoutSec) {
+  const panelMsg = buildPanelEnvErrorMessage(subOrders);
+  return `[FDL_ENV_ERROR] ${panelMsg} (timeout ${Math.round(timeoutSec)}s)`;
 }
 
 /**
@@ -72,12 +102,18 @@ async function pollSubpedidosEmImplantacao({
 
   if (!allReady) {
     const pollError = buildSubOrderTimeoutIntegrationError(lastSubOrders, timeoutMs / 1000);
+    const panelMsg = buildPanelEnvErrorMessage(lastSubOrders);
+    const finalStatus = summarizeFinalStatuses(lastSubOrders);
+    const ldSub = extractLinkDedicadoSubpedidos(lastSubOrders);
+    console.log(`${logPrefix} Status final dos subpedidos: ${finalStatus || '—'}`);
     if (partialSnapshot) {
       emitPanelSnapshot({
         ...partialSnapshot,
+        ...ldSub,
+        orderStatus: finalStatus || partialSnapshot.orderStatus || null,
+        subOrderStatus: finalStatus || null,
         orderStatusPollFailed: true,
-        orderStatusPollError:
-          'Não foi alterado o status da ordem para "Em implantação". Erro no Salesforce ou no Pega.',
+        orderStatusPollError: panelMsg,
       });
     }
     fail(pollError);
@@ -93,6 +129,8 @@ async function pollSubpedidosEmImplantacao({
 module.exports = {
   SUB_ORDER_IMPLANTACAO_STATUSES,
   isSubOrderEmImplantacao,
+  summarizeFinalStatuses,
+  buildPanelEnvErrorMessage,
   buildSubOrderTimeoutIntegrationError,
   pollSubpedidosEmImplantacao,
 };
