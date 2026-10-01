@@ -305,6 +305,41 @@ function isLdReadyForAgendamento(item) {
   return String(item.Workflowpega || '').includes('AGENDAMENTO_FLOW');
 }
 
+/**
+ * Agendamento (SelecaoDePeriodo + SelecaoDoSlot) concluído.
+ * NÃO usar só pyStatusWork=Pending-AtivacaoFisica: esse status já aparece após a validação
+ * técnica, ainda com IsEmAgendamento=true / AGENDAMENTO_FLOW (bug que pulava o slot).
+ * Sucesso real: saiu do AGENDAMENTO_FLOW (ex.: ATIVIDADEEMCAMPO ou Aguardando Retorno do Serviço).
+ */
+function isPegaAgendamentoConcluido(item) {
+  if (!item) return false;
+  const wf = String(item.Workflowpega || '');
+  const ativ = String(
+    item.CestoTrabalho?.Atividade || item.AtividadeView || item.Atividade || '',
+  );
+  // Ainda na seleção de período/slot → não concluído
+  if (item.IsEmAgendamento === true) return false;
+  if (/AGENDAMENTO_FLOW/i.test(wf)) return false;
+  if (/Selecao\s*De\s*Periodo|SelecaoDoSlot|Selecao\s*Do\s*Slot/i.test(ativ)) return false;
+
+  if (/ATIVIDADEEMCAMPO/i.test(wf)) return true;
+  if (/Aguardando\s*Retorno/i.test(wf) || /Aguardando\s*Retorno/i.test(ativ)) return true;
+  if (/AtividadeEmCampo|AguardandoRetorno/i.test(String(item.processID || ''))) return true;
+  return false;
+}
+
+function assertPegaAgendamentoConcluido(item, label = 'PEGA') {
+  if (isPegaAgendamentoConcluido(item)) return;
+  const wf = item?.Workflowpega || '—';
+  const st = item?.pyStatusWork || item?.pyStatusWorkOld || '—';
+  const ativ = item?.CestoTrabalho?.Atividade || item?.AtividadeView || item?.Atividade || '—';
+  throw new Error(
+    `[FDL_ENV_ERROR] ${label}: agendamento não concluiu — falta Seleção do Slot ` +
+      `(pyStatusWork=${st}, Workflow=${wf}, Atividade=${ativ}). ` +
+      'Esperado sair do AGENDAMENTO_FLOW (ex.: Aguardando Retorno do Serviço / ATIVIDADEEMCAMPO).',
+  );
+}
+
 function ldEvcPollEnv() {
   return {
     maxTries: Math.max(
@@ -1348,8 +1383,46 @@ async function runPegaDesignacaoEConfiguracao(opts) {
   let agendamentoSelecaoSlotRefreshUrl = '';
   let agendamentoSelecaoSlotFormUrl = '';
   let agendamentoSkipped = true;
+  let pyStatusWorkAfterAgendamento = null;
 
-  if (!skipAgendamento && parsedPostValidacao?.item?.IsEmAgendamento === true) {
+  if (
+    !skipAgendamento &&
+    parsedPostValidacao?.item &&
+    parsedPostValidacao.item.IsEmAgendamento !== true &&
+    !String(parsedPostValidacao.item.Workflowpega || '').includes('AGENDAMENTO_FLOW') &&
+    !isPegaAgendamentoConcluido(parsedPostValidacao.item)
+  ) {
+    throw new Error(
+      `[FDL_ENV_ERROR] PEGA: após validação técnica o caso não entrou em agendamento ` +
+        `(IsEmAgendamento=false, pyStatusWork=${parsedPostValidacao.item.pyStatusWork || '—'}, ` +
+        `Workflow=${parsedPostValidacao.item.Workflowpega || '—'}).`,
+    );
+  }
+
+  const readyForAgendamento =
+    parsedPostValidacao?.item?.IsEmAgendamento === true ||
+    String(parsedPostValidacao?.item?.Workflowpega || '').includes('AGENDAMENTO_FLOW');
+
+  if (
+    !skipAgendamento &&
+    readyForAgendamento &&
+    isPegaAgendamentoConcluido(parsedPostValidacao?.item)
+  ) {
+    console.log(
+      '[PEGA] Agendamento já concluído no PEGA (fora de AGENDAMENTO_FLOW) — pulando SelecaoDePeriodo/Slot.',
+    );
+    pyStatusWorkAfterAgendamento =
+      parsedPostValidacao.item.pyStatusWork || parsedPostValidacao.item.pyStatusWorkOld || null;
+  } else if (
+    !skipAgendamento &&
+    readyForAgendamento &&
+    !isPegaAgendamentoConcluido(parsedPostValidacao?.item)
+  ) {
+    console.log(
+      '[PEGA] Iniciando agendamento (SelecaoDePeriodo → SelecaoDoSlot) — ' +
+        `IsEmAgendamento=${parsedPostValidacao?.item?.IsEmAgendamento === true}, ` +
+        `Workflow=${parsedPostValidacao?.item?.Workflowpega || '—'}`,
+    );
     agendamentoSkipped = false;
     const periodoOpts = { ...(agendamentoPeriodo || {}) };
     const di = (process.env.PEGA_AGENDAMENTO_DATA_INICIO || '').trim();
@@ -1541,24 +1614,57 @@ async function runPegaDesignacaoEConfiguracao(opts) {
     agendamentoSelecaoSlotFormUrl = urlConf;
 
     logPegaStep('GET obterdadosordem', 'confirmar estado após agendamento');
-    const seventh = await fetchObterDadosOrdemWithRetry(getObterDadosOrdem, parseObterOpts, {
+    let seventh = await fetchObterDadosOrdemWithRetry(getObterDadosOrdem, parseObterOpts, {
       isLinkDedicated: isLinkDedicatedFlow(flowVariant),
       logTag: '(pós-agendamento)',
       expectedChaveCaseOrdem: parsed1.chaveCaseOrdem,
     });
-    if (seventh.res.ok) {
-      const p7 = seventh.parsed;
-      if (p7?.item) {
-        console.log(
-          '[PEGA]   Estado pós-agendamento: pyStatusWork=' +
-            (p7.item.pyStatusWork || '—') +
-            ', StatusView=' +
-            (p7.item.StatusView || '—'),
-        );
-        const osFromP7 = extractOrdemServicoOsFromItem(p7.item);
-        if (osFromP7) pegaOrdemServicoOs = osFromP7;
+    if (!seventh.res.ok) {
+      throw new Error(
+        `[FDL_ENV_ERROR] PEGA: obterdadosordem pós-agendamento HTTP ${seventh.res.status}`,
+      );
+    }
+    if (!seventh.parsed?.item) {
+      throw new Error('[FDL_ENV_ERROR] PEGA: obterdadosordem pós-agendamento sem item para validar estado.');
+    }
+
+    // PEGA pode demorar a sair do AGENDAMENTO_FLOW após o PATCH do slot
+    const postSlotPollTries = Math.max(
+      1,
+      parseInt(String(process.env.PEGA_AGENDAMENTO_POST_SLOT_POLL_TRIES || '8').trim(), 10) || 8,
+    );
+    const postSlotPollMs = Math.max(
+      1000,
+      parseInt(String(process.env.PEGA_AGENDAMENTO_POST_SLOT_POLL_MS || '2500').trim(), 10) || 2500,
+    );
+    for (let t = 1; t <= postSlotPollTries; t++) {
+      const item = seventh.parsed?.item;
+      console.log(
+        `[PEGA]   Estado pós-agendamento (${t}/${postSlotPollTries}): pyStatusWork=` +
+          (item?.pyStatusWork || '—') +
+          ', StatusView=' +
+          (item?.StatusView || '—') +
+          ', Workflow=' +
+          (item?.Workflowpega || '—') +
+          ', IsEmAgendamento=' +
+          (item?.IsEmAgendamento === true ? 'true' : 'false'),
+      );
+      if (isPegaAgendamentoConcluido(item)) break;
+      if (t < postSlotPollTries) {
+        await new Promise((r) => setTimeout(r, postSlotPollMs));
+        seventh = await fetchObterDadosOrdemWithRetry(getObterDadosOrdem, parseObterOpts, {
+          isLinkDedicated: isLinkDedicatedFlow(flowVariant),
+          logTag: `(pós-agendamento poll ${t + 1})`,
+          expectedChaveCaseOrdem: parsed1.chaveCaseOrdem,
+        });
       }
     }
+
+    const p7 = seventh.parsed;
+    const osFromP7 = extractOrdemServicoOsFromItem(p7?.item);
+    if (osFromP7) pegaOrdemServicoOs = osFromP7;
+    assertPegaAgendamentoConcluido(p7?.item, 'PEGA');
+    pyStatusWorkAfterAgendamento = p7?.item?.pyStatusWork || p7?.item?.pyStatusWorkOld || null;
   }
 
   return {
@@ -1569,6 +1675,7 @@ async function runPegaDesignacaoEConfiguracao(opts) {
     pyStatusWork,
     pyStatusWorkAfterRefresh,
     pyStatusWorkAfterValidacao,
+    pyStatusWorkAfterAgendamento,
     designarStatus: resDesignar.status,
     configurarStatus: resConfig.status,
     validacaoTecnicaRefreshStatus: resValid.status,
@@ -2229,7 +2336,7 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
   let pyMemoViews = parsed.pyMemo;
   const afterPer = await fetchObterDadosOrdemWithRetry(getObterDadosOrdemB, parseOpts, {
     isLinkDedicated: true,
-    logTag: '[LD Ponta B] (pós-SelecaoDePeriodo)',
+    logTag: `[LD ${legLabel}] (pós-SelecaoDePeriodo)`,
     expectedChaveCaseOrdem: chaveCaseOrdem,
   });
   if (afterPer.res.ok && afterPer.parsed?.pyMemo) {
@@ -2237,7 +2344,7 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
   }
 
   if (!skipCaseViews) {
-    console.log('[PEGA LD Ponta B] PATCH views pyDetailsTabContent + DadosPedidoOSTab');
+    console.log(`[PEGA LD ${legLabel}] PATCH views pyDetailsTabContent + DadosPedidoOSTab`);
     await patchCaseViewsB('pyDetailsTabContent', pyMemoViews, chaveCaseOrdem);
     await patchCaseViewsB('DadosPedidoOSTab', pyMemoViews, chaveCaseOrdem);
   }
@@ -2248,15 +2355,15 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
     slots = extractAgendamentoSlotsFromApiJson(dataPer);
   } catch (_) {}
 
-  console.log('[PEGA LD Ponta B] GET obterdadosordem (pyMemo SelecaoDoSlot)');
+  console.log(`[PEGA LD ${legLabel}] GET obterdadosordem (pyMemo SelecaoDoSlot)`);
   const fifth = await fetchObterDadosOrdemWithRetry(getObterDadosOrdemB, parseOpts, {
     isLinkDedicated: true,
-    logTag: '[LD Ponta B] (slots)',
+    logTag: `[LD ${legLabel}] (slots)`,
     expectedChaveCaseOrdem: chaveCaseOrdem,
   });
-  if (!fifth.res.ok) throw new Error(`PEGA LD Ponta B obterdadosordem (slots): HTTP ${fifth.res.status}`);
+  if (!fifth.res.ok) throw new Error(`PEGA LD ${legLabel} obterdadosordem (slots): HTTP ${fifth.res.status}`);
   const parsed5 = fifth.parsed;
-  if (!parsed5?.pyMemo) throw new Error('PEGA LD Ponta B: pyMemo ausente antes de SelecaoDoSlot');
+  if (!parsed5?.pyMemo) throw new Error(`PEGA LD ${legLabel}: pyMemo ausente antes de SelecaoDoSlot`);
 
   if (!slots || slots.length === 0) {
     slots = extractAgendamentoSlotsFromObterDadosItem(parsed5.item);
@@ -2276,7 +2383,7 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
       try {
         jo = to ? JSON.parse(to) : null;
       } catch (_) {}
-      logPegaResponse(`PEGA LD Ponta B GET .../SelecaoDoSlot`, ro.status, jo, to);
+      logPegaResponse(`PEGA LD ${legLabel} GET .../SelecaoDoSlot`, ro.status, jo, to);
       if (ro.ok) {
         slots = extractAgendamentoSlotsFromApiJson(jo);
         if (slots && slots.length) break;
@@ -2284,10 +2391,10 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
     }
   }
   if (!slots || slots.length === 0) {
-    throw new Error('PEGA LD Ponta B: não foi possível obter Slots para SelecaoDoSlot');
+    throw new Error(`PEGA LD ${legLabel}: não foi possível obter Slots para SelecaoDoSlot`);
   }
 
-  console.log('[PEGA LD Ponta B] PATCH SelecaoDoSlot/refresh');
+  console.log(`[PEGA LD ${legLabel}] PATCH SelecaoDoSlot/refresh`);
   const bodyRefresh = buildSelecaoDoSlotRefreshBody(slots);
   const hdrSlot = { ...headersJson, 'if-match': parsed5.pyMemo };
   const pathsRefresh = buildAgendamentoActionPaths(chaveCaseOrdem, 'SelecaoDoSlot/refresh');
@@ -2305,18 +2412,18 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
     try {
       dataRef = textRef ? JSON.parse(textRef) : null;
     } catch (_) {}
-    logPegaResponse(`PEGA LD Ponta B .../SelecaoDoSlot/refresh`, resRef.status, dataRef, textRef);
+    logPegaResponse(`PEGA LD ${legLabel} .../SelecaoDoSlot/refresh`, resRef.status, dataRef, textRef);
     if (resRef.ok) {
       urlRefUsed = url;
       break;
     }
     if (resRef.status === 404 && pathsRefresh.indexOf(p) === 0) {
-      console.log('[PEGA LD Ponta B]   ↳ 404 — tentando outra rota...');
+      console.log(`[PEGA LD ${legLabel}]   ↳ 404 — tentando outra rota...`);
       continue;
     }
-    throw new Error(`PEGA LD Ponta B SelecaoDoSlot/refresh: HTTP ${resRef.status} — ${textRef?.slice(0, 800)}`);
+    throw new Error(`PEGA LD ${legLabel} SelecaoDoSlot/refresh: HTTP ${resRef.status} — ${textRef?.slice(0, 800)}`);
   }
-  if (!resRef?.ok) throw new Error(`PEGA LD Ponta B SelecaoDoSlot/refresh falhou: HTTP ${lastRef}`);
+  if (!resRef?.ok) throw new Error(`PEGA LD ${legLabel} SelecaoDoSlot/refresh falhou: HTTP ${lastRef}`);
 
   let slotsAfterRefresh = null;
   try {
@@ -2325,15 +2432,15 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
   } catch (_) {}
   const slotCount = (slotsAfterRefresh && slotsAfterRefresh.length) || slots.length;
 
-  console.log('[PEGA LD Ponta B] GET obterdadosordem (pyMemo SelecaoDoSlot?viewType=form)');
+  console.log(`[PEGA LD ${legLabel}] GET obterdadosordem (pyMemo SelecaoDoSlot?viewType=form)`);
   const sixth = await fetchObterDadosOrdemWithRetry(getObterDadosOrdemB, parseOpts, {
     isLinkDedicated: true,
-    logTag: '[LD Ponta B] (pre-form)',
+    logTag: `[LD ${legLabel}] (pre-form)`,
     expectedChaveCaseOrdem: chaveCaseOrdem,
   });
-  if (!sixth.res.ok) throw new Error(`PEGA LD Ponta B obterdadosordem (pre-form): HTTP ${sixth.res.status}`);
+  if (!sixth.res.ok) throw new Error(`PEGA LD ${legLabel} obterdadosordem (pre-form): HTTP ${sixth.res.status}`);
   const parsed6 = sixth.parsed;
-  if (!parsed6?.pyMemo) throw new Error('PEGA LD Ponta B: pyMemo ausente antes de SelecaoDoSlot?viewType=form');
+  if (!parsed6?.pyMemo) throw new Error(`PEGA LD ${legLabel}: pyMemo ausente antes de SelecaoDoSlot?viewType=form`);
 
   const slotSel = parseInt(
     String(agendamentoSlotListIndex ?? process.env.PEGA_AGENDAMENTO_SLOT_INDEX ?? '1').trim(),
@@ -2341,7 +2448,7 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
   );
   const slotIndex = Number.isFinite(slotSel) && slotSel >= 1 ? slotSel : 1;
 
-  console.log('[PEGA LD Ponta B] PATCH SelecaoDoSlot?viewType=form');
+  console.log(`[PEGA LD ${legLabel}] PATCH SelecaoDoSlot?viewType=form`);
   const bodyConfirm = buildSelecaoDoSlotConfirmBody(slotCount, slotIndex);
   const hdrConfirm = { ...headersJson, 'if-match': parsed6.pyMemo };
   const pathsConfirm = buildAgendamentoActionPaths(chaveCaseOrdem, 'SelecaoDoSlot?viewType=form');
@@ -2358,28 +2465,64 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
     try {
       dataConf = textConf ? JSON.parse(textConf) : null;
     } catch (_) {}
-    logPegaResponse(`PEGA LD Ponta B .../SelecaoDoSlot?viewType=form`, resConf.status, dataConf, textConf);
+    logPegaResponse(`PEGA LD ${legLabel} .../SelecaoDoSlot?viewType=form`, resConf.status, dataConf, textConf);
     if (resConf.ok) break;
     if (resConf.status === 404 && pathsConfirm.indexOf(p) === 0) {
-      console.log('[PEGA LD Ponta B]   ↳ 404 — tentando outra rota...');
+      console.log(`[PEGA LD ${legLabel}]   ↳ 404 — tentando outra rota...`);
       continue;
     }
-    throw new Error(`PEGA LD Ponta B SelecaoDoSlot?viewType=form: HTTP ${resConf.status} — ${textConf?.slice(0, 800)}`);
+    throw new Error(`PEGA LD ${legLabel} SelecaoDoSlot?viewType=form: HTTP ${resConf.status} — ${textConf?.slice(0, 800)}`);
   }
-  if (!resConf?.ok) throw new Error(`PEGA LD Ponta B SelecaoDoSlot form falhou: HTTP ${lastConf}`);
+  if (!resConf?.ok) throw new Error(`PEGA LD ${legLabel} SelecaoDoSlot form falhou: HTTP ${lastConf}`);
 
   let pyMemoFinal = parsed6.pyMemo;
-  const seventh = await fetchObterDadosOrdemWithRetry(getObterDadosOrdemB, parseOpts, {
+  let seventh = await fetchObterDadosOrdemWithRetry(getObterDadosOrdemB, parseOpts, {
     isLinkDedicated: true,
-    logTag: '[LD Ponta B] (pós-agendamento)',
+    logTag: `[LD ${legLabel}] (pós-agendamento)`,
     expectedChaveCaseOrdem: chaveCaseOrdem,
   });
-  if (seventh.res.ok && seventh.parsed?.pyMemo) {
+  if (!seventh.res.ok) {
+    throw new Error(
+      `[FDL_ENV_ERROR] PEGA LD ${legLabel}: obterdadosordem pós-agendamento HTTP ${seventh.res.status}`,
+    );
+  }
+  if (seventh.parsed?.pyMemo) {
     pyMemoFinal = seventh.parsed.pyMemo;
   }
 
+  const postSlotPollTriesLd = Math.max(
+    1,
+    parseInt(String(process.env.PEGA_AGENDAMENTO_POST_SLOT_POLL_TRIES || '8').trim(), 10) || 8,
+  );
+  const postSlotPollMsLd = Math.max(
+    1000,
+    parseInt(String(process.env.PEGA_AGENDAMENTO_POST_SLOT_POLL_MS || '2500').trim(), 10) || 2500,
+  );
+  for (let t = 1; t <= postSlotPollTriesLd; t++) {
+    const item = seventh.parsed?.item;
+    console.log(
+      `[PEGA LD ${legLabel}]   Estado pós-agendamento (${t}/${postSlotPollTriesLd}): pyStatusWork=` +
+        (item?.pyStatusWork || '—') +
+        ', Workflow=' +
+        (item?.Workflowpega || '—') +
+        ', IsEmAgendamento=' +
+        (item?.IsEmAgendamento === true ? 'true' : 'false'),
+    );
+    if (isPegaAgendamentoConcluido(item)) break;
+    if (t < postSlotPollTriesLd) {
+      await new Promise((r) => setTimeout(r, postSlotPollMsLd));
+      seventh = await fetchObterDadosOrdemWithRetry(getObterDadosOrdemB, parseOpts, {
+        isLinkDedicated: true,
+        logTag: `[LD ${legLabel}] (pós-agendamento poll ${t + 1})`,
+        expectedChaveCaseOrdem: chaveCaseOrdem,
+      });
+      if (seventh.parsed?.pyMemo) pyMemoFinal = seventh.parsed.pyMemo;
+    }
+  }
+  assertPegaAgendamentoConcluido(seventh.parsed?.item, `PEGA LD ${legLabel}`);
+
   if (!skipCaseViews) {
-    console.log('[PEGA LD Ponta B] PATCH views (pós-agendamento)');
+    console.log(`[PEGA LD ${legLabel}] PATCH views (pós-agendamento)`);
     await patchCaseViewsB('pyDetailsTabContent', pyMemoFinal, chaveCaseOrdem);
     await patchCaseViewsB('DadosPedidoOSTab', pyMemoFinal, chaveCaseOrdem);
   }
@@ -2392,6 +2535,8 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
     chaveCaseOrdem,
     caseId: seventh.parsed?.caseId || parsed?.caseId || null,
     pegaOrdemServicoOs,
+    pyStatusWorkAfterAgendamento:
+      seventh.parsed?.item?.pyStatusWork || seventh.parsed?.item?.pyStatusWorkOld || null,
     agendamentoSelecaoPeriodoStatus: resPer.status,
     agendamentoSelecaoSlotRefreshStatus: resRef.status,
     agendamentoSelecaoSlotFormStatus: resConf.status,

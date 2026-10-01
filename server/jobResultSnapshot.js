@@ -71,6 +71,7 @@ export function resolveJobFieldsFromExecutionRow(row, parseStdoutFn) {
     pegaOrdemServicoOsPontaA: merged.pegaOrdemServicoOsPontaA ?? null,
     pegaOrdemServicoOsPontaB: merged.pegaOrdemServicoOsPontaB ?? null,
     pegaOrdemServicoOsEVC: merged.pegaOrdemServicoOsEVC ?? null,
+    pegaStatusWork: merged.pegaStatusWork ?? null,
     subOrderOrderNumber: merged.subOrderOrderNumber ?? null,
     subOrderOrderNumberPontaA: merged.subOrderOrderNumberPontaA ?? null,
     subOrderOrderNumberPontaB: merged.subOrderOrderNumberPontaB ?? null,

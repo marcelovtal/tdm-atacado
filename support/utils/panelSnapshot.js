@@ -21,6 +21,7 @@ const PANEL_SNAPSHOT_KEYS = [
   'pegaOrdemServicoOsPontaA',
   'pegaOrdemServicoOsPontaB',
   'pegaOrdemServicoOsEVC',
+  'pegaStatusWork',
   'subOrderOrderNumber',
   'subOrderOrderNumberPontaA',
   'subOrderOrderNumberPontaB',

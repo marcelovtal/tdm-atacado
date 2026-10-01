@@ -165,6 +165,7 @@ function formatHistoryJobRow(row) {
     pegaOrdemServicoOsPontaA: fields.pegaOrdemServicoOsPontaA,
     pegaOrdemServicoOsPontaB: fields.pegaOrdemServicoOsPontaB,
     pegaOrdemServicoOsEVC: fields.pegaOrdemServicoOsEVC,
+    pegaStatusWork: fields.pegaStatusWork,
     subOrderOrderNumber: fields.subOrderOrderNumber,
     subOrderOrderNumberPontaA: fields.subOrderOrderNumberPontaA,
     subOrderOrderNumberPontaB: fields.subOrderOrderNumberPontaB,
@@ -654,6 +655,7 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
       result.pegaOrdemServicoOsPontaA = rv.pegaOrdemServicoOsPontaA;
       result.pegaOrdemServicoOsPontaB = rv.pegaOrdemServicoOsPontaB;
       result.pegaOrdemServicoOsEVC = rv.pegaOrdemServicoOsEVC;
+      result.pegaStatusWork = rv.pegaStatusWork;
       result.subOrderOrderNumber = rv.subOrderOrderNumber;
       result.subOrderOrderNumberPontaA = rv.subOrderOrderNumberPontaA;
       result.subOrderOrderNumberPontaB = rv.subOrderOrderNumberPontaB;
@@ -690,6 +692,7 @@ app.get('/api/jobs/:id', requireAuth, async (req, res) => {
           'pegaOrdemServicoOsPontaA',
           'pegaOrdemServicoOsPontaB',
           'pegaOrdemServicoOsEVC',
+          'pegaStatusWork',
         ]) {
           if (dbFields[key] && !result.result[key]) {
             result.result[key] = dbFields[key];
@@ -1057,6 +1060,7 @@ function formatJob(job) {
     pegaOrdemServicoOsPontaA: job.returnvalue?.pegaOrdemServicoOsPontaA ?? null,
     pegaOrdemServicoOsPontaB: job.returnvalue?.pegaOrdemServicoOsPontaB ?? null,
     pegaOrdemServicoOsEVC: job.returnvalue?.pegaOrdemServicoOsEVC ?? null,
+    pegaStatusWork: job.returnvalue?.pegaStatusWork ?? null,
     subOrderOrderNumber: job.returnvalue?.subOrderOrderNumber ?? null,
     subOrderOrderNumberPontaA: job.returnvalue?.subOrderOrderNumberPontaA ?? null,
     subOrderOrderNumberPontaB: job.returnvalue?.subOrderOrderNumberPontaB ?? null,

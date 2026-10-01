@@ -41,6 +41,7 @@ export function buildJobReturnPayload(result, dbSave) {
     pegaOrdemServicoOsPontaA: result.pegaOrdemServicoOsPontaA,
     pegaOrdemServicoOsPontaB: result.pegaOrdemServicoOsPontaB,
     pegaOrdemServicoOsEVC: result.pegaOrdemServicoOsEVC,
+    pegaStatusWork: result.pegaStatusWork,
     subOrderOrderNumber: result.subOrderOrderNumber,
     subOrderOrderNumberPontaA: result.subOrderOrderNumberPontaA,
     subOrderOrderNumberPontaB: result.subOrderOrderNumberPontaB,

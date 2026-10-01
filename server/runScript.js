@@ -160,6 +160,8 @@ export function parseScriptStdout(text, envVars = {}) {
     pegaOrdemServicoOsPontaA,
     pegaOrdemServicoOsPontaB,
     pegaOrdemServicoOsEVC,
+    pegaStatusWork:
+      panelSnapshot.pegaStatusWork || parseLabeledField(text, 'PEGA Status') || null,
     subOrderOrderNumberPontaA:
       panelSnapshot.subOrderOrderNumberPontaA ||
       parseLabeledField(text, 'SubpedidoOrderNumber Ponta A'),
@@ -196,6 +198,7 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
       pegaOrdemServicoOsPontaA: null,
       pegaOrdemServicoOsPontaB: null,
       pegaOrdemServicoOsEVC: null,
+      pegaStatusWork: null,
       subOrderOrderNumber: null,
       subOrderOrderNumberPontaA: null,
       subOrderOrderNumberPontaB: null,
@@ -258,6 +261,7 @@ export function runVtalScript(scriptName, environment, envVars = {}, options = {
         pegaOrdemServicoOsPontaA: null,
         pegaOrdemServicoOsPontaB: null,
         pegaOrdemServicoOsEVC: null,
+        pegaStatusWork: null,
         subOrderOrderNumber: null,
         subOrderOrderNumberPontaA: null,
         subOrderOrderNumberPontaB: null,

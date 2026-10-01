@@ -65,6 +65,7 @@ function logPedidoGerado(result = {}) {
   }
 
   if (result.pegaOrdemServicoOs) console.log('  PEGA OS:', result.pegaOrdemServicoOs);
+  if (result.pegaStatusWork) console.log('  PEGA Status:', result.pegaStatusWork);
   if (result.ofsActivityId) console.log('  OFS ActivityId:', result.ofsActivityId);
   if (result.ofsActivityIdPontaA) console.log('  OFS ActivityId Ponta A:', result.ofsActivityIdPontaA);
   if (result.ofsActivityIdPontaB) console.log('  OFS ActivityId Ponta B:', result.ofsActivityIdPontaB);

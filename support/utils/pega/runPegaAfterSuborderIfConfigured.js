@@ -76,17 +76,30 @@ async function runPegaAfterSuborderIfConfigured(subOrderOrderNumber, options = {
   const label = flowVariant === 'vpn' ? 'VPN' : 'IP Connect';
   console.log(`[E2E] PEGA (${label}) | ORDEMSERVICO:`, ordemServico + (ordemOverride ? ' (override)' : ''), '| base:', base);
 
-  const pegaResult = await runPegaDesignacaoEConfiguracao({
-    ordemServico,
-    baseUrl: base,
-    bearerToken: token,
-    cookie,
-    ...(flowVariant === 'vpn' ? { flowVariant: 'vpn' } : {}),
-  });
+  let pegaResult;
+  try {
+    pegaResult = await runPegaDesignacaoEConfiguracao({
+      ordemServico,
+      baseUrl: base,
+      bearerToken: token,
+      cookie,
+      ...(flowVariant === 'vpn' ? { flowVariant: 'vpn' } : {}),
+    });
+  } catch (err) {
+    const msg = String(err?.message || err || '');
+    if (/fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up/i.test(msg)) {
+      throw new Error(`[FDL_ENV_ERROR] Falha de rede no PEGA (${label}): ${msg}`);
+    }
+    if (/\[FDL_ENV_ERROR\]/i.test(msg)) throw err;
+    throw err;
+  }
 
   console.log(`\n*** PEGA (${label}) ***`);
   if (pegaResult?.caseId) console.log('  PEGA:', pegaResult.caseId);
   if (pegaResult?.pegaOrdemServicoOs) console.log('  PEGA OS:', pegaResult.pegaOrdemServicoOs);
+  if (pegaResult?.pyStatusWorkAfterAgendamento) {
+    console.log('  PEGA Status:', pegaResult.pyStatusWorkAfterAgendamento);
+  }
   return pegaResult;
 }
 

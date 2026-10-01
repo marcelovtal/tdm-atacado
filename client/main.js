@@ -492,6 +492,7 @@ function formatJobListResultSummary(j) {
   const orderPart = j.orderNumber ? `Pedido: ${j.orderNumber}` : null;
   const statusPart = j.orderStatus ? `Status: ${formatOrderStatusDisplay(j.orderStatus)}` : null;
   const pegaSummary = formatJobListPegaSummary(j);
+  const pegaStatusPart = j.pegaStatusWork ? `PEGA Status: ${j.pegaStatusWork}` : null;
   const ldSubpedidos = !pegaSummary ? formatJobListLinkDedicadoSubpedidos(j) : null;
   const subpedidoPart =
     j.subOrderOrderNumber && !pegaSummary && !ldSubpedidos
@@ -505,6 +506,7 @@ function formatJobListResultSummary(j) {
   if (statusPart) parts.push(statusPart);
   if (pegaSummary) parts.push(`PEGA: ${pegaSummary}`);
   else if (subpedidoPart) parts.push(subpedidoPart);
+  if (pegaStatusPart) parts.push(pegaStatusPart);
   return parts.length ? parts.join(' · ') : null;
 }
 
@@ -904,6 +906,7 @@ function mergeJobResultFields(job) {
     pegaOrdemServicoOsPontaA: r.pegaOrdemServicoOsPontaA ?? job.pegaOrdemServicoOsPontaA ?? null,
     pegaOrdemServicoOsPontaB: r.pegaOrdemServicoOsPontaB ?? job.pegaOrdemServicoOsPontaB ?? null,
     pegaOrdemServicoOsEVC: r.pegaOrdemServicoOsEVC ?? job.pegaOrdemServicoOsEVC ?? null,
+    pegaStatusWork: r.pegaStatusWork ?? job.pegaStatusWork ?? null,
     subOrderOrderNumber: r.subOrderOrderNumber ?? job.subOrderOrderNumber ?? null,
     subOrderOrderNumberPontaA: r.subOrderOrderNumberPontaA ?? job.subOrderOrderNumberPontaA ?? null,
     subOrderOrderNumberPontaB: r.subOrderOrderNumberPontaB ?? job.subOrderOrderNumberPontaB ?? null,
@@ -1025,6 +1028,7 @@ function renderJobDetailBody(job, id) {
           ${renderJobSubpedidoDetailLines(r)}
           ${renderJobPegaDetailLines(r)}
           ${r.pegaCaseId && !jobHasLinkDedicadoPegaLegs(r) ? `PEGA Caso: ${escapeHtml(r.pegaCaseId)}<br>` : ''}
+          ${r.pegaStatusWork ? `PEGA Status: ${escapeHtml(r.pegaStatusWork)}<br>` : ''}
         </div>
       </div>
           ` : ''

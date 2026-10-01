@@ -211,6 +211,16 @@ export function classifyUserJobError({
     return envErrorResult('SF_PEGA_INTEGRATION_ERROR', INTEGRATION_ORDER_STATUS_MESSAGE);
   }
 
+  if (
+    /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up/i.test(combined) &&
+    /\[PEGA\]|PEGA LD|obterdadosordem|Falha de rede no PEGA/i.test(combined)
+  ) {
+    return envErrorResult(
+      'PEGA_NETWORK_ERROR',
+      'Falha de rede no PEGA (conexão interrompida). Tente novamente; o pedido Salesforce pode já ter sido criado.',
+    );
+  }
+
   return null;
 }
 

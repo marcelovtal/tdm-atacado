@@ -38,6 +38,7 @@ export function mergeLiveFieldsIntoJobFields(base = {}, live = null) {
     pegaOrdemServicoOsPontaA: live.pegaOrdemServicoOsPontaA ?? base.pegaOrdemServicoOsPontaA ?? null,
     pegaOrdemServicoOsPontaB: live.pegaOrdemServicoOsPontaB ?? base.pegaOrdemServicoOsPontaB ?? null,
     pegaOrdemServicoOsEVC: live.pegaOrdemServicoOsEVC ?? base.pegaOrdemServicoOsEVC ?? null,
+    pegaStatusWork: live.pegaStatusWork ?? base.pegaStatusWork ?? null,
     subOrderOrderNumber: live.subOrderOrderNumber ?? base.subOrderOrderNumber ?? null,
     subOrderOrderNumberPontaA: live.subOrderOrderNumberPontaA ?? base.subOrderOrderNumberPontaA ?? null,
     subOrderOrderNumberPontaB: live.subOrderOrderNumberPontaB ?? base.subOrderOrderNumberPontaB ?? null,

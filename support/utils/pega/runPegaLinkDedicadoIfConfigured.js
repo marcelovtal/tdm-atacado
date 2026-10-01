@@ -98,7 +98,11 @@ async function runPegaLinkDedicadoIfConfigured(
       getPegaBearerToken: resolvePegaBearerTokenForLd,
     });
   } catch (err) {
-    console.error('[PEGA] Falha no fluxo PEGA (token ou API):', err.message);
+    const msg = String(err?.message || err || '');
+    console.error('[PEGA] Falha no fluxo PEGA (token ou API):', msg);
+    if (/fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up/i.test(msg)) {
+      throw new Error(`[FDL_ENV_ERROR] Falha de rede no PEGA (Link Dedicado): ${msg}`);
+    }
     throw err;
   }
 

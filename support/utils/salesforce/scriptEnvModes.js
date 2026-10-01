@@ -21,6 +21,10 @@ function isNonRetryableEnvError(err) {
   if (/PEGA SelecaoDoSlot|PEGA SelecaoDePeriodo/i.test(msg) && /422|Validation fail|workzone|OFS/i.test(msg)) {
     return true;
   }
+  // Falha de rede no PEGA — retry do fluxo completo só gera pedido duplicado
+  if (/fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up/i.test(msg) && /PEGA|obterdadosordem/i.test(msg)) {
+    return true;
+  }
   return false;
 }
 
