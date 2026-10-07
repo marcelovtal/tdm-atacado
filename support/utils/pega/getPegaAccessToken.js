@@ -4,8 +4,18 @@
  */
 
 const { logPegaCurl, logPegaResponse } = require('./pegaLogging.js');
+const { ensurePegaNodeTls } = require('./ensurePegaNodeTls.js');
+
+function formatFetchError(err) {
+  const cause = err?.cause;
+  const causeMsg = cause?.message || cause?.code || '';
+  const base = err?.message || String(err);
+  if (causeMsg && !base.includes(causeMsg)) return `${base} (${causeMsg})`;
+  return base;
+}
 
 async function getPegaAccessToken({ tokenUrl, clientId, clientSecret, fetchImpl = global.fetch }) {
+  ensurePegaNodeTls();
   if (!tokenUrl || !clientId || !clientSecret) {
     throw new Error('getPegaAccessToken: tokenUrl, clientId e clientSecret são obrigatórios');
   }
@@ -20,11 +30,16 @@ async function getPegaAccessToken({ tokenUrl, clientId, clientSecret, fetchImpl 
     Accept: 'application/json',
   };
   logPegaCurl('POST', tokenUrl, headers, reqBody);
-  const res = await fetchImpl(tokenUrl, {
-    method: 'POST',
-    headers,
-    body: reqBody,
-  });
+  let res;
+  try {
+    res = await fetchImpl(tokenUrl, {
+      method: 'POST',
+      headers,
+      body: reqBody,
+    });
+  } catch (err) {
+    throw new Error(`PEGA token: ${formatFetchError(err)}`);
+  }
   const text = await res.text();
   let data = null;
   try {

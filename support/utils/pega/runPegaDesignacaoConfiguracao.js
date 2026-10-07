@@ -12,6 +12,7 @@ const {
   extractAgendamentoSlotsFromObterDadosItem,
 } = require('./selecaoAgendamentoPayload.js');
 const { logPegaCurl, logPegaResponse } = require('./pegaLogging.js');
+const { ensurePegaNodeTls } = require('./ensurePegaNodeTls.js');
 const { delay } = require('../helpers/waitHelper.js');
 
 function pegaIntEnv(name, fallback) {
@@ -306,11 +307,36 @@ function isLdReadyForAgendamento(item) {
 }
 
 /**
+ * Rótulo legível do estado PEGA após agendamento.
+ * pyStatusWork costuma ficar "Pending-AtivacaoFisica" mesmo depois do slot —
+ * o sinal real é Workflow ATIVIDADEEMCAMPO / Atividade "Aguardando Retorno…".
+ */
+function resolvePegaStatusLabel(item) {
+  if (!item) return null;
+  const wf = String(item.Workflowpega || '');
+  const ativ = String(
+    item.CestoTrabalho?.Atividade || item.AtividadeView || item.Atividade || '',
+  );
+  if (/Aguardando\s*Retorno/i.test(ativ)) return 'Aguardando Retorno do Serviço';
+  if (/ATIVIDADEEMCAMPO/i.test(wf)) return 'Aguardando Retorno do Serviço';
+  if (/Tratar\s*Pend|PendenciaSalaEficiencia|PENDENCIA/i.test(wf + ' ' + ativ)) {
+    return 'Tratar Pendência';
+  }
+  if (/AGENDAMENTO_FLOW/i.test(wf) || item.IsEmAgendamento === true) {
+    if (/SelecaoDoSlot|Selecao\s*Do\s*Slot/i.test(ativ)) return 'Seleção do Slot';
+    return 'Seleção de Período';
+  }
+  if (ativ && ativ !== '—') return ativ;
+  return item.pyStatusWork || item.pyStatusWorkOld || null;
+}
+
+/**
  * Agendamento (SelecaoDePeriodo + SelecaoDoSlot) concluído.
  * NÃO usar só pyStatusWork=Pending-AtivacaoFisica: esse status já aparece após a validação
  * técnica, ainda com IsEmAgendamento=true / AGENDAMENTO_FLOW (bug que pulava o slot).
  * Sucesso real: saiu do AGENDAMENTO_FLOW (ex.: ATIVIDADEEMCAMPO ou Aguardando Retorno do Serviço).
  */
+/** Config PEGA concluído: saiu do AGENDAMENTO_FLOW e não ficou em Tratar Pendência. */
 function isPegaAgendamentoConcluido(item) {
   if (!item) return false;
   const wf = String(item.Workflowpega || '');
@@ -321,6 +347,8 @@ function isPegaAgendamentoConcluido(item) {
   if (item.IsEmAgendamento === true) return false;
   if (/AGENDAMENTO_FLOW/i.test(wf)) return false;
   if (/Selecao\s*De\s*Periodo|SelecaoDoSlot|Selecao\s*Do\s*Slot/i.test(ativ)) return false;
+  // Pendência de eficiência / tratar pendência = agendamento não “fechou” operacionalmente
+  if (/Tratar\s*Pend|PendenciaSalaEficiencia|PENDENCIA_FLOW/i.test(wf + ' ' + ativ)) return false;
 
   if (/ATIVIDADEEMCAMPO/i.test(wf)) return true;
   if (/Aguardando\s*Retorno/i.test(wf) || /Aguardando\s*Retorno/i.test(ativ)) return true;
@@ -329,14 +357,23 @@ function isPegaAgendamentoConcluido(item) {
 }
 
 function assertPegaAgendamentoConcluido(item, label = 'PEGA') {
-  if (isPegaAgendamentoConcluido(item)) return;
+  if (isPegaAgendamentoConcluido(item)) {
+    const dataSlot = item?.Agendamento?.DataSlot;
+    if (!dataSlot) {
+      throw new Error(
+        `[FDL_ENV_ERROR] ${label}: saiu do AGENDAMENTO_FLOW mas DataSlot está vazio (slot não gravado).`,
+      );
+    }
+    return;
+  }
   const wf = item?.Workflowpega || '—';
   const st = item?.pyStatusWork || item?.pyStatusWorkOld || '—';
   const ativ = item?.CestoTrabalho?.Atividade || item?.AtividadeView || item?.Atividade || '—';
+  const dataSlot = item?.Agendamento?.DataSlot || '—';
   throw new Error(
-    `[FDL_ENV_ERROR] ${label}: agendamento não concluiu — falta Seleção do Slot ` +
-      `(pyStatusWork=${st}, Workflow=${wf}, Atividade=${ativ}). ` +
-      'Esperado sair do AGENDAMENTO_FLOW (ex.: Aguardando Retorno do Serviço / ATIVIDADEEMCAMPO).',
+    `[FDL_ENV_ERROR] ${label}: agendamento não concluiu — falta Seleção do Slot ou caiu em pendência ` +
+      `(pyStatusWork=${st}, Workflow=${wf}, Atividade=${ativ}, DataSlot=${dataSlot}). ` +
+      'Esperado: Aguardando Retorno do Serviço / ATIVIDADEEMCAMPO (sem Tratar Pendência).',
   );
 }
 
@@ -556,6 +593,7 @@ async function patchCaseViewsForChave(root, headersJson, fetchImpl, chaveCaseOrd
  * OAuth (passo 1 no script) + passos 2–13 (incl. views do caso) + 14–19 (Agendamento quando IsEmAgendamento; fluxo-pega.txt).
  */
 async function runPegaDesignacaoEConfiguracao(opts) {
+  ensurePegaNodeTls();
   const {
     ordemServico,
     baseUrl,
@@ -1412,7 +1450,10 @@ async function runPegaDesignacaoEConfiguracao(opts) {
       '[PEGA] Agendamento já concluído no PEGA (fora de AGENDAMENTO_FLOW) — pulando SelecaoDePeriodo/Slot.',
     );
     pyStatusWorkAfterAgendamento =
-      parsedPostValidacao.item.pyStatusWork || parsedPostValidacao.item.pyStatusWorkOld || null;
+      resolvePegaStatusLabel(parsedPostValidacao.item) ||
+      parsedPostValidacao.item.pyStatusWork ||
+      parsedPostValidacao.item.pyStatusWorkOld ||
+      null;
   } else if (
     !skipAgendamento &&
     readyForAgendamento &&
@@ -1647,7 +1688,9 @@ async function runPegaDesignacaoEConfiguracao(opts) {
           ', Workflow=' +
           (item?.Workflowpega || '—') +
           ', IsEmAgendamento=' +
-          (item?.IsEmAgendamento === true ? 'true' : 'false'),
+          (item?.IsEmAgendamento === true ? 'true' : 'false') +
+          ', label=' +
+          (resolvePegaStatusLabel(item) || '—'),
       );
       if (isPegaAgendamentoConcluido(item)) break;
       if (t < postSlotPollTries) {
@@ -1664,7 +1707,11 @@ async function runPegaDesignacaoEConfiguracao(opts) {
     const osFromP7 = extractOrdemServicoOsFromItem(p7?.item);
     if (osFromP7) pegaOrdemServicoOs = osFromP7;
     assertPegaAgendamentoConcluido(p7?.item, 'PEGA');
-    pyStatusWorkAfterAgendamento = p7?.item?.pyStatusWork || p7?.item?.pyStatusWorkOld || null;
+    pyStatusWorkAfterAgendamento =
+      resolvePegaStatusLabel(p7?.item) ||
+      p7?.item?.pyStatusWork ||
+      p7?.item?.pyStatusWorkOld ||
+      null;
   }
 
   return {
@@ -2536,7 +2583,10 @@ async function runPegaLinkDedicadoPontaBAgendamento(opts) {
     caseId: seventh.parsed?.caseId || parsed?.caseId || null,
     pegaOrdemServicoOs,
     pyStatusWorkAfterAgendamento:
-      seventh.parsed?.item?.pyStatusWork || seventh.parsed?.item?.pyStatusWorkOld || null,
+      resolvePegaStatusLabel(seventh.parsed?.item) ||
+      seventh.parsed?.item?.pyStatusWork ||
+      seventh.parsed?.item?.pyStatusWorkOld ||
+      null,
     agendamentoSelecaoPeriodoStatus: resPer.status,
     agendamentoSelecaoSlotRefreshStatus: resRef.status,
     agendamentoSelecaoSlotFormStatus: resConf.status,

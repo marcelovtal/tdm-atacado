@@ -1,4 +1,5 @@
 const { getPegaFixture, getPegaDefaults } = require('../../../config/env.js');
+const { ensurePegaNodeTls } = require('./ensurePegaNodeTls.js');
 const { getPegaAccessToken } = require('./getPegaAccessToken.js');
 const {
   runPegaDesignacaoEConfiguracao,
@@ -6,6 +7,8 @@ const {
   PEGA_TOTAL_STEPS_VPN,
 } = require('./runPegaDesignacaoConfiguracao.js');
 const { logFlowPhase, PHASE } = require('../runFileLogger.js');
+
+ensurePegaNodeTls();
 
 const PEGA_ENV_DEFAULTS = getPegaDefaults();
 
@@ -66,7 +69,8 @@ async function runPegaAfterSuborderIfConfigured(subOrderOrderNumber, options = {
   try {
     token = await resolvePegaBearerToken(flowVariant);
   } catch (err) {
-    console.error('[PEGA] Falha ao obter access_token:', err.message);
+    const cause = err?.cause?.message || err?.cause?.code || '';
+    console.error('[PEGA] Falha ao obter access_token:', err.message + (cause ? ` (${cause})` : ''));
     throw err;
   }
   if (!token) return null;

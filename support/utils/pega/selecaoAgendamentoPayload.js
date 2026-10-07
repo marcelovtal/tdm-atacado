@@ -2,14 +2,19 @@
  * Corpos para AGENDAMENTO_FLOW (fluxo-pega.txt ~7427, ~12897, ~13877).
  */
 
-/** Próximo dia UTC + início/fim de janela (sobrescrever via opts ou env no caller). */
+/** Próximo dia útil (seg–sex) em horário local + janela de 7 dias. Evita slot em fim de semana (OFS/Sala Eficiência). */
 function defaultPeriodoDatas() {
   const start = new Date();
-  start.setUTCDate(start.getUTCDate() + 1);
-  start.setUTCHours(12, 0, 0, 0);
+  start.setHours(12, 0, 0, 0);
+  // avança pelo menos 1 dia e até cair em dia útil
+  for (let i = 0; i < 10; i++) {
+    start.setDate(start.getDate() + 1);
+    const dow = start.getDay(); // 0=dom, 6=sáb
+    if (dow !== 0 && dow !== 6) break;
+  }
   const end = new Date(start);
-  end.setUTCDate(end.getUTCDate() + 7);
-  end.setUTCHours(21, 0, 0, 0);
+  end.setDate(end.getDate() + 7);
+  end.setHours(21, 0, 0, 0);
   return { DataInicio: start.toISOString(), DataFim: end.toISOString() };
 }
 

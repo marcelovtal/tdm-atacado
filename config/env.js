@@ -5,6 +5,10 @@ const {
   getUserFixture,
   getPegaFixture,
 } = require('./credentials.js');
+const { ensurePegaNodeTls } = require('../support/utils/pega/ensurePegaNodeTls.js');
+
+// CLI local: mesma política TLS do spawn em server/runScript.js (MITM corporativo).
+ensurePegaNodeTls();
 
 function loadEnv() {
   const envName = getEnvName();
