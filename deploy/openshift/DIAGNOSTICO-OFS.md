@@ -3,6 +3,29 @@
 Os 3 testes "Massa Completa até Ativação" usam Playwright + supervisor OFS.
 Local usa `support/fixtures/user.json`. No cluster o arquivo **não** entra na imagem.
 
+## Bloqueio de rede (sintoma mais comum no ARC-NPRD)
+
+Se o job passa Salesforce + PEGA (agendamento OK) e morre no `[OFS-UI] login` com `fetch failed` / `Connect Timeout`:
+
+| Probe no pod worker | Resultado típico |
+|---------------------|------------------|
+| DNS `ofsvtal3.test.fs.ocs.oraclecloud.com` | OK (ex.: Akamai) |
+| TCP `:443` | OK (SYN) |
+| TLS / `fetch` HTTPS | **TIMEOUT** (~10–20s) |
+| TLS PEGA / Salesforce | OK |
+
+**Causa:** egress do namespace não completa HTTPS/TLS até o OFS Oracle Cloud (`ofsvtal1` TI / `ofsvtal3` TRG). Não é bug de senha nem de Chromium.
+
+**Ação:** abrir firewall/proxy corporativo (egress) para:
+- `ofsvtal1.test.fs.ocs.oraclecloud.com:443`
+- `ofsvtal3.test.fs.ocs.oraclecloud.com:443`
+
+Até lá, a etapa OFS só funciona **localmente** (notebook com acesso ao OFS). Validação rápida:
+
+```cmd
+oc exec deploy/tdm-qa-worker -- node -e "process.env.NODE_TLS_REJECT_UNAUTHORIZED='0'; const tls=require('tls'); const t=Date.now(); const s=tls.connect({host:'ofsvtal3.test.fs.ocs.oraclecloud.com',port:443,servername:'ofsvtal3.test.fs.ocs.oraclecloud.com',rejectUnauthorized:false,timeout:15000},()=>{console.log('TLS_OK',Date.now()-t);s.end()}); s.on('timeout',()=>{console.log('TLS_TIMEOUT');s.destroy();process.exit(1)}); s.on('error',e=>{console.log('TLS_FAIL',e.message);process.exit(1)})"
+```
+
 ## Mapa user.json → Secret
 
 | user.json | Secret OpenShift |

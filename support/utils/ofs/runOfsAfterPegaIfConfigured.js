@@ -110,10 +110,19 @@ async function runOfsInstalacaoForOrdem(numeroOrdem, options = {}) {
         return null;
       }
       console.log(`[E2E] OFS — ${label}ativar rota + mover + iniciar + concluir (UI AJAX)…`);
-      return runOfsInstalacaoCompletaUi({
-        numeroOrdem: ordem,
-        subOrderOrderNumber: ordem,
-      });
+      try {
+        return await runOfsInstalacaoCompletaUi({
+          numeroOrdem: ordem,
+          subOrderOrderNumber: ordem,
+        });
+      } catch (err) {
+        const msg = String(err?.message || err || '');
+        if (/\[FDL_ENV_ERROR\]/i.test(msg)) throw err;
+        if (/fetch failed|Connect Timeout|ETIMEDOUT|ECONNRESET|ENOTFOUND|socket hang up/i.test(msg)) {
+          throw new Error(`[FDL_ENV_ERROR] Falha de rede no OFS (${label.trim() || 'UI'}): ${msg}`);
+        }
+        throw err;
+      }
     }
 
     if (!hasOfsRestAuth(cfg)) {

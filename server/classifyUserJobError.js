@@ -182,6 +182,20 @@ export function classifyUserJobError({
     return envErrorResult('PEGA_OFS_INTEGRATION_ERROR', PEGA_OFS_INTEGRATION_MESSAGE);
   }
 
+  // OFS: falha de rede/TLS (comum no OpenShift — TCP sobe, handshake HTTPS trava).
+  if (
+    (/\[OFS-UI\]|FASE: OFS|Falha de rede no OFS|OFS inacessível/i.test(combined) &&
+      /fetch failed|Connect Timeout|ETIMEDOUT|ECONNRESET|ENOTFOUND|socket hang up|TLS TIMEOUT/i.test(
+        combined,
+      )) ||
+    /OFS inacessível de onde o job rodou/i.test(combined)
+  ) {
+    return envErrorResult(
+      'OFS_NETWORK_ERROR',
+      'Falha de rede no OFS (HTTPS/TLS para ofsvtal*.oraclecloud.com). No OpenShift o egress ao OFS precisa liberar TLS; SF/PEGA ok não implica OFS ok. Pedido e agendamento PEGA podem já ter sido criados.',
+    );
+  }
+
   if (/\[FDL_INTEGRATION_ERROR\]/.test(combined)) {
     return envErrorResult(
       'INTEGRATION_ERROR',
@@ -202,7 +216,9 @@ export function classifyUserJobError({
     );
   }
 
+  // Só classifica como SF/PEGA se a falha NÃO ocorreu já na fase OFS.
   if (
+    !/FASE: OFS|\[OFS-UI\] login/i.test(combined) &&
     /PEGA LD EVC|PEGA LD:|PEGA obterdadosordem|pyMemo|ChaveCaseOrdem|Pending-AguardarConfiguracaoEVC|Falha no fluxo PEGA/i.test(
       combined,
     ) &&
@@ -213,7 +229,8 @@ export function classifyUserJobError({
 
   if (
     /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket hang up/i.test(combined) &&
-    /\[PEGA\]|PEGA LD|obterdadosordem|Falha de rede no PEGA/i.test(combined)
+    /\[PEGA\]|PEGA LD|obterdadosordem|Falha de rede no PEGA/i.test(combined) &&
+    !/\[OFS-UI\]|FASE: OFS/i.test(combined)
   ) {
     return envErrorResult(
       'PEGA_NETWORK_ERROR',

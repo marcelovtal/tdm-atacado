@@ -137,20 +137,43 @@ function saveCachedSession(session, envName) {
   fs.writeFileSync(file, JSON.stringify(session, null, 2), 'utf8');
 }
 
+function formatOfsFetchError(err, url) {
+  const cause = err?.cause;
+  const causeMsg = cause?.message || cause?.code || '';
+  const base = err?.message || String(err);
+  const detail = causeMsg && !base.includes(causeMsg) ? `${base} (${causeMsg})` : base;
+  const host = (() => {
+    try {
+      return new URL(url).host;
+    } catch (_) {
+      return url;
+    }
+  })();
+  if (/Connect Timeout|ETIMEDOUT|ECONNRESET|ENOTFOUND|socket hang up|fetch failed/i.test(detail)) {
+    return `[FDL_ENV_ERROR] OFS inacessível de onde o job rodou (HTTPS ${host}): ${detail}. No OpenShift o TLS para ofsvtal*.oraclecloud.com costuma travar — libere egress/firewall ou rode a etapa OFS de rede com acesso ao OFS.`;
+  }
+  return `OFS UI fetch (${host}): ${detail}`;
+}
+
 async function fetchStep(url, { method = 'GET', cookies = {}, body, headers = {}, redirect = 'manual' } = {}) {
-  const res = await fetch(url, {
-    method,
-    redirect,
-    headers: {
-      'User-Agent': USER_AGENT,
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-      ...(body != null ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
-      ...(cookieHeader(cookies) ? { Cookie: cookieHeader(cookies) } : {}),
-      ...headers,
-    },
-    body,
-  });
+  let res;
+  try {
+    res = await fetch(url, {
+      method,
+      redirect,
+      headers: {
+        'User-Agent': USER_AGENT,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        ...(body != null ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+        ...(cookieHeader(cookies) ? { Cookie: cookieHeader(cookies) } : {}),
+        ...headers,
+      },
+      body,
+    });
+  } catch (err) {
+    throw new Error(formatOfsFetchError(err, url));
+  }
   const text = await res.text();
   const setCookies = parseSetCookie(res.headers);
   return { res, text, setCookies };
